@@ -1,0 +1,280 @@
+{
+  "batches": "A,B,C",
+  "n_done": 28,
+  "n_fail": 0,
+  "n_jobs": 35,
+  "n_skip": 7,
+  "num_eval": 50,
+  "results": [
+    {
+      "label": "mujoco_cem/tworoom/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/mujoco_cem_tworoom_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 1840.10204911232,
+      "label": "mujoco_cem/tworoom/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/mujoco_cem_tworoom_n50_seed43.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 1709.0847492218018,
+      "label": "mujoco_cem/tworoom/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/mujoco_cem_tworoom_n50_seed44.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 1770.2822518348694,
+      "label": "mujoco_cem/tworoom/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/mujoco_cem_tworoom_n50_seed45.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 1809.9515750408173,
+      "label": "mujoco_cem/tworoom/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/mujoco_cem_tworoom_n50_seed46.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "label": "vpw_oracle_hybrid/tworoom/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_hybrid_tworoom_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 597.0251834392548,
+      "error": null,
+      "label": "vpw_oracle_hybrid/tworoom/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_hybrid_tworoom_n50_seed43.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 457.6731469631195,
+      "error": null,
+      "label": "vpw_oracle_hybrid/tworoom/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_hybrid_tworoom_n50_seed44.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 527.2896490097046,
+      "error": null,
+      "label": "vpw_oracle_hybrid/tworoom/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_hybrid_tworoom_n50_seed45.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 464.13730239868164,
+      "error": null,
+      "label": "vpw_oracle_hybrid/tworoom/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_hybrid_tworoom_n50_seed46.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "label": "vpw_tool_hybrid/cube/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_cube_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 68.0
+    },
+    {
+      "elapsed_s": 115.87261319160461,
+      "error": null,
+      "label": "vpw_tool_hybrid/cube/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_cube_n50_seed43.json",
+      "status": "done",
+      "success_rate": 92.0
+    },
+    {
+      "elapsed_s": 223.52754020690918,
+      "error": null,
+      "label": "vpw_tool_hybrid/cube/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_cube_n50_seed44.json",
+      "status": "done",
+      "success_rate": 76.0
+    },
+    {
+      "elapsed_s": 193.03472900390625,
+      "error": null,
+      "label": "vpw_tool_hybrid/cube/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_cube_n50_seed45.json",
+      "status": "done",
+      "success_rate": 82.0
+    },
+    {
+      "elapsed_s": 154.3295440673828,
+      "error": null,
+      "label": "vpw_tool_hybrid/cube/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_cube_n50_seed46.json",
+      "status": "done",
+      "success_rate": 88.0
+    },
+    {
+      "label": "vpw_tool_hybrid/pusht/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_pusht_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 88.0
+    },
+    {
+      "elapsed_s": 4653.511221170425,
+      "error": null,
+      "label": "vpw_tool_hybrid/pusht/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_pusht_n50_seed43.json",
+      "status": "done",
+      "success_rate": 98.0
+    },
+    {
+      "elapsed_s": 4670.483970403671,
+      "error": null,
+      "label": "vpw_tool_hybrid/pusht/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_pusht_n50_seed44.json",
+      "status": "done",
+      "success_rate": 92.0
+    },
+    {
+      "elapsed_s": 4805.81777381897,
+      "error": null,
+      "label": "vpw_tool_hybrid/pusht/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_pusht_n50_seed45.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 4835.6946477890015,
+      "error": null,
+      "label": "vpw_tool_hybrid/pusht/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_pusht_n50_seed46.json",
+      "status": "done",
+      "success_rate": 98.0
+    },
+    {
+      "label": "vpw_tool_hybrid/tworoom/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_tworoom_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 484.26448917388916,
+      "error": null,
+      "label": "vpw_tool_hybrid/tworoom/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_tworoom_n50_seed43.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 567.4796869754791,
+      "error": null,
+      "label": "vpw_tool_hybrid/tworoom/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_tworoom_n50_seed44.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 480.07394576072693,
+      "error": null,
+      "label": "vpw_tool_hybrid/tworoom/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_tworoom_n50_seed45.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "elapsed_s": 544.9052057266235,
+      "error": null,
+      "label": "vpw_tool_hybrid/tworoom/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_tworoom_n50_seed46.json",
+      "status": "done",
+      "success_rate": 100.0
+    },
+    {
+      "label": "vpw_tool_induced/cube/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_cube_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 40.0
+    },
+    {
+      "elapsed_s": 44.566813707351685,
+      "error": null,
+      "label": "vpw_tool_induced/cube/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_cube_n50_seed43.json",
+      "status": "done",
+      "success_rate": 42.0
+    },
+    {
+      "elapsed_s": 44.69405913352966,
+      "error": null,
+      "label": "vpw_tool_induced/cube/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_cube_n50_seed44.json",
+      "status": "done",
+      "success_rate": 38.0
+    },
+    {
+      "elapsed_s": 44.154932260513306,
+      "error": null,
+      "label": "vpw_tool_induced/cube/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_cube_n50_seed45.json",
+      "status": "done",
+      "success_rate": 38.0
+    },
+    {
+      "elapsed_s": 47.57073783874512,
+      "error": null,
+      "label": "vpw_tool_induced/cube/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_cube_n50_seed46.json",
+      "status": "done",
+      "success_rate": 32.0
+    },
+    {
+      "label": "vpw_tool_induced/pusht/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_pusht_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 22.0
+    },
+    {
+      "elapsed_s": 3348.1828894615173,
+      "error": null,
+      "label": "vpw_tool_induced/pusht/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_pusht_n50_seed43.json",
+      "status": "done",
+      "success_rate": 14.0
+    },
+    {
+      "elapsed_s": 3326.9181604385376,
+      "error": null,
+      "label": "vpw_tool_induced/pusht/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_pusht_n50_seed44.json",
+      "status": "done",
+      "success_rate": 8.0
+    },
+    {
+      "elapsed_s": 3443.8955340385437,
+      "error": null,
+      "label": "vpw_tool_induced/pusht/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_pusht_n50_seed45.json",
+      "status": "done",
+      "success_rate": 16.0
+    },
+    {
+      "elapsed_s": 3434.010005712509,
+      "error": null,
+      "label": "vpw_tool_induced/pusht/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_pusht_n50_seed46.json",
+      "status": "done",
+      "success_rate": 16.0
+    }
+  ],
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
+  ],
+  "timestamp": "2026-07-21T20:53:42"
+}

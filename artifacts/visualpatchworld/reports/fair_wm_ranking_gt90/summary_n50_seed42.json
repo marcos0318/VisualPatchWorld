@@ -1,0 +1,190 @@
+{
+  "gt_target": 90.0,
+  "l1l2_rerun": {
+    "date": "2026-07-22",
+    "mean": 69.0,
+    "models": {
+      "cube": "artifacts/visualpatchworld/lewm_cube_program_results/generated_models/cube_patchworld_20260722_165027.py",
+      "pusht": "artifacts/visualpatchworld/lewm_pusht_program_results/generated_models/pusht_patchworld_program_induced_best.py",
+      "reacher": "artifacts/visualpatchworld/lewm_reacher_program_results/generated_models/reacher_patchworld_20260722_165027.py",
+      "tworoom": "artifacts/visualpatchworld/lewm_tworoom_program_results/generated_models/tworoom_patchworld_20260722_165027.py"
+    },
+    "oracle_induced": {
+      "cube": 86.0,
+      "pusht": 22.0,
+      "reacher": 72.0,
+      "tworoom": 96.0
+    }
+  },
+  "notes": [
+    "MuJoCo GT must be >=90% under the frozen controller before ranking WMs.",
+    "Fixed general_planning_eval to reset env before executing CEM plans.",
+    "Cube uses expert-macro library shooting (same library for GT and induced).",
+    "PushT uses matched ab5 CEM-MPC 600x15 (GT 96%). VPW cem_mpc honors action_block.",
+    "VPW models resolved from lewm_{env}_program_results (L1 probe + L2 fit).",
+    "Two-room/Cube/Reacher re-induced 2026-07-22 via program_induction; PushT uses the planner-selected PD L1+L2 checkpoint (fresh default-geometry refit scored 0% and was discarded)."
+  ],
+  "num_eval": 50,
+  "per_env": {
+    "cube": {
+      "env": "cube",
+      "frozen_protocol": {
+        "backend": "general",
+        "cem_iters": 1,
+        "eval_budget": 100,
+        "frameskip": 5,
+        "gt_cache": "artifacts/visualpatchworld/reports/gt90_sweep/cube_library_shoot_budget100_n50.json",
+        "horizon": 1,
+        "induced_planner": "library_shoot",
+        "num_samples": 400,
+        "receding_horizon": 1,
+        "sim_planner": "library_shoot",
+        "success_metric": "default",
+        "tag": "library_shoot_fs5_h1_r1_400_budget100",
+        "warm_start": false
+      },
+      "gt_target": 90.0,
+      "model": {
+        "elapsed_s": 13.330069065093994,
+        "mean_goal_distance": 0.04049908648278201,
+        "model_path": "artifacts/visualpatchworld/lewm_cube_program_results/generated_models/cube_patchworld_20260722_165027.py",
+        "name": "cube_patchworld_20260722_165027.py",
+        "success_rate": 86.0,
+        "vs_gt_ratio": 0.9148936170212766
+      },
+      "mujoco_gt": {
+        "elapsed_s": 1658.6256062984467,
+        "mean_goal_distance": 0.0168954939721136,
+        "reused_from": "artifacts/visualpatchworld/reports/gt90_sweep/cube_library_shoot_budget100_n50.json",
+        "success_rate": 94.0
+      }
+    },
+    "pusht": {
+      "env": "pusht",
+      "frozen_protocol": {
+        "action_block": 5,
+        "backend": "pusht_parallel",
+        "cem_iters": 15,
+        "frameskip": 5,
+        "gt_cache": "artifacts/visualpatchworld/reports/gt90_sweep/pusht_cem_ab5_600x15_n50_proven.json",
+        "horizon": 5,
+        "num_samples": 600,
+        "receding_horizon": 5,
+        "tag": "cem_ab5_h5_r5_600x15",
+        "warm_start": true
+      },
+      "gt_target": 90.0,
+      "model": {
+        "elapsed_s": 475.6439530849457,
+        "mean_goal_distance": 46.463022324252904,
+        "model_path": "artifacts/visualpatchworld/lewm_pusht_program_results/generated_models/pusht_patchworld_program_induced_best.py",
+        "name": "pusht_patchworld_program_induced_best.py",
+        "success_rate": 22.0,
+        "vs_gt_ratio": 0.22916666666666666
+      },
+      "mujoco_gt": {
+        "elapsed_s": null,
+        "mean_goal_distance": 4.279513711986236,
+        "reused_from": "artifacts/visualpatchworld/reports/gt90_sweep/pusht_cem_ab5_600x15_n50_proven.json",
+        "success_rate": 96.0
+      }
+    },
+    "reacher": {
+      "env": "reacher",
+      "frozen_protocol": {
+        "backend": "general",
+        "cem_iters": 10,
+        "frameskip": 1,
+        "gt_cache": "artifacts/visualpatchworld/reports/reacher_improve_sim_cem_finger_frame_nowarm_n50.json",
+        "horizon": 1,
+        "induced_planner": "cem",
+        "num_samples": 300,
+        "receding_horizon": 1,
+        "sim_planner": "cem",
+        "success_metric": "finger_match",
+        "tag": "cem_fs1_h1_r1_finger_300x10",
+        "warm_start": false
+      },
+      "gt_target": 90.0,
+      "model": {
+        "elapsed_s": 204.0451352596283,
+        "mean_goal_distance": 0.07469692459049271,
+        "model_path": "artifacts/visualpatchworld/lewm_reacher_program_results/generated_models/reacher_patchworld_20260722_165027.py",
+        "name": "reacher_patchworld_20260722_165027.py",
+        "success_rate": 72.0,
+        "vs_gt_ratio": 0.72
+      },
+      "mujoco_gt": {
+        "elapsed_s": null,
+        "mean_goal_distance": 0.033631413428028285,
+        "reused_from": "artifacts/visualpatchworld/reports/reacher_improve_sim_cem_finger_frame_nowarm_n50.json",
+        "success_rate": 100.0
+      }
+    },
+    "tworoom": {
+      "env": "tworoom",
+      "frozen_protocol": {
+        "backend": "general",
+        "cem_iters": 10,
+        "frameskip": 5,
+        "gt_cache": "artifacts/visualpatchworld/reports/gt90_sweep/tworoom_cem_fair_fixed_n50.json",
+        "horizon": 5,
+        "induced_planner": "cem",
+        "num_samples": 300,
+        "receding_horizon": 5,
+        "sim_planner": "cem",
+        "success_metric": "default",
+        "tag": "cem_fs5_h5_r5_300x10",
+        "warm_start": false
+      },
+      "gt_target": 90.0,
+      "model": {
+        "elapsed_s": 38.776201009750366,
+        "mean_goal_distance": 4.785377628409182,
+        "model_path": "artifacts/visualpatchworld/lewm_tworoom_program_results/generated_models/tworoom_patchworld_20260722_165027.py",
+        "name": "tworoom_patchworld_20260722_165027.py",
+        "success_rate": 96.0,
+        "vs_gt_ratio": 0.96
+      },
+      "mujoco_gt": {
+        "elapsed_s": null,
+        "mean_goal_distance": 0.32408384156063286,
+        "reused_from": "artifacts/visualpatchworld/reports/gt90_sweep/tworoom_cem_fair_fixed_n50.json",
+        "success_rate": 100.0
+      }
+    }
+  },
+  "seed": 42,
+  "suite_elapsed_s": 478.6003167629242,
+  "table": [
+    {
+      "env": "tworoom",
+      "gt_success": 100.0,
+      "model_success": 96.0,
+      "protocol": "cem_fs5_h5_r5_300x10",
+      "vs_gt": 0.96
+    },
+    {
+      "env": "pusht",
+      "gt_success": 96.0,
+      "model_success": 22.0,
+      "protocol": "cem_ab5_h5_r5_600x15",
+      "vs_gt": 0.22916666666666666
+    },
+    {
+      "env": "cube",
+      "gt_success": 94.0,
+      "model_success": 86.0,
+      "protocol": "library_shoot_fs5_h1_r1_400_budget100",
+      "vs_gt": 0.9148936170212766
+    },
+    {
+      "env": "reacher",
+      "gt_success": 100.0,
+      "model_success": 72.0,
+      "protocol": "cem_fs1_h1_r1_finger_300x10",
+      "vs_gt": 0.72
+    }
+  ],
+  "timestamp": "2026-07-22T17:37:48"
+}

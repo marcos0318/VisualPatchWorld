@@ -1,0 +1,12 @@
+{
+  "env": "cube",
+  "planner": "expert_replay",
+  "success_rate": 100.0,
+  "mean_goal_distance": 0.03103568045084536,
+  "num_eval": 50,
+  "seed": 42,
+  "eval_budget": 50,
+  "elapsed_s": 4.093328237533569,
+  "episode_successes": null,
+  "tag": "expert_replay_budget50"
+}

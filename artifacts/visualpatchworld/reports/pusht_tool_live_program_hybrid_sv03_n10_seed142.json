@@ -1,0 +1,91 @@
+{
+  "action_high": 1.0,
+  "action_low": -1.0,
+  "cem_iters": 5,
+  "dataset": "$STABLEWM_HOME/datasets/pusht_expert_train.h5",
+  "elite_frac": 0.1,
+  "episode_successes": [
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "eval_budget": 50,
+  "failed_model_rollouts": 0,
+  "frameskip": 1,
+  "goal_offset_steps": 25,
+  "horizon": 5,
+  "mean_goal_distance": 5.414244274016887,
+  "mean_planner_model_distance": 2.785535162045207,
+  "model_action_repeat": 1,
+  "model_path": "artifacts/visualpatchworld/induced/program_induced_best.py",
+  "model_rollout_horizon": 5,
+  "num_eval": 10,
+  "num_samples": 150,
+  "observation_mode": "tool_live",
+  "planner": "cem_mpc",
+  "receding_horizon": 1,
+  "seed": 142,
+  "sim_verify_frac": 0.3,
+  "starts": [
+    {
+      "episode_index": 342,
+      "row_index": 37973,
+      "start_step": 23
+    },
+    {
+      "episode_index": 515,
+      "row_index": 54548,
+      "start_step": 61
+    },
+    {
+      "episode_index": 2098,
+      "row_index": 253415,
+      "start_step": 95
+    },
+    {
+      "episode_index": 3116,
+      "row_index": 378944,
+      "start_step": 68
+    },
+    {
+      "episode_index": 8481,
+      "row_index": 1053538,
+      "start_step": 20
+    },
+    {
+      "episode_index": 10137,
+      "row_index": 1240893,
+      "start_step": 94
+    },
+    {
+      "episode_index": 12105,
+      "row_index": 1513814,
+      "start_step": 99
+    },
+    {
+      "episode_index": 12204,
+      "row_index": 1527107,
+      "start_step": 93
+    },
+    {
+      "episode_index": 14234,
+      "row_index": 1796009,
+      "start_step": 96
+    },
+    {
+      "episode_index": 17806,
+      "row_index": 2241279,
+      "start_step": 157
+    }
+  ],
+  "success_rate": 90.0,
+  "tool_extraction_failures": 0,
+  "warm_start": true
+}

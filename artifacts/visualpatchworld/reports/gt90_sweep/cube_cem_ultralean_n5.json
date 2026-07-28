@@ -1,0 +1,30 @@
+{
+  "env": "cube",
+  "planner": "sim_cem",
+  "dataset": "$STABLEWM_HOME/datasets/ogbench/cube_single_expert.h5",
+  "num_eval": 5,
+  "success_rate": 60.0,
+  "mean_goal_distance": 0.03856261691853732,
+  "episode_successes": [
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0
+  ],
+  "failed_model_rollouts": 0,
+  "frameskip": 5,
+  "horizon": 5,
+  "receding_horizon": 5,
+  "num_samples": 100,
+  "cem_iters": 5,
+  "seed": 42,
+  "warm_start": true,
+  "success_metric": "default",
+  "sim_planner": "cem",
+  "rollout_batch_size": 25,
+  "env_recycle_every": 100,
+  "planning_render_mode": null,
+  "beam_width": null,
+  "goal_bias_frac": 0.0
+}

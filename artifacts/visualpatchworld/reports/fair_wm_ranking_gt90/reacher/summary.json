@@ -1,0 +1,32 @@
+{
+  "env": "reacher",
+  "frozen_protocol": {
+    "backend": "general",
+    "cem_iters": 10,
+    "frameskip": 1,
+    "gt_cache": "artifacts/visualpatchworld/reports/reacher_improve_sim_cem_finger_frame_nowarm_n50.json",
+    "horizon": 1,
+    "induced_planner": "cem",
+    "num_samples": 300,
+    "receding_horizon": 1,
+    "sim_planner": "cem",
+    "success_metric": "finger_match",
+    "tag": "cem_fs1_h1_r1_finger_300x10",
+    "warm_start": false
+  },
+  "gt_target": 90.0,
+  "model": {
+    "elapsed_s": 204.0451352596283,
+    "mean_goal_distance": 0.07469692459049271,
+    "model_path": "artifacts/visualpatchworld/lewm_reacher_program_results/generated_models/reacher_patchworld_20260722_165027.py",
+    "name": "reacher_patchworld_20260722_165027.py",
+    "success_rate": 72.0,
+    "vs_gt_ratio": 0.72
+  },
+  "mujoco_gt": {
+    "elapsed_s": null,
+    "mean_goal_distance": 0.033631413428028285,
+    "reused_from": "artifacts/visualpatchworld/reports/reacher_improve_sim_cem_finger_frame_nowarm_n50.json",
+    "success_rate": 100.0
+  }
+}

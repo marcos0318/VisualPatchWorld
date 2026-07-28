@@ -1,0 +1,11 @@
+{
+  "candidate_jsonl": "artifacts/visualpatchworld/lewm_tool_data/pusht_tool_traj_val.jsonl",
+  "frames_compared": 60,
+  "metrics": {
+    "angle_mae": 0.025650000000000023,
+    "object_precision": 1.0,
+    "object_recall": 1.0,
+    "position_rmse": 1.8047826845466743
+  },
+  "oracle_jsonl": "artifacts/visualpatchworld/lewm_fair_oracle/pusht_lewm_oracle_traj_val.jsonl"
+}

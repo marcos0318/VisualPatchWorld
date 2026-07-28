@@ -1,0 +1,32 @@
+{
+  "env": "tworoom",
+  "frozen_protocol": {
+    "backend": "general",
+    "cem_iters": 10,
+    "frameskip": 5,
+    "gt_cache": "artifacts/visualpatchworld/reports/gt90_sweep/tworoom_cem_fair_fixed_n50.json",
+    "horizon": 5,
+    "induced_planner": "cem",
+    "num_samples": 300,
+    "receding_horizon": 5,
+    "sim_planner": "cem",
+    "success_metric": "default",
+    "tag": "cem_fs5_h5_r5_300x10",
+    "warm_start": false
+  },
+  "gt_target": 90.0,
+  "model": {
+    "elapsed_s": 38.776201009750366,
+    "mean_goal_distance": 4.785377628409182,
+    "model_path": "artifacts/visualpatchworld/lewm_tworoom_program_results/generated_models/tworoom_patchworld_20260722_165027.py",
+    "name": "tworoom_patchworld_20260722_165027.py",
+    "success_rate": 96.0,
+    "vs_gt_ratio": 0.96
+  },
+  "mujoco_gt": {
+    "elapsed_s": null,
+    "mean_goal_distance": 0.32408384156063286,
+    "reused_from": "artifacts/visualpatchworld/reports/gt90_sweep/tworoom_cem_fair_fixed_n50.json",
+    "success_rate": 100.0
+  }
+}

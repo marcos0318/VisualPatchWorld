@@ -1,0 +1,178 @@
+{
+  "batches": "D",
+  "n_done": 20,
+  "n_fail": 0,
+  "n_jobs": 20,
+  "n_skip": 0,
+  "num_eval": 50,
+  "results": [
+    {
+      "elapsed_s": 14.76582145690918,
+      "error": null,
+      "label": "vpw_oracle_induced/cube/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_cube_n50_seed42.json",
+      "status": "done",
+      "success_rate": 86.0
+    },
+    {
+      "elapsed_s": 10.741583824157715,
+      "error": null,
+      "label": "vpw_oracle_induced/cube/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_cube_n50_seed43.json",
+      "status": "done",
+      "success_rate": 90.0
+    },
+    {
+      "elapsed_s": 18.79038429260254,
+      "error": null,
+      "label": "vpw_oracle_induced/cube/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_cube_n50_seed44.json",
+      "status": "done",
+      "success_rate": 70.0
+    },
+    {
+      "elapsed_s": 17.710521936416626,
+      "error": null,
+      "label": "vpw_oracle_induced/cube/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_cube_n50_seed45.json",
+      "status": "done",
+      "success_rate": 74.0
+    },
+    {
+      "elapsed_s": 15.712290525436401,
+      "error": null,
+      "label": "vpw_oracle_induced/cube/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_cube_n50_seed46.json",
+      "status": "done",
+      "success_rate": 78.0
+    },
+    {
+      "elapsed_s": 490.3966464996338,
+      "error": null,
+      "label": "vpw_oracle_induced/pusht/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_pusht_n50_seed42.json",
+      "status": "done",
+      "success_rate": 22.0
+    },
+    {
+      "elapsed_s": 467.88185834884644,
+      "error": null,
+      "label": "vpw_oracle_induced/pusht/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_pusht_n50_seed43.json",
+      "status": "done",
+      "success_rate": 14.000000000000002
+    },
+    {
+      "elapsed_s": 525.5280947685242,
+      "error": null,
+      "label": "vpw_oracle_induced/pusht/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_pusht_n50_seed44.json",
+      "status": "done",
+      "success_rate": 20.0
+    },
+    {
+      "elapsed_s": 471.70954513549805,
+      "error": null,
+      "label": "vpw_oracle_induced/pusht/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_pusht_n50_seed45.json",
+      "status": "done",
+      "success_rate": 20.0
+    },
+    {
+      "elapsed_s": 481.06018924713135,
+      "error": null,
+      "label": "vpw_oracle_induced/pusht/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_pusht_n50_seed46.json",
+      "status": "done",
+      "success_rate": 22.0
+    },
+    {
+      "elapsed_s": 220.0496757030487,
+      "error": null,
+      "label": "vpw_oracle_induced/reacher/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_reacher_n50_seed42.json",
+      "status": "done",
+      "success_rate": 72.0
+    },
+    {
+      "elapsed_s": 181.77640533447266,
+      "error": null,
+      "label": "vpw_oracle_induced/reacher/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_reacher_n50_seed43.json",
+      "status": "done",
+      "success_rate": 78.0
+    },
+    {
+      "elapsed_s": 176.09280228614807,
+      "error": null,
+      "label": "vpw_oracle_induced/reacher/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_reacher_n50_seed44.json",
+      "status": "done",
+      "success_rate": 80.0
+    },
+    {
+      "elapsed_s": 188.19719052314758,
+      "error": null,
+      "label": "vpw_oracle_induced/reacher/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_reacher_n50_seed45.json",
+      "status": "done",
+      "success_rate": 76.0
+    },
+    {
+      "elapsed_s": 201.18457102775574,
+      "error": null,
+      "label": "vpw_oracle_induced/reacher/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_reacher_n50_seed46.json",
+      "status": "done",
+      "success_rate": 74.0
+    },
+    {
+      "elapsed_s": 72.1452145576477,
+      "error": null,
+      "label": "vpw_oracle_induced/tworoom/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_tworoom_n50_seed42.json",
+      "status": "done",
+      "success_rate": 96.0
+    },
+    {
+      "elapsed_s": 71.70680403709412,
+      "error": null,
+      "label": "vpw_oracle_induced/tworoom/seed43",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_tworoom_n50_seed43.json",
+      "status": "done",
+      "success_rate": 94.0
+    },
+    {
+      "elapsed_s": 43.604215145111084,
+      "error": null,
+      "label": "vpw_oracle_induced/tworoom/seed44",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_tworoom_n50_seed44.json",
+      "status": "done",
+      "success_rate": 92.0
+    },
+    {
+      "elapsed_s": 42.03177499771118,
+      "error": null,
+      "label": "vpw_oracle_induced/tworoom/seed45",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_tworoom_n50_seed45.json",
+      "status": "done",
+      "success_rate": 98.0
+    },
+    {
+      "elapsed_s": 44.60805034637451,
+      "error": null,
+      "label": "vpw_oracle_induced/tworoom/seed46",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_induced_tworoom_n50_seed46.json",
+      "status": "done",
+      "success_rate": 94.0
+    }
+  ],
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
+  ],
+  "timestamp": "2026-07-22T18:41:16"
+}

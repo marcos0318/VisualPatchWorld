@@ -1,0 +1,56 @@
+{
+  "batches": "A,B,C",
+  "n_done": 0,
+  "n_fail": 0,
+  "n_jobs": 7,
+  "n_skip": 7,
+  "num_eval": 50,
+  "results": [
+    {
+      "label": "mujoco_cem/tworoom/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/mujoco_cem_tworoom_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 100.0
+    },
+    {
+      "label": "vpw_oracle_hybrid/tworoom/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_oracle_hybrid_tworoom_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 100.0
+    },
+    {
+      "label": "vpw_tool_hybrid/cube/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_cube_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 68.0
+    },
+    {
+      "label": "vpw_tool_hybrid/pusht/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_pusht_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 88.0
+    },
+    {
+      "label": "vpw_tool_hybrid/tworoom/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_hybrid_tworoom_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 100.0
+    },
+    {
+      "label": "vpw_tool_induced/cube/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_cube_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 40.0
+    },
+    {
+      "label": "vpw_tool_induced/pusht/seed42",
+      "out": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods/vpw_tool_induced_pusht_n50_seed42.json",
+      "status": "skip",
+      "success_rate": 22.0
+    }
+  ],
+  "seeds": [
+    42
+  ],
+  "timestamp": "2026-07-21T14:40:37"
+}

@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: VisualPatchWorld
+message: If you use this software, please cite it as below.
+type: software
+authors:
+  - family-names: Bai
+    given-names: Jiaxin
+  - name: HKBU KnowComp
+license: MIT
+repository-code: https://github.com/HKBU-KnowComp/VisualPatchWorld
+abstract: >
+  VisualPatchWorld learns structure-aware executable programmatic world models
+  from expert trajectories and evaluates them with fair frozen planners on
+  LeWM environments (Two-room, Reacher, PushT, Cube).
+keywords:
+  - world models
+  - program induction
+  - planning
+  - visual abstraction

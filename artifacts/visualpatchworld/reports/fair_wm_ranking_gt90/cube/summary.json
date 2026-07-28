@@ -1,0 +1,33 @@
+{
+  "env": "cube",
+  "frozen_protocol": {
+    "backend": "general",
+    "cem_iters": 1,
+    "eval_budget": 100,
+    "frameskip": 5,
+    "gt_cache": "artifacts/visualpatchworld/reports/gt90_sweep/cube_library_shoot_budget100_n50.json",
+    "horizon": 1,
+    "induced_planner": "library_shoot",
+    "num_samples": 400,
+    "receding_horizon": 1,
+    "sim_planner": "library_shoot",
+    "success_metric": "default",
+    "tag": "library_shoot_fs5_h1_r1_400_budget100",
+    "warm_start": false
+  },
+  "gt_target": 90.0,
+  "model": {
+    "elapsed_s": 13.330069065093994,
+    "mean_goal_distance": 0.04049908648278201,
+    "model_path": "artifacts/visualpatchworld/lewm_cube_program_results/generated_models/cube_patchworld_20260722_165027.py",
+    "name": "cube_patchworld_20260722_165027.py",
+    "success_rate": 86.0,
+    "vs_gt_ratio": 0.9148936170212766
+  },
+  "mujoco_gt": {
+    "elapsed_s": 1658.6256062984467,
+    "mean_goal_distance": 0.0168954939721136,
+    "reused_from": "artifacts/visualpatchworld/reports/gt90_sweep/cube_library_shoot_budget100_n50.json",
+    "success_rate": 94.0
+  }
+}

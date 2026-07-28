@@ -1,0 +1,66 @@
+# Runtime logs / local env
+logs/
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Default: ignore experiment artifacts except paper releases
+artifacts/*
+!artifacts/visualpatchworld/
+artifacts/visualpatchworld/*
+!artifacts/visualpatchworld/reports/
+!artifacts/visualpatchworld/models/
+!artifacts/visualpatchworld/models/**
+
+# In reports/, ignore everything unless explicitly allow-listed
+artifacts/visualpatchworld/reports/*
+artifacts/visualpatchworld/reports/*.lock
+artifacts/visualpatchworld/reports/*.log
+artifacts/visualpatchworld/reports/*.jsonl
+
+# Paper headline n=50 reports (seed 42 point estimates)
+!artifacts/visualpatchworld/reports/cross_env_*_n50.json
+!artifacts/visualpatchworld/reports/pusht_tool_live*_n50.json
+!artifacts/visualpatchworld/reports/pusht_oracle_*_n50.json
+!artifacts/visualpatchworld/reports/cross_env_*_tool_live_n50.json
+!artifacts/visualpatchworld/reports/cross_env_cube_sim_cem_n50.json
+!artifacts/visualpatchworld/reports/pixel_fair_lewm_comparison_n50.json
+!artifacts/visualpatchworld/reports/pusht_tool_vs_oracle_val.json
+!artifacts/visualpatchworld/reports/hybrid_cost_table_seed42.json
+
+# Multi-seed Wilson/binomial CI reports
+!artifacts/visualpatchworld/reports/*_seed*.json
+
+# Paper table/ablation report trees
+!artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/
+!artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/**
+!artifacts/visualpatchworld/reports/gt90_sweep/
+!artifacts/visualpatchworld/reports/gt90_sweep/**
+!artifacts/visualpatchworld/reports/noprobe_ablation/
+!artifacts/visualpatchworld/reports/noprobe_ablation/**
+artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods_smoke/
+
+# Paper-released induced models (layout expected by eval scripts)
+!artifacts/visualpatchworld/lewm_*_program_results/
+!artifacts/visualpatchworld/lewm_*_program_results/**
+!artifacts/visualpatchworld/lewm_pusht_noprobe_pd_results/
+!artifacts/visualpatchworld/lewm_pusht_noprobe_pd_results/**
+!artifacts/visualpatchworld/lewm_pusht_wrong_scaffold_results/
+!artifacts/visualpatchworld/lewm_pusht_wrong_scaffold_results/**
+!artifacts/visualpatchworld/lewm_reacher_noprobe_joint_results/
+!artifacts/visualpatchworld/lewm_reacher_noprobe_joint_results/**
+!artifacts/visualpatchworld/lewm_reacher_wrong_linear_results/
+!artifacts/visualpatchworld/lewm_reacher_wrong_linear_results/**
+!artifacts/visualpatchworld/code_baselines/
+!artifacts/visualpatchworld/code_baselines/**

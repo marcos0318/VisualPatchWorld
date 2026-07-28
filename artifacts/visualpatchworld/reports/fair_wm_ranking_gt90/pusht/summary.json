@@ -1,0 +1,30 @@
+{
+  "env": "pusht",
+  "frozen_protocol": {
+    "action_block": 5,
+    "backend": "pusht_parallel",
+    "cem_iters": 15,
+    "frameskip": 5,
+    "gt_cache": "artifacts/visualpatchworld/reports/gt90_sweep/pusht_cem_ab5_600x15_n50_proven.json",
+    "horizon": 5,
+    "num_samples": 600,
+    "receding_horizon": 5,
+    "tag": "cem_ab5_h5_r5_600x15",
+    "warm_start": true
+  },
+  "gt_target": 90.0,
+  "model": {
+    "elapsed_s": 475.6439530849457,
+    "mean_goal_distance": 46.463022324252904,
+    "model_path": "artifacts/visualpatchworld/lewm_pusht_program_results/generated_models/pusht_patchworld_program_induced_best.py",
+    "name": "pusht_patchworld_program_induced_best.py",
+    "success_rate": 22.0,
+    "vs_gt_ratio": 0.22916666666666666
+  },
+  "mujoco_gt": {
+    "elapsed_s": null,
+    "mean_goal_distance": 4.279513711986236,
+    "reused_from": "artifacts/visualpatchworld/reports/gt90_sweep/pusht_cem_ab5_600x15_n50_proven.json",
+    "success_rate": 96.0
+  }
+}

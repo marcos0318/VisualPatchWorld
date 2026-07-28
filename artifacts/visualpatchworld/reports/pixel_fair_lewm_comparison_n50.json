@@ -1,0 +1,81 @@
+{
+  "interpretation": [
+    "Compare VPW tool_live rows to lewm_reference for the pixel-fair claim.",
+    "Compare tool_live vs oracle rows to isolate perception vs dynamics/planner gaps.",
+    "Cross-env pixel-fair rows require env-specific tool extractors (tworoom/cube/reacher)."
+  ],
+  "lewm_reference": {
+    "method": "RGB pixels -> latent JEPA -> CEM",
+    "note": "Local eval 2026-06-22; paper reports 96. CEM 300x30, h=5, r=5, action_block=5.",
+    "pusht_success_rate": 94
+  },
+  "shared_protocol": {
+    "dataset": "pusht_expert_train.h5",
+    "eval_budget": 50,
+    "goal_offset_steps": 25,
+    "num_eval": 50,
+    "seed": 42,
+    "success_criterion": "LeWM PushT goal overlap"
+  },
+  "timestamp": "2026-06-23T03:57:11.455148",
+  "vpw_oracle_upper_bound": [
+    {
+      "cem_iters": 30,
+      "frameskip": 5,
+      "horizon": 1,
+      "label": "oracle_scaffold_macro",
+      "mean_goal_distance": 62.82268707953651,
+      "num_samples": 300,
+      "observation_mode": "oracle",
+      "planner": "cem_mpc",
+      "receding_horizon": 1,
+      "report": "artifacts/visualpatchworld/reports/pusht_oracle_scaffold_macro_n50.json",
+      "success_rate": 12.0,
+      "tool_extraction_failures": 0
+    },
+    {
+      "cem_iters": 30,
+      "frameskip": 1,
+      "horizon": 5,
+      "label": "oracle_program_frame",
+      "mean_goal_distance": 19.75104936228977,
+      "num_samples": 300,
+      "observation_mode": "oracle",
+      "planner": "cem_mpc",
+      "receding_horizon": 1,
+      "report": "artifacts/visualpatchworld/reports/pusht_oracle_program_frame_n50.json",
+      "success_rate": 54.0,
+      "tool_extraction_failures": 0
+    }
+  ],
+  "vpw_pixel_fair": [
+    {
+      "cem_iters": 30,
+      "frameskip": 5,
+      "horizon": 1,
+      "label": "tool_live_scaffold_macro",
+      "mean_goal_distance": 62.900938469276205,
+      "num_samples": 300,
+      "observation_mode": "tool_live",
+      "planner": "cem_mpc",
+      "receding_horizon": 1,
+      "report": "artifacts/visualpatchworld/reports/pusht_tool_live_scaffold_macro_n50.json",
+      "success_rate": 14.0,
+      "tool_extraction_failures": 0
+    },
+    {
+      "cem_iters": 30,
+      "frameskip": 1,
+      "horizon": 5,
+      "label": "tool_live_program_frame",
+      "mean_goal_distance": 71.32605116484477,
+      "num_samples": 300,
+      "observation_mode": "tool_live",
+      "planner": "cem_mpc",
+      "receding_horizon": 1,
+      "report": "artifacts/visualpatchworld/reports/pusht_tool_live_program_n50.json",
+      "success_rate": 36.0,
+      "tool_extraction_failures": 51
+    }
+  ]
+}
