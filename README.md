@@ -5,8 +5,7 @@ Structure-aware **executable** world-model induction for planner-usable code.
 VisualPatchWorld (VPW) learns programmatic dynamics from LeWM expert trajectories
 on four environments (**Two-room**, **Reacher**, **PushT**, **Cube**), then evaluates
 them with fair frozen CEM / library-shoot planners. This repository is the public
-code and results release accompanying the VisualPatchWorld paper (KDD 2027 author
-draft).
+code and results release accompanying the VisualPatchWorld paper.
 
 **Authors / lab:** Jiaxin Bai, [HKBU KnowComp](https://github.com/HKBU-KnowComp)
 
