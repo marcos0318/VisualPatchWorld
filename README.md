@@ -155,8 +155,21 @@ python scripts/visualpatchworld/induce_world_model.py \
 
 ## Citation
 
-If you use this code or results, please cite the VisualPatchWorld paper and this
-repository (see [`CITATION.cff`](CITATION.cff)).
+If you use this code or results, please cite:
+
+```bibtex
+@misc{bai2026visualpatchworldcodeworldmodels,
+      title={VisualPatchWorld: Code World Models as Latent Structured Representations for Planning},
+      author={Jiaxin Bai and Jiaxuan Xiong},
+      year={2026},
+      eprint={2607.25236},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2607.25236},
+}
+```
+
+Paper: [https://arxiv.org/abs/2607.25236](https://arxiv.org/abs/2607.25236)
 
 ## License
 
