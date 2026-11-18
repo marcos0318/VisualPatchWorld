@@ -10,6 +10,8 @@ ENVS=("${@:-tworoom cube reacher pusht}")
 PY="${PYTHON:-/home/comp/baijiaxin/miniconda3/envs/lewm/bin/python}"
 DATA="${DATA_DIR:-/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data}"
 export PYTHONPATH="${ROOT}:${ROOT}/src:${PYTHONPATH:-}"
+# Generated programs may contain non-ASCII comments; the host locale is ISO-8859-1.
+export PYTHONUTF8=1
 export PATCHWORLD_LLM_REQUEST_TIMEOUT_S="${PATCHWORLD_LLM_REQUEST_TIMEOUT_S:-600}"
 export PATCHWORLD_LLM_MAX_RETRIES="${PATCHWORLD_LLM_MAX_RETRIES:-12}"
 export PATCHWORLD_LLM_CACHE="${PATCHWORLD_LLM_CACHE:-1}"
