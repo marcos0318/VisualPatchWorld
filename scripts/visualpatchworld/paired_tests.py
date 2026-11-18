@@ -29,9 +29,11 @@ def ours(run: str, selection: str):
         return out
     aliases = json.loads((d / "aliases.json").read_text())
     for s in SEEDS:
-        for fname, sels in aliases.items():
-            if selection in sels and fname.endswith(f"seed{s}.json") and (d / fname).is_file():
+        names = [f"{selection}_seed{s}.json"] + [f for f, sels in aliases.items() if selection in sels and f.endswith(f"seed{s}.json")]
+        for fname in names:
+            if (d / fname).is_file():
                 out[s] = next(iter(json.loads((d / fname).read_text()).values()))["episode_successes"]
+                break
     return out
 
 
