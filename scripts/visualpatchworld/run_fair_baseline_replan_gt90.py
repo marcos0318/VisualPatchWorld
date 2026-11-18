@@ -289,11 +289,14 @@ def parse_args() -> argparse.Namespace:
         "--output_dir",
         default=str(ROOT / "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/all_methods"),
     )
+    p.add_argument("--baseline_root", default=str(BASELINE_ROOT))
     return p.parse_args()
 
 
 def main() -> None:
+    global BASELINE_ROOT
     args = parse_args()
+    BASELINE_ROOT = Path(args.baseline_root)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     if args.methods.strip().lower() == "all":
