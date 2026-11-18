@@ -35,7 +35,7 @@ def _vpw_coerce_belief_numerics(belief):
             for key in numeric_obj_keys:
                 if key in obj:
                     obj[key] = _vpw_as_float(obj[key])
-    for rel in b.get("relations", {}).values():
+    for rel in _VPW_RELATIONS_ITER:
         if isinstance(rel, dict) and "value" in rel:
             value = rel["value"]
             if not isinstance(value, str):
@@ -45,6 +45,15 @@ def _vpw_coerce_belief_numerics(belief):
         step["value"] = int(_vpw_as_float(step["value"]))
     return b
 '''.strip()
+
+# Generated models may store relations as a dict or as a list of raw strings.
+_LEGACY_RELATIONS_ITER = 'b.get("relations", {}).values()'
+_VPW_RELATIONS_ITER = (
+    '(b.get("relations").values() if isinstance(b.get("relations"), dict) else [])'
+)
+PUSHT_NUMERIC_COERCION_HELPERS = PUSHT_NUMERIC_COERCION_HELPERS.replace(
+    "_VPW_RELATIONS_ITER", _VPW_RELATIONS_ITER
+)
 
 
 LEWM_SCENE_GRAPH_GUIDANCE = """
@@ -92,7 +101,9 @@ def _looks_like_pusht_model_code(code: str) -> bool:
 
 def sanitize_pusht_model_code(code: str) -> str:
     """Inject numeric coercion helpers into generated PushT world models."""
-    if not code or "_vpw_coerce_belief_numerics" in code:
+    if code and "_vpw_coerce_belief_numerics" in code:
+        return code.replace(f"for rel in {_LEGACY_RELATIONS_ITER}:", f"for rel in {_VPW_RELATIONS_ITER}:")
+    if not code:
         return code
     if not _looks_like_pusht_model_code(code):
         return code

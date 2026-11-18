@@ -15,10 +15,11 @@ for m in worldcoder gif_mcts poeworld pomdp_coder cwm_game tracepatch; do
       [ -f "$O/${m}_${e}_n50_seed${s}.json" ] && continue
       while [ "$(jobs -rp | wc -l)" -ge "$P" ]; do sleep 5; done
       echo "[$(date -Iseconds)] START $m/$e seed=$s"
-      "$PY" scripts/visualpatchworld/run_fair_baseline_replan_gt90.py --methods "$m" --envs "$e" --seed "$s" \
-        --baseline_root "$B" --output_dir "$O" > "$O/${m}_${e}_seed${s}.log" 2>&1 &
+      ( nohup "$PY" scripts/visualpatchworld/run_fair_baseline_replan_gt90.py --methods "$m" --envs "$e" --seed "$s" \
+          --baseline_root "$B" --output_dir "$O" > "$O/${m}_${e}_seed${s}.log" 2>&1
+        echo "[$(date -Iseconds)] EXIT $m/$e seed=$s rc=$?" ) &
     done
   done
 done
-wait
+while [ "$(jobs -rp | wc -l)" -gt 0 ]; do sleep 10; done
 echo "[$(date -Iseconds)] ALL DONE"

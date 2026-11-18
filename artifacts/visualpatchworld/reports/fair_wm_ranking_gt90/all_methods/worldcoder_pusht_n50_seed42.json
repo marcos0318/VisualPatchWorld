@@ -3,7 +3,7 @@
   "beam_width": null,
   "cem_iters": 15,
   "dynamics": "vpw",
-  "elapsed_s": 14.874208450317383,
+  "elapsed_s": 156.29480814933777,
   "elite_frac": 0.1,
   "env": "pusht",
   "episode_successes": [
@@ -59,11 +59,11 @@
     0.0
   ],
   "eval_budget": 50,
-  "failed_model_rollouts": 900000,
+  "failed_model_rollouts": 0,
   "frameskip": 5,
   "horizon": 5,
-  "mean_goal_distance": 139.79521276672645,
-  "mean_planner_model_distance": null,
+  "mean_goal_distance": 336.28872437313424,
+  "mean_planner_model_distance": 556.9934894818822,
   "method": "worldcoder",
   "model_path": "artifacts/visualpatchworld/code_baselines/worldcoder/pusht/generated_models/pusht_worldcoder_20260626_230356.py",
   "model_rollout_horizon": 5,
@@ -330,6 +330,6 @@
   ],
   "success": true,
   "success_rate": 0.0,
-  "suite_elapsed_s": 18.12389612197876,
+  "suite_elapsed_s": 159.01082587242126,
   "tag": "cem_ab5_h5_r5_600x15"
 }
