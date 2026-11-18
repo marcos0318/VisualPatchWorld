@@ -82,6 +82,7 @@ def build_prompt(
     seed: int = 0,
     example_meta: Optional[Mapping[str, Any]] = None,
     prompt_version: str = "scene_graph",
+    bank_text: str = "",
 ) -> str:
     """``schema``: keys, ranges and transitions only. ``scene_graph`` additionally
     shows object categories and one raw scene-graph observation, i.e. the same
@@ -112,6 +113,7 @@ Static scene metadata available to `meta` (example): {meta}
 {scene}
 Example transitions:
 {examples}
+{bank_text}
 
 Task: propose {num_hypotheses} hypotheses for the transition law. The hypotheses must differ
 in QUALITATIVE STRUCTURE (which variables are affected, linear vs nonlinear response,
@@ -210,12 +212,14 @@ def propose_family(
     seed: int = 0,
     temperature: float = 0.7,
     prompt_version: str = "scene_graph",
+    bank_text: str = "",
     log: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Candidate]:
     """Query the LLM once for a family, then validate (and repair once) each program."""
     meta = next((t.meta for ep in episodes for t in ep.transitions if t.meta), {})
     prompt = build_prompt(
-        episodes, num_hypotheses=num_hypotheses, seed=seed, example_meta=meta, prompt_version=prompt_version
+        episodes, num_hypotheses=num_hypotheses, seed=seed, example_meta=meta,
+        prompt_version=prompt_version, bank_text=bank_text,
     )
     reply = chat(prompt, model=model, temperature=temperature)
     if log is not None:

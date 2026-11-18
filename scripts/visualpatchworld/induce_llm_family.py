@@ -23,6 +23,7 @@ for p in (str(ROOT), str(ROOT / "src")):
 os.environ.setdefault("MUJOCO_GL", "egl")
 os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
+from visualpatchworld.llm_family.bank import experience_entries, load_bank, render_bank  # noqa: E402
 from visualpatchworld.llm_family.fit import fit_candidate  # noqa: E402
 from visualpatchworld.llm_family.propose import propose_family  # noqa: E402
 from visualpatchworld.llm_family.render import render_model  # noqa: E402
@@ -50,6 +51,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num_probes", type=int, default=5)
     p.add_argument("--probe_len", type=int, default=3)
     p.add_argument("--no_active", action="store_true")
+    p.add_argument("--bank_file", default=None, help="general mechanism bank JSON (from build_mechanism_bank.py)")
+    p.add_argument("--experience_runs", nargs="*", default=[],
+                   help="run dirs of OTHER environments whose selected programs join the bank")
+    p.add_argument("--bank_no_snippets", action="store_true")
     return p.parse_args()
 
 
@@ -66,11 +71,18 @@ def main() -> None:
     schema = schema_summary(train)
     print(f"[llm-family] {args.env}: {schema['num_episodes']} train eps, {schema['num_transitions']} transitions, stride={stride}, keys={keys}", flush=True)
 
+    bank = load_bank(Path(args.bank_file)) if args.bank_file else []
+    experience = experience_entries([Path(d) for d in args.experience_runs])
+    if any(e.source == f"experience:{args.env}" for e in experience):
+        raise SystemExit("experience runs must come from other environments")
+    bank_text = render_bank(bank + experience, with_snippet=not args.bank_no_snippets)
+    print(f"[llm-family] bank: {len(bank)} general + {len(experience)} experience entries", flush=True)
+
     t0 = time.time()
     llm_log: list = []
     family = propose_family(
         train, num_hypotheses=args.num_hypotheses, model=args.model, seed=args.seed,
-        prompt_version=args.prompt_version, log=llm_log,
+        prompt_version=args.prompt_version, bank_text=bank_text, log=llm_log,
     )
     (out / "llm_log.json").write_text(json.dumps(llm_log, indent=2), encoding="utf-8")
     print(f"[llm-family] {len(family)} valid candidates: {[c.name for c in family]}", flush=True)

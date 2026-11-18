@@ -1,0 +1,32 @@
+#!/usr/bin/env python
+"""Build a general mechanism bank with an LLM, without access to any evaluation environment."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+
+from visualpatchworld.llm_family.bank import build_general_bank, save_bank  # noqa: E402
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--model", required=True)
+    p.add_argument("--out", required=True)
+    args = p.parse_args()
+    log: list = []
+    entries = build_general_bank(args.model, log=log)
+    save_bank(entries, Path(args.out))
+    Path(args.out).with_suffix(".log.json").write_text(json.dumps(log, indent=2), encoding="utf-8")
+    print(f"[bank] {len(entries)} entries -> {args.out}")
+    for e in entries:
+        print(f"  {e.topic[:28]:28s} {e.name}")
+
+
+if __name__ == "__main__":
+    main()
