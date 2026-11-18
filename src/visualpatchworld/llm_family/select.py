@@ -63,7 +63,11 @@ def select_active(
     """Run the ``num_probes`` probes with the largest predicted disagreement."""
     rng = np.random.default_rng(seed)
     names = list(cands)
-    starts = [t for ep in probe_pool for t in ep.transitions]
+    starts = [t for ep in probe_pool for t in ep.transitions if "raw_index" in t.source]
+    # Keys the data never changes (e.g. a static goal) carry no signal about the
+    # transition law, and the simulator may re-sample them on reset.
+    moving = {k for ep in probe_pool for t in ep.transitions for k in keys if abs(t.next_state.get(k, 0.0) - t.state.get(k, 0.0)) > 1e-9}
+    keys = [k for k in keys if k in moving] or list(keys)
     low, high = np.asarray(action_low, float), np.asarray(action_high, float)
     t0 = time.time()
 
@@ -86,10 +90,12 @@ def select_active(
     errors = {n: [] for n in names}
     log = []
     for disagreement, t, actions, preds in proposals[:num_probes]:
-        observed = sim.rollout(t.state, actions)
-        row = {"disagreement": disagreement, "actions": actions, "start": t.state, "errors": {}}
+        observed = sim.rollout(t.source, actions)
+        start = {**t.state, **observed[0]}
+        row = {"disagreement": disagreement, "actions": actions, "start": start, "errors": {}}
         for n in names:
-            e = _traj_dist(preds[n], observed, keys, scales) if preds[n] is not None else float("inf")
+            pred = _predict(cands[n], fits[n].params, start, actions, t.meta)
+            e = _traj_dist(pred, observed, keys, scales) if pred is not None else float("inf")
             errors[n].append(e)
             row["errors"][n] = e
         log.append(row)
@@ -97,6 +103,7 @@ def select_active(
     winner = min(mean_err, key=mean_err.get)
     return winner, {
         "criterion": "mean_probe_rollout_nrmse",
+        "scored_keys": keys,
         "scores": mean_err,
         "probes": log,
         "sim_resets": getattr(sim, "resets", None),

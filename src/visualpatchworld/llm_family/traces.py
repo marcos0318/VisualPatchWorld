@@ -12,7 +12,7 @@ import numpy as np
 
 _OBJ_RE = re.compile(r"^-\s*(\w+):(\w+)\s*(.*)$")
 _KV_RE = re.compile(r"(\w+)=(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)")
-_STATE_FIELDS = ("x", "y", "z", "angle")
+_STATE_FIELDS = ("x", "y", "z", "angle", "vx", "vy")
 
 
 def parse_graph_text(text: str) -> Dict[str, Any]:
@@ -44,17 +44,29 @@ def parse_graph_text(text: str) -> Dict[str, Any]:
     return {"state": state, "categories": categories, "metadata": metadata}
 
 
+_INDEX_KEYS = ("episode_index", "raw_index", "next_raw_index")
+
+
 @dataclass
 class Transition:
     state: Dict[str, float]
     action: List[float]
     next_state: Dict[str, float]
     meta: Dict[str, Any] = field(default_factory=dict)
+    source: Dict[str, int] = field(default_factory=dict)
+
+    @property
+    def stride(self) -> int:
+        if "raw_index" in self.source and "next_raw_index" in self.source:
+            return max(1, self.source["next_raw_index"] - self.source["raw_index"])
+        return 1
 
 
 @dataclass
 class Episode:
     transitions: List[Transition]
+    first_observation: str = ""
+    categories: Dict[str, str] = field(default_factory=dict)
 
     def __len__(self) -> int:
         return len(self.transitions)
@@ -79,19 +91,25 @@ def load_episodes(path: Path, *, max_episodes: Optional[int] = None) -> List[Epi
                 continue
             record = json.loads(line)
             items: List[Transition] = []
-            for t in record.get("transitions", []):
+            raw = record.get("transitions", [])
+            first_text = raw[0]["observation"] if raw else ""
+            for t in raw:
                 cur = parse_graph_text(t["observation"])
                 nxt = parse_graph_text(t["next_observation"])
+                md = t.get("metadata") or {}
+                source = {k: int(md[k]) for k in _INDEX_KEYS if k in md}
+                meta = {k: v for k, v in cur["metadata"].items() if k not in _INDEX_KEYS}
                 items.append(
                     Transition(
                         state=cur["state"],
                         action=_action_values(t),
                         next_state=nxt["state"],
-                        meta=cur["metadata"],
+                        meta=meta,
+                        source=source,
                     )
                 )
             if items:
-                episodes.append(Episode(items))
+                episodes.append(Episode(items, first_text, parse_graph_text(first_text)["categories"]))
             if max_episodes and len(episodes) >= max_episodes:
                 break
     return episodes

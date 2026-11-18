@@ -142,6 +142,9 @@ class LLMFamilyWorldModel(BaseWorldModel):
                 parts.append(f"z={{float(obj.get('z', 0.0)):.3f}}")
             if "angle" in obj:
                 parts.append(f"angle={{float(obj.get('angle', 0.0)):.3f}}")
+            for fld in ("vx", "vy"):
+                if fld in obj:
+                    parts.append(f"{{fld}}={{float(obj.get(fld, 0.0)):.3f}}")
             parts.append(f"conf={{float(obj.get('conf', 1.0)):.3f}}")
             lines.append(" ".join(parts))
         lines.append("Relations:")

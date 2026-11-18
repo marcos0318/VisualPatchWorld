@@ -34,10 +34,15 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--env", required=True)
     p.add_argument("--data_dir", default=str(ROOT.parent / "le-wm-code/artifacts/visualpatchworld/data"))
+    p.add_argument("--train_file", default=None, help="override <data_dir>/<env>_oracle_traj_train.jsonl")
+    p.add_argument("--val_file", default=None, help="override <data_dir>/<env>_oracle_traj_val.jsonl")
+    p.add_argument("--max_train_episodes", type=int, default=None)
+    p.add_argument("--max_val_episodes", type=int, default=None)
     p.add_argument("--output_dir", required=True)
     p.add_argument("--num_hypotheses", type=int, default=6)
     p.add_argument("--model", default=None, help="LLM id (default $PATCHWORLD_MODEL)")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--prompt_version", default="scene_graph", choices=("schema", "scene_graph"))
     p.add_argument("--objectives", default="one_step,multi_step")
     p.add_argument("--rollout_k", type=int, default=5)
     p.add_argument("--restarts", type=int, default=4)
@@ -53,16 +58,20 @@ def main() -> None:
     out = Path(args.output_dir)
     (out / "models").mkdir(parents=True, exist_ok=True)
     data = Path(args.data_dir)
-    train = load_episodes(data / f"{args.env}_oracle_traj_train.jsonl")
-    val = load_episodes(data / f"{args.env}_oracle_traj_val.jsonl")
+    train = load_episodes(Path(args.train_file or data / f"{args.env}_oracle_traj_train.jsonl"), max_episodes=args.max_train_episodes)
+    val = load_episodes(Path(args.val_file or data / f"{args.env}_oracle_traj_val.jsonl"), max_episodes=args.max_val_episodes)
+    stride = train[0].transitions[0].stride
     keys = state_keys(train)
     scales = state_scales(train, keys)
     schema = schema_summary(train)
-    print(f"[llm-family] {args.env}: {schema['num_episodes']} train eps, {schema['num_transitions']} transitions, keys={keys}", flush=True)
+    print(f"[llm-family] {args.env}: {schema['num_episodes']} train eps, {schema['num_transitions']} transitions, stride={stride}, keys={keys}", flush=True)
 
     t0 = time.time()
     llm_log: list = []
-    family = propose_family(train, num_hypotheses=args.num_hypotheses, model=args.model, seed=args.seed, log=llm_log)
+    family = propose_family(
+        train, num_hypotheses=args.num_hypotheses, model=args.model, seed=args.seed,
+        prompt_version=args.prompt_version, log=llm_log,
+    )
     (out / "llm_log.json").write_text(json.dumps(llm_log, indent=2), encoding="utf-8")
     print(f"[llm-family] {len(family)} valid candidates: {[c.name for c in family]}", flush=True)
     if not family:
@@ -83,7 +92,7 @@ def main() -> None:
     if not args.no_active:
         from visualpatchworld.llm_family.sim_adapter import BlackBoxEnv
 
-        sim = BlackBoxEnv(args.env)
+        sim = BlackBoxEnv(args.env, frames_per_step=stride)
     try:
         for objective in [o.strip() for o in args.objectives.split(",") if o.strip()]:
             fits = {}

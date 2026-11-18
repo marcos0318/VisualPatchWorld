@@ -71,6 +71,9 @@ def _example_lines(episodes: Sequence[Episode], n: int, seed: int) -> List[str]:
     return lines
 
 
+PROMPT_VERSIONS = ("schema", "scene_graph")
+
+
 def build_prompt(
     episodes: Sequence[Episode],
     *,
@@ -78,11 +81,23 @@ def build_prompt(
     num_examples: int = 16,
     seed: int = 0,
     example_meta: Optional[Mapping[str, Any]] = None,
+    prompt_version: str = "scene_graph",
 ) -> str:
+    """``schema``: keys, ranges and transitions only. ``scene_graph`` additionally
+    shows object categories and one raw scene-graph observation, i.e. the same
+    observation text the single-program code baselines receive."""
     schema = schema_summary(episodes)
     ranges = "\n".join(
         f"  {k}: [{v['min']:.3f}, {v['max']:.3f}]" for k, v in schema["state_ranges"].items()
     )
+    scene = ""
+    if prompt_version == "scene_graph" and episodes:
+        cats = ", ".join(f"{oid} (category: {cat})" for oid, cat in sorted(episodes[0].categories.items()))
+        scene = (
+            f"\nObjects in the scene: {cats}. Field names x/y/z/angle/vx/vy are generic slots;\n"
+            "infer from the categories and data what each slot physically represents.\n"
+            f"One raw observation as recorded:\n{episodes[0].first_observation}\n"
+        )
     examples = "\n".join(f"- {line}" for line in _example_lines(episodes, num_examples, seed))
     meta = json.dumps(example_meta or {}, sort_keys=True)
     return f"""You are building an executable world model (a simulator written as code) for an
@@ -94,7 +109,7 @@ State variables (object.field) and observed ranges:
 Action: {schema['action_dim']} floats, observed range {schema['action_min']} to {schema['action_max']}.
 Each transition is one control macro-step (the action may be held for several frames).
 Static scene metadata available to `meta` (example): {meta}
-
+{scene}
 Example transitions:
 {examples}
 
@@ -194,12 +209,14 @@ def propose_family(
     model: Optional[str] = None,
     seed: int = 0,
     temperature: float = 0.7,
+    prompt_version: str = "scene_graph",
     log: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Candidate]:
     """Query the LLM once for a family, then validate (and repair once) each program."""
     meta = next((t.meta for ep in episodes for t in ep.transitions if t.meta), {})
-    meta = {k: v for k, v in meta.items() if k not in {"episode_index", "raw_index", "next_raw_index"}}
-    prompt = build_prompt(episodes, num_hypotheses=num_hypotheses, seed=seed, example_meta=meta)
+    prompt = build_prompt(
+        episodes, num_hypotheses=num_hypotheses, seed=seed, example_meta=meta, prompt_version=prompt_version
+    )
     reply = chat(prompt, model=model, temperature=temperature)
     if log is not None:
         log.append({"kind": "propose", "prompt": prompt, **reply})
