@@ -43,10 +43,12 @@ MODEL_SETS: Dict[str, Dict[str, Path]] = {
     "null": {e: ART / f"null_models/{e}_null.py" for e in ENVS},
     "qwen35_tooltrace": {e: ART / f"llm_family/tooltrace_{e}_qwen35_s0/models/offline_multi_step.py" for e in ENVS},
     "contact": {"pusht": ART / "contact_models/pusht_contact_textbook.py"},
+    "sysid": {"pusht": ART / "sysid_models/pusht_sysid.py"},
     **{f"contact_{a}": {"pusht": ART / f"contact_models/pusht_contact_{a}.py"}
        for a in ("one_substep", "no_rotation", "pivot_at_origin", "square_block")},
     **{f"{tag}_{m}": {"pusht": ART / f"llm_family/{tag}_pusht_{m}/models/offline_multi_step.py"}
-       for tag in ("geom", "geombank", "geomkit", "kit", "refine_geomkit", "refine_geom", "refine_v1")
+       for tag in ("geom", "geombank", "geomkit", "kit", "refine_geomkit", "refine_geom", "refine_v1",
+                   "sysidskill", "sysidlib", "refine_sysidskill", "refine_sysidlib", "sysidfam")
        for m in ("qwen35_s0", "qwen35_s1", "qwen35_s2", "coder_s0", "gptoss_s0")},
 }
 MODES = {

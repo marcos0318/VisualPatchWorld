@@ -1,0 +1,142 @@
+{
+  "shape": {
+    "contact_shape": {
+      "type": "union_of_boxes_in_body_frame",
+      "identified_from": "state traces (contact analysis)",
+      "pusher": "agent",
+      "note": "boxes are the body shape grown by the pusher radius: the pusher CENTRE touches the body when it reaches a box boundary",
+      "pose_convention": "a body-frame point (u, v) is at world (block.x + u*cos(block.angle) - v*sin(block.angle), block.y + u*sin(block.angle) + v*cos(block.angle))",
+      "boxes_u_min_u_max_v_min_v_max": [
+        [
+          -75.8,
+          75.2,
+          -14.9,
+          44.7
+        ],
+        [
+          -29.7,
+          30.0,
+          14.9,
+          134.9
+        ]
+      ],
+      "body": "block"
+    }
+  },
+  "shape_fit": {
+    "pusher": "agent",
+    "body": "block",
+    "boxes": [
+      [
+        -75.7575661090499,
+        75.20839758186509,
+        -14.89827435496175,
+        44.73082872842519
+      ],
+      [
+        -29.68197401297242,
+        29.96025451259984,
+        14.916277186731719,
+        134.86036165489608
+      ]
+    ],
+    "k": 2,
+    "heldout_contact_mad": 0.29577100439660703,
+    "heldout_penetration_frac": 0.0019342359767891683,
+    "n_contact": 8240,
+    "n_free": 10338
+  },
+  "control_period": 0.10948543510788603,
+  "init_mass_props": [
+    -0.09138731436173246,
+    41.471859030228764,
+    2772.9106187965913
+  ],
+  "runs": [
+    {
+      "substeps": 10,
+      "pusher_val5": 3.630323348238229e-05,
+      "body_val5": 0.21841574083592877,
+      "val1": 0.024102475442414364,
+      "val5": 0.03697000389447415,
+      "params": {
+        "action_scale": 99.9998235392995,
+        "kp": 100.00016533918853,
+        "kv": 19.999861784442064,
+        "dt": 0.010016266179841115,
+        "substeps": 10.0,
+        "cog_u": 0.003588798928766726,
+        "cog_v": 45.02617324868934,
+        "inertia": 3000.844905901005,
+        "bias": 0.17706227154970317,
+        "radius": 17.5,
+        "slop": 0.0,
+        "iters": 4.0
+      }
+    },
+    {
+      "substeps": 5,
+      "pusher_val5": 3.630323363648582e-05,
+      "body_val5": 0.4400533999440763,
+      "val1": 0.04753278505088046,
+      "val5": 0.052451237941078255,
+      "params": {
+        "action_scale": 58.100340380249,
+        "kp": 154.27414261772154,
+        "kv": 14.850345230929484,
+        "dt": 0.019125321585333886,
+        "substeps": 5.0,
+        "cog_u": -0.021776490941051854,
+        "cog_v": 44.92979784766518,
+        "inertia": 3009.5164811714626,
+        "bias": 0.48919694060179686,
+        "radius": 12.5,
+        "slop": 0.0,
+        "iters": 4.0
+      }
+    },
+    {
+      "substeps": 1,
+      "pusher_val5": 0.09967829712298273,
+      "body_val5": 0.5409266795302935,
+      "val1": 0.3990589164264742,
+      "val5": 0.4332332760276656,
+      "params": {
+        "action_scale": 48.360321687666165,
+        "kp": 62.7087863712154,
+        "kv": 8.088715241630881,
+        "dt": 0.11070822779205008,
+        "substeps": 1.0,
+        "cog_u": -0.05971931414647782,
+        "cog_v": 43.8931087024561,
+        "inertia": 3124.732543274876,
+        "bias": 0.8119072748669905,
+        "radius": 20.0,
+        "slop": 0.0,
+        "iters": 4.0
+      }
+    }
+  ],
+  "best": {
+    "substeps": 10,
+    "pusher_val5": 3.630323348238229e-05,
+    "body_val5": 0.21841574083592877,
+    "val1": 0.024102475442414364,
+    "val5": 0.03697000389447415,
+    "params": {
+      "action_scale": 99.9998235392995,
+      "kp": 100.00016533918853,
+      "kv": 19.999861784442064,
+      "dt": 0.010016266179841115,
+      "substeps": 10.0,
+      "cog_u": 0.003588798928766726,
+      "cog_v": 45.02617324868934,
+      "inertia": 3000.844905901005,
+      "bias": 0.17706227154970317,
+      "radius": 17.5,
+      "slop": 0.0,
+      "iters": 4.0
+    }
+  },
+  "elapsed_s": 318.70079350471497
+}

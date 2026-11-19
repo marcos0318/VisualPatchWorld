@@ -24,8 +24,8 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
 from visualpatchworld.llm_family.bank import experience_entries, load_bank, render_bank  # noqa: E402
-from visualpatchworld.llm_family.fit import fit_candidate  # noqa: E402
-from visualpatchworld.llm_family.propose import propose_family  # noqa: E402
+from visualpatchworld.llm_family.fit import FitResult, fit_candidate  # noqa: E402
+from visualpatchworld.llm_family.propose import Candidate, propose_family  # noqa: E402
 from visualpatchworld.llm_family.render import render_model  # noqa: E402
 from visualpatchworld.llm_family.select import select_active, select_offline  # noqa: E402
 from visualpatchworld.llm_family.traces import load_episodes, schema_summary, state_keys, state_scales  # noqa: E402
@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--experience_runs", nargs="*", default=[],
                    help="run dirs of OTHER environments whose selected programs join the bank")
     p.add_argument("--bank_no_snippets", action="store_true")
+    p.add_argument("--sysid", action="store_true",
+                   help="identify a pusher/body contact program from the full training split and add it to the family")
     return p.parse_args()
 
 
@@ -91,6 +93,24 @@ def main() -> None:
     if not family:
         raise SystemExit("LLM produced no valid candidates")
     cands = {c.name: c for c in family}
+    library_fits = {}
+    if args.sysid:
+        from visualpatchworld.llm_family import sysid
+
+        full = load_episodes(Path(args.train_file or data / f"{args.env}_oracle_traj_train.jsonl"))
+        ident = sysid.identify_pusher_body(full, val, keys, scales, log=lambda m: print(m, flush=True))
+        if ident is not None:
+            src, imeta = ident["candidate"], ident["meta"]
+            lib = Candidate(name="sysid_pusher_body", mechanism=src.mechanism, code=src.code, params=dict(src.params),
+                            step=lambda s, a, q, m, _f=src.step, _m=imeta: _f(s, a, q, {**_m, **m}))
+            cands[lib.name] = lib
+            family.append(lib)
+            static_meta.update(imeta)
+            b = ident["best"]
+            library_fits[lib.name] = lambda objective: FitResult(
+                params=b["params"], objective=objective, rollout_k=args.rollout_k, train_loss=float("nan"),
+                val_one_step=b["val1"], val_rollout=b["val5"], restarts=1, nfev=0, elapsed_s=ident["elapsed_s"],
+                history=[{"sysid_runs": [{k: v for k, v in r.items() if k != "params"} for r in ident["runs"]]}])
 
     result = {
         "env": args.env,
@@ -111,6 +131,10 @@ def main() -> None:
         for objective in [o.strip() for o in args.objectives.split(",") if o.strip()]:
             fits = {}
             for name, cand in cands.items():
+                if name in library_fits:
+                    fits[name] = library_fits[name](objective)
+                    print(f"[llm-family] {objective:10s} {name:40s} val1={fits[name].val_one_step:.4f} val{args.rollout_k}={fits[name].val_rollout:.4f} (identified)", flush=True)
+                    continue
                 fr = fit_candidate(
                     cand, train, val, keys, scales,
                     objective=objective, rollout_k=args.rollout_k,

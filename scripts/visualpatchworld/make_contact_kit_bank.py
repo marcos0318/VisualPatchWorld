@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 KIT = [
@@ -50,13 +51,56 @@ KIT = [
 ]
 
 
+SKILLS = [
+    {
+        "name": "rotation_about_centre_of_mass",
+        "mechanism": "A rigid body reported by a reference point (x, y, angle) rotates about its centre of mass, which is offset from the reference point by an unknown body-frame vector (fit it); update the centre of mass and angle, then recover the reference point.",
+        "equations": "g = (x, y) + R(angle) c; g' = g + v dt; angle' = angle + w dt; (x', y') = g' - R(angle') c",
+        "snippet": "def move_about_com(x, y, ang, cu, cv, vx, vy, w, dt):\n    c, s = math.cos(ang), math.sin(ang)\n    gx, gy = x + c*cu - s*cv + vx*dt, y + s*cu + c*cv + vy*dt\n    ang2 = ang + w*dt\n    c2, s2 = math.cos(ang2), math.sin(ang2)\n    return gx - (c2*cu - s2*cv), gy - (s2*cu + c2*cv), ang2",
+        "params": [{"name": "cu", "meaning": "centre-of-mass body-frame u offset"}, {"name": "cv", "meaning": "centre-of-mass body-frame v offset"}],
+        "tags": ["rigid_body", "rotation", "centre_of_mass", "pivot", "pose"],
+    },
+    {
+        "name": "substep_integration",
+        "mechanism": "One recorded transition spans a control period much longer than the dynamics' time scale (stiff PD tracking, contact). Integrate the whole step function with n small substeps (n ~ 5-10) holding the action fixed; explicit single-step updates of stiff contact are unstable.",
+        "equations": "for i in 1..n: (state) <- substep(state, action, dt = T/n)",
+        "snippet": "for _ in range(n):\n    vel += (kp*(target - pos) - kv*vel)*dt\n    # ... contact detection and impulses at the current positions ...\n    pos += vel*dt",
+        "params": [{"name": "n", "meaning": "substeps"}, {"name": "dt", "meaning": "substep length"}],
+        "tags": ["integration", "substeps", "stiff", "contact", "stability"],
+    },
+    {
+        "name": "point_pusher_vs_identified_shape",
+        "mechanism": "If meta carries an identified contact shape (union of body-frame boxes grown by the pusher radius), the pusher touches the body when its centre enters a box; push it out along the nearest face normal with penetration = distance to that face.",
+        "equations": "inside if u0<u<u1 and v0<v<v1; (g, n) = min over faces of (distance, outward normal)",
+        "snippet": "for u0, u1, v0, v1 in meta['contact_shape']['boxes_u_min_u_max_v_min_v_max']:\n    if u0 < u < u1 and v0 < v < v1:\n        g, nu, nv = min((u-u0,-1.0,0.0),(u1-u,1.0,0.0),(v-v0,0.0,-1.0),(v1-v,0.0,1.0))",
+        "params": [],
+        "tags": ["contact", "geometry", "identified_shape", "pushing"],
+    },
+]
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--base", required=True)
     p.add_argument("--out", required=True)
+    p.add_argument("--skills", action="store_true", help="also add the rigid-body skills")
+    p.add_argument("--library", action="store_true", help="also add the complete pusher/body library program")
     args = p.parse_args()
     base = json.loads(Path(args.base).read_text())
     kit = [{**e, "topic": "contact_mechanics_kit", "source": "general"} for e in KIT]
+    if args.skills:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+        from visualpatchworld.llm_family.sysid import PUSHER_BODY_SOURCE
+
+        lib = {
+            "name": "pd_pusher_impulse_body_program",
+            "mechanism": "Complete program: PD-tracking disc pusher, frictionless sequential normal impulses against a quasi-static rigid body given as a union of body-frame boxes in meta['contact_shape'], rotation about a fitted centre of mass, n substeps.",
+            "equations": "see snippet",
+            "snippet": PUSHER_BODY_SOURCE,
+            "params": [],
+            "tags": ["contact", "pushing", "rigid_body", "program", "library"],
+        }
+        kit += [{**e, "topic": "rigid_body_skills", "source": "general"} for e in SKILLS + ([lib] if args.library else [])]
     Path(args.out).write_text(json.dumps(base + kit, indent=2), encoding="utf-8")
     print(f"wrote {args.out}: {len(base)} + {len(kit)} entries")
 
