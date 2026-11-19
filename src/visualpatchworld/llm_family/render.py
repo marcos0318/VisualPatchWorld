@@ -24,6 +24,7 @@ FITTED_PARAMS = {params}
 ENV = {env!r}
 ACTION_DIM = {action_dim}
 STATE_KEYS = {state_keys}
+STATIC_META = {static_meta}
 
 _ns = {{"math": math}}
 exec(compile(CANDIDATE_SOURCE, "<candidate>", "exec"), _ns)
@@ -118,7 +119,7 @@ class LLMFamilyWorldModel(BaseWorldModel):
             oid, fld = key.split(".", 1)
             state[key] = float(objects.get(oid, {{}}).get(fld, 0.0))
         try:
-            nxt = _step(dict(state), self._parse_action(action), dict(FITTED_PARAMS), dict(b.get("metadata") or {{}}))
+            nxt = _step(dict(state), self._parse_action(action), dict(FITTED_PARAMS), {{**STATIC_META, **(b.get("metadata") or {{}})}})
         except Exception:
             nxt = state
         for key in STATE_KEYS:
@@ -163,8 +164,13 @@ def render_model(
     action_dim: int,
     state_keys: Sequence[str],
     objective: str,
+    static_meta: Mapping[str, object] | None = None,
 ) -> str:
+    """``static_meta``: scene metadata constant across the training traces, merged
+    under the planner observation's metadata so static facts (e.g. shapes) survive
+    planning-time observations that omit them."""
     return _TEMPLATE.format(
+        static_meta=json.dumps(dict(static_meta or {}), sort_keys=True),
         name=cand.name,
         mechanism=cand.mechanism.replace('"""', "'''"),
         objective=objective,

@@ -69,6 +69,8 @@ def main() -> None:
     keys = state_keys(train)
     scales = state_scales(train, keys)
     schema = schema_summary(train)
+    metas = [t.meta for ep in train for t in ep.transitions]
+    static_meta = {k: v for k, v in (metas[0] if metas else {}).items() if all(m.get(k) == v for m in metas)}
     print(f"[llm-family] {args.env}: {schema['num_episodes']} train eps, {schema['num_transitions']} transitions, stride={stride}, keys={keys}", flush=True)
 
     bank = load_bank(Path(args.bank_file)) if args.bank_file else []
@@ -133,12 +135,14 @@ def main() -> None:
                 code = render_model(
                     cands[winner], fits[winner].params,
                     env=args.env, action_dim=schema["action_dim"], state_keys=keys, objective=objective,
+                    static_meta=static_meta,
                 )
                 path = out / "models" / f"{how}_{objective}.py"
                 path.write_text(code, encoding="utf-8")
                 print(f"[llm-family] {how}/{objective}: {winner} -> {path}", flush=True)
             for name, cand in cands.items():
-                code = render_model(cand, fits[name].params, env=args.env, action_dim=schema["action_dim"], state_keys=keys, objective=objective)
+                code = render_model(cand, fits[name].params, env=args.env, action_dim=schema["action_dim"], state_keys=keys, objective=objective,
+                                    static_meta=static_meta)
                 (out / "models" / f"cand_{name}_{objective}.py").write_text(code, encoding="utf-8")
     finally:
         if sim is not None:
