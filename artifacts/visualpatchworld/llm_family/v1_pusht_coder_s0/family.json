@@ -1,0 +1,1052 @@
+{
+  "env": "pusht",
+  "llm_model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+  "schema": {
+    "state_keys": [
+      "agent.vx",
+      "agent.vy",
+      "agent.x",
+      "agent.y",
+      "block.angle",
+      "block.x",
+      "block.y"
+    ],
+    "state_ranges": {
+      "agent.vx": {
+        "min": -239.038,
+        "max": 197.288
+      },
+      "agent.vy": {
+        "min": -164.106,
+        "max": 212.259
+      },
+      "agent.x": {
+        "min": 44.226,
+        "max": 431.137
+      },
+      "agent.y": {
+        "min": 166.867,
+        "max": 468.784
+      },
+      "block.angle": {
+        "min": 0.743,
+        "max": 2.948
+      },
+      "block.x": {
+        "min": 188.561,
+        "max": 253.842
+      },
+      "block.y": {
+        "min": 257.991,
+        "max": 341.005
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.643,
+      -0.44
+    ],
+    "action_max": [
+      0.53,
+      0.571
+    ],
+    "num_episodes": 40,
+    "num_transitions": 4320
+  },
+  "scales": {
+    "agent.vx": 29.0491526697332,
+    "agent.vy": 33.10328911582162,
+    "agent.x": 8.784955836446613,
+    "agent.y": 7.583339167070911,
+    "block.angle": 0.03517513204333592,
+    "block.x": 1.5088737783332182,
+    "block.y": 1.686962387941111
+  },
+  "candidates": [
+    {
+      "name": "linear_no_coupling",
+      "mechanism": "Agent moves with linear response to action; block is unaffected unless contacted.",
+      "code": "# HYPOTHESIS: linear_no_coupling\n# MECHANISM: Agent moves with linear response to action; block is unaffected unless contacted.\nPARAMS = {\"agent_acc_gain\": 100.0, \"agent_damping\": 0.9, \"contact_thresh\": 10.0}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = state.copy()\n    \n    # Agent dynamics: first-order velocity update\n    ax = action[0] * p[\"agent_acc_gain\"]\n    ay = action[1] * p[\"agent_acc_gain\"]\n    \n    new_vx = (state[\"agent.vx\"] + ax) * p[\"agent_damping\"]\n    new_vy = (state[\"agent.vy\"] + ay) * p[\"agent_damping\"]\n    \n    new_x = state[\"agent.x\"] + new_vx\n    new_y = state[\"agent.y\"] + new_vy\n    \n    # Block remains unchanged unless contacted (simplified contact model)\n    dx = new_x - state[\"block.x\"]\n    dy = new_y - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    \n    if dist < p[\"contact_thresh\"]:\n        # Simple sticky contact: move block with agent\n        new_state[\"block.x\"] = state[\"block.x\"] + new_vx\n        new_state[\"block.y\"] = state[\"block.y\"] + new_vy\n    \n    new_state[\"agent.vx\"] = new_vx\n    new_state[\"agent.vy\"] = new_vy\n    new_state[\"agent.x\"] = new_x\n    new_state[\"agent.y\"] = new_y\n    \n    return new_state",
+      "init_params": {
+        "agent_acc_gain": 100.0,
+        "agent_damping": 0.9,
+        "contact_thresh": 10.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_coupled",
+      "mechanism": "Both objects have momentum; contact transfers force with friction-based coupling.",
+      "code": "# HYPOTHESIS: momentum_coupled\n# MECHANISM: Both objects have momentum; contact transfers force with friction-based coupling.\nPARAMS = {\n    \"agent_mass\": 1.0,\n    \"block_mass\": 5.0,\n    \"force_gain\": 50.0,\n    \"contact_stiffness\": 0.1,\n    \"friction_coeff\": 0.3,\n    \"damping\": 0.98\n}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = state.copy()\n    \n    # Agent force application\n    fx = action[0] * p[\"force_gain\"]\n    fy = action[1] * p[\"force_gain\"]\n    \n    # Acceleration with damping\n    ax = fx / p[\"agent_mass\"]\n    ay = fy / p[\"agent_mass\"]\n    \n    # Velocity integration\n    new_vx = (state[\"agent.vx\"] + ax) * p[\"damping\"]\n    new_vy = (state[\"agent.vy\"] + ay) * p[\"damping\"]\n    \n    # Position integration\n    new_x = state[\"agent.x\"] + new_vx\n    new_y = state[\"agent.y\"] + new_vy\n    \n    # Contact detection and response\n    dx = new_x - state[\"block.x\"]\n    dy = new_y - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    \n    block_vx, block_vy = 0.0, 0.0\n    \n    if dist < 20.0:  # Assume radius sum ~20\n        # Apply spring-like force and friction\n        compression = max(0, 20.0 - dist)\n        norm_force = compression * p[\"contact_stiffness\"]\n        \n        # Normal vector\n        nx, ny = 0.0, 0.0\n        if dist > 0:\n            nx, ny = dx/dist, dy/dist\n        \n        # Force components\n        contact_fx = norm_force * nx\n        contact_fy = norm_force * ny\n        \n        # Transfer some force to block based on mass ratio\n        transfer_ratio = p[\"agent_mass\"] / (p[\"agent_mass\"] + p[\"block_mass\"])\n        block_fx = contact_fx * transfer_ratio\n        block_fy = contact_fy * transfer_ratio\n        \n        block_ax = block_fx / p[\"block_mass\"]\n        block_ay = block_fy / p[\"block_mass\"]\n        \n        # Friction limits the tangential component\n        rel_vx = new_vx - state[\"block.vx\"]\n        rel_vy = new_vy - state[\"block.vy\"]\n        \n        # Decompose into normal and tangential components\n        rel_dot_n = rel_vx*nx + rel_vy*ny\n        rel_v_tang_x = rel_vx - rel_dot_n*nx\n        rel_v_tang_y = rel_vy - rel_dot_n*ny\n        \n        # Limit tangential velocity change by friction\n        tang_speed = math.sqrt(rel_v_tang_x**2 + rel_v_tang_y**2)\n        if tang_speed > 0:\n            fric_limit = abs(norm_force) * p[\"friction_coeff\"]\n            scale = min(1.0, fric_limit / (tang_speed + 1e-6))\n            block_ax -= rel_v_tang_x * scale * 0.1\n            block_ay -= rel_v_tang_y * scale * 0.1\n            \n        block_vx = state[\"block.vx\"] + block_ax\n        block_vy = state[\"block.vy\"] + block_ay\n        \n        # Update block position\n        new_state[\"block.x\"] = state[\"block.x\"] + block_vx\n        new_state[\"block.y\"] = state[\"block.y\"] + block_vy\n        new_state[\"block.vx\"] = block_vx\n        new_state[\"block.vy\"] = block_vy\n    \n    new_state[\"agent.vx\"] = new_vx\n    new_state[\"agent.vy\"] = new_vy\n    new_state[\"agent.x\"] = new_x\n    new_state[\"agent.y\"] = new_y\n    \n    return new_state",
+      "init_params": {
+        "agent_mass": 1.0,
+        "block_mass": 5.0,
+        "force_gain": 50.0,
+        "contact_stiffness": 0.1,
+        "friction_coeff": 0.3,
+        "damping": 0.98
+      },
+      "repaired": false
+    },
+    {
+      "name": "threshold_contact",
+      "mechanism": "Agent can only influence block when within precise distance threshold; otherwise independent motion.",
+      "code": "# HYPOTHESIS: threshold_contact\n# MECHANISM: Agent can only influence block when within precise distance threshold; otherwise independent motion.\nPARAMS = {\n    \"agent_accel\": 80.0,\n    \"agent_drag\": 0.9,\n    \"contact_distance\": 15.0,\n    \"push_strength\": 0.5\n}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = state.copy()\n    \n    # Agent update\n    ax = action[0] * p[\"agent_accel\"]\n    ay = action[1] * p[\"agent_accel\"]\n    \n    new_vx = (state[\"agent.vx\"] + ax) * p[\"agent_drag\"]\n    new_vy = (state[\"agent.vy\"] + ay) * p[\"agent_drag\"]\n    \n    new_x = state[\"agent.x\"] + new_vx\n    new_y = state[\"agent.y\"] + new_vy\n    \n    new_state[\"agent.vx\"] = new_vx\n    new_state[\"agent.vy\"] = new_vy\n    new_state[\"agent.x\"] = new_x\n    new_state[\"agent.y\"] = new_y\n    \n    # Block interaction\n    dx = new_x - state[\"block.x\"]\n    dy = new_y - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    \n    if dist <= p[\"contact_distance\"]:\n        # Exact push direction\n        dir_x, dir_y = 0.0, 0.0\n        if dist > 0:\n            dir_x, dir_y = dx/dist, dy/dist\n        \n        # Push magnitude depends on overlap and action\n        overlap = max(0, p[\"contact_distance\"] - dist)\n        push_mag = overlap * p[\"push_strength\"] * (abs(action[0]) + abs(action[1]))\n        \n        # Apply impulse to block\n        block_vx = state[\"block.vx\"] + dir_x * push_mag\n        block_vy = state[\"block.vy\"] + dir_y * push_mag\n        \n        new_state[\"block.x\"] = state[\"block.x\"] + block_vx\n        new_state[\"block.y\"] = state[\"block.y\"] + block_vy\n        new_state[\"block.vx\"] = block_vx\n        new_state[\"block.vy\"] = block_vy\n    \n    return new_state",
+      "init_params": {
+        "agent_accel": 80.0,
+        "agent_drag": 0.9,
+        "contact_distance": 15.0,
+        "push_strength": 0.5
+      },
+      "repaired": false
+    },
+    {
+      "name": "angular_inertia",
+      "mechanism": "Block has rotational inertia; contact applies both linear and angular forces depending on contact point.",
+      "code": "# HYPOTHESIS: angular_inertia\n# MECHANISM: Block has rotational inertia; contact applies both linear and angular forces depending on contact point.\nPARAMS = {\n    \"agent_acc\": 100.0,\n    \"damping\": 0.95,\n    \"contact_radius\": 12.0,\n    \"moment_of_inertia\": 200.0,\n    \"torque_factor\": 5.0\n}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = state.copy()\n    \n    # Agent movement\n    ax = action[0] * p[\"agent_acc\"]\n    ay = action[1] * p[\"agent_acc\"]\n    \n    new_vx = (state[\"agent.vx\"] + ax) * p[\"damping\"]\n    new_vy = (state[\"agent.vy\"] + ay) * p[\"damping\"]\n    \n    new_x = state[\"agent.x\"] + new_vx\n    new_y = state[\"agent.y\"] + new_vy\n    \n    new_state[\"agent.vx\"] = new_vx\n    new_state[\"agent.vy\"] = new_vy\n    new_state[\"agent.x\"] = new_x\n    new_state[\"agent.y\"] = new_y\n    \n    # Interaction calculations\n    dx = new_x - state[\"block.x\"]\n    dy = new_y - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    \n    if dist < p[\"contact_radius\"] * 2:  # Simplified collision check\n        # Apply central force\n        overlap = max(0, p[\"contact_radius\"] * 2 - dist)\n        if dist > 0:\n            nx, ny = dx/dist, dy/dist\n            force_mag = overlap * 0.5\n            \n            block_vx = state[\"block.vx\"] + nx * force_mag\n            block_vy = state[\"block.vy\"] + ny * force_mag\n            \n            # Torque calculation from off-center force\n            # Vector from block center to contact point\n            r_x = -dx  # Approximate lever arm\n            r_y = -dy\n            \n            # Cross product gives torque (r \u00d7 F)\n            torque = (r_x * (ny * force_mag)) - (r_y * (nx * force_mag))\n            torque *= p[\"torque_factor\"]\n            \n            ang_acc = torque / p[\"moment_of_inertia\"]\n            new_angle = state[\"block.angle\"] + ang_acc\n            \n            new_state[\"block.x\"] = state[\"block.x\"] + block_vx\n            new_state[\"block.y\"] = state[\"block.y\"] + block_vy\n            new_state[\"block.vx\"] = block_vx\n            new_state[\"block.vy\"] = block_vy\n            new_state[\"block.angle\"] = new_angle\n    \n    return new_state",
+      "init_params": {
+        "agent_acc": 100.0,
+        "damping": 0.95,
+        "contact_radius": 12.0,
+        "moment_of_inertia": 200.0,
+        "torque_factor": 5.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "gated_response",
+      "mechanism": "Agent's effect on block is gated by alignment; maximal effect requires specific approach angle.",
+      "code": "# HYPOTHESIS: gated_response\n# MECHANISM: Agent's effect on block is gated by alignment; maximal effect requires specific approach angle.\nPARAMS = {\n    \"acc_scale\": 100.0,\n    \"vel_decay\": 0.9,\n    \"gate_width\": 0.5,\n    \"efficiency_peak\": 1.0,\n    \"contact_range\": 18.0\n}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = state.copy()\n    \n    # Agent physics\n    ax = action[0] * p[\"acc_scale\"]\n    ay = action[1] * p[\"acc_scale\"]\n    \n    new_vx = (state[\"agent.vx\"] + ax) * p[\"vel_decay\"]\n    new_vy = (state[\"agent.vy\"] + ay) * p[\"vel_decay\"]\n    \n    new_x = state[\"agent.x\"] + new_vx\n    new_y = state[\"agent.y\"] + new_vy\n    \n    new_state[\"agent.vx\"] = new_vx\n    new_state[\"agent.vy\"] = new_vy\n    new_state[\"agent.x\"] = new_x\n    new_state[\"agent.y\"] = new_y\n    \n    # Gated interaction logic\n    dx = new_x - state[\"block.x\"]\n    dy = new_y - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    \n    if dist < p[\"contact_range\"]:\n        # Compute approach angle relative to block orientation\n        rel_angle = math.atan2(dy, dx)\n        angle_diff = abs(rel_angle - state[\"block.angle\"])\n        angle_diff = min(angle_diff, 2*math.pi - angle_diff)  # Normalize\n        \n        # Efficiency drops off with misalignment\n        eff = max(0, 1.0 - (angle_diff / (math.pi * p[\"gate_width\"])))\n        \n        if eff > 0:\n            # Apply scaled force in direction of approach\n            force_x = dx / max(dist, 1e-6) * eff * 0.5\n            force_y = dy / max(dist, 1e-6) * eff * 0.5\n            \n            block_vx = state[\"block.vx\"] + force_x\n            block_vy = state[\"block.vy\"] + force_y\n            \n            new_state[\"block.x\"] = state[\"block.x\"] + block_vx\n            new_state[\"block.y\"] = state[\"block.y\"] + block_vy\n            new_state[\"block.vx\"] = block_vx\n            new_state[\"block.vy\"] = block_vy\n    \n    return new_state",
+      "init_params": {
+        "acc_scale": 100.0,
+        "vel_decay": 0.9,
+        "gate_width": 0.5,
+        "efficiency_peak": 1.0,
+        "contact_range": 18.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "saturation_limited",
+      "mechanism": "Forces saturate at high velocities or accelerations; non-linear response limits extreme behavior.",
+      "code": "# HYPOTHESIS: saturation_limited\n# MECHANISM: Forces saturate at high velocities or accelerations; non-linear response limits extreme behavior.\nPARAMS = {\n    \"max_force\": 50.0,\n    \"vel_saturation\": 150.0,\n    \"accel_coupling\": 80.0,\n    \"contact_gain\": 0.7,\n    \"damping_factor\": 0.92\n}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = state.copy()\n    \n    # Saturated acceleration based on action\n    raw_ax = action[0] * p[\"accel_coupling\"]\n    raw_ay = action[1] * p[\"accel_coupling\"]\n    \n    # Cap acceleration magnitude\n    accel_mag = math.sqrt(raw_ax**2 + raw_ay**2)\n    if accel_mag > p[\"max_force\"]:\n        scale = p[\"max_force\"] / accel_mag\n        raw_ax *= scale\n        raw_ay *= scale\n    \n    # Apply to velocity with damping\n    new_vx = (state[\"agent.vx\"] + raw_ax) * p[\"damping_factor\"]\n    new_vy = (state[\"agent.vy\"] + raw_ay) * p[\"damping_factor\"]\n    \n    # Cap velocity magnitude\n    vel_mag = math.sqrt(new_vx**2 + new_vy**2)\n    if vel_mag > p[\"vel_saturation\"] and vel_mag > 0:\n        scale = p[\"vel_saturation\"] / vel_mag\n        new_vx *= scale\n        new_vy *= scale\n    \n    new_x = state[\"agent.x\"] + new_vx\n    new_y = state[\"agent.y\"] + new_vy\n    \n    new_state[\"agent.vx\"] = new_vx\n    new_state[\"agent.vy\"] = new_vy\n    new_state[\"agent.x\"] = new_x\n    new_state[\"agent.y\"] = new_y\n    \n    # Non-linear contact with saturation\n    dx = new_x - state[\"block.x\"]\n    dy = new_y - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    \n    if dist < 20.0:\n        # Nonlinear spring force that saturates\n        compression = max(0, 20.0 - dist)\n        force_mag = p[\"contact_gain\"] * math.tanh(compression * 0.2)  # Tanh saturation\n        \n        if dist > 0:\n            nx, ny = dx/dist, dy/dist\n            block_vx = state[\"block.vx\"] + nx * force_mag\n            block_vy = state[\"block.vy\"] + ny * force_mag\n            \n            # Also cap block velocities\n            block_vel = math.sqrt(block_vx**2 + block_vy**2)\n            if block_vel > p[\"vel_saturation\"] and block_vel > 0:\n                scale = p[\"vel_saturation\"] / block_vel\n                block_vx *= scale\n                block_vy *= scale\n                \n            new_state[\"block.x\"] = state[\"block.x\"] + block_vx\n            new_state[\"block.y\"] = state[\"block.y\"] + block_vy\n            new_state[\"block.vx\"] = block_vx\n            new_state[\"block.vy\"] = block_vy\n    \n    return new_state",
+      "init_params": {
+        "max_force": 50.0,
+        "vel_saturation": 150.0,
+        "accel_coupling": 80.0,
+        "contact_gain": 0.7,
+        "damping_factor": 0.92
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_no_coupling": {
+        "params": {
+          "agent_acc_gain": 1740.4695374527926,
+          "agent_damping": 0.029835161735874062,
+          "contact_thresh": 13.810347674673707
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9217856802470277,
+        "val_one_step_nrmse": 1.1797180096331132,
+        "val_rollout_nrmse": 2.4842248446678448,
+        "restarts": 4,
+        "nfev": 475,
+        "elapsed_s": 32.08317804336548,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9217856801306004,
+            "val_rollout_nrmse": 2.501962615227904
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.9217856802470277,
+            "val_rollout_nrmse": 2.4842248446678448
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9256441061904948,
+            "val_rollout_nrmse": 2.563141645743526
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9217856816846555,
+            "val_rollout_nrmse": 2.515193974809732
+          }
+        ]
+      },
+      "momentum_coupled": {
+        "params": {
+          "agent_mass": 0.12583727938103456,
+          "block_mass": 5.000000011340568,
+          "force_gain": 218.9661189907441,
+          "contact_stiffness": 0.1,
+          "friction_coeff": 0.3,
+          "damping": 0.029840810211391046
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.921785680108249,
+        "val_one_step_nrmse": 303.8239328972726,
+        "val_rollout_nrmse": 163.51625106587974,
+        "restarts": 4,
+        "nfev": 179,
+        "elapsed_s": 15.679848432540894,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.921785680108249,
+            "val_rollout_nrmse": 163.51625106587974
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.921785680108249,
+            "val_rollout_nrmse": 163.51625106587997
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.921785680108249,
+            "val_rollout_nrmse": 163.5162510658855
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9217856801082487,
+            "val_rollout_nrmse": 163.51625106590402
+          }
+        ]
+      },
+      "threshold_contact": {
+        "params": {
+          "agent_accel": 1743.5616237763095,
+          "agent_drag": 0.029791062211011216,
+          "contact_distance": 10.859115651414067,
+          "push_strength": 0.43721223815326726
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9217856908476691,
+        "val_one_step_nrmse": 144.12007106967414,
+        "val_rollout_nrmse": 107.97694433113963,
+        "restarts": 4,
+        "nfev": 100,
+        "elapsed_s": 7.54651665687561,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.92178568017254,
+            "val_rollout_nrmse": 139.95558325775977
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.9217856805951175,
+            "val_rollout_nrmse": 169.78521103987973
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9217856908476691,
+            "val_rollout_nrmse": 107.97694433113963
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9217856803508244,
+            "val_rollout_nrmse": 155.65593314780907
+          }
+        ]
+      },
+      "angular_inertia": {
+        "params": {
+          "agent_acc": 1739.4532343617243,
+          "damping": 0.0298496446585131,
+          "contact_radius": 3.7207535759002033,
+          "moment_of_inertia": 179.31626968879215,
+          "torque_factor": 2.786035857489599
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9217856804492195,
+        "val_one_step_nrmse": 78.45525423549931,
+        "val_rollout_nrmse": 87.20172954146668,
+        "restarts": 4,
+        "nfev": 857,
+        "elapsed_s": 80.58896207809448,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9256439025471177,
+            "val_rollout_nrmse": 184.27106292817462
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.9217856801986042,
+            "val_rollout_nrmse": 237.68907857170058
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9217856804492195,
+            "val_rollout_nrmse": 87.20172954146668
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9256448440247205,
+            "val_rollout_nrmse": 152.61097625383812
+          }
+        ]
+      },
+      "gated_response": {
+        "params": {
+          "acc_scale": 1738.499422719175,
+          "vel_decay": 0.029863133127535888,
+          "gate_width": 0.12471930067713116,
+          "efficiency_peak": 0.9375385868131869,
+          "contact_range": 9.75867561090746
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9217856823235138,
+        "val_one_step_nrmse": 1.1810671229957874,
+        "val_rollout_nrmse": 52.16091564189147,
+        "restarts": 4,
+        "nfev": 99,
+        "elapsed_s": 8.39492392539978,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9217856801152664,
+            "val_rollout_nrmse": 103.23210731917676
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.9217856804713125,
+            "val_rollout_nrmse": 119.390830742427
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9217856823235138,
+            "val_rollout_nrmse": 52.16091564189147
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9217856803173865,
+            "val_rollout_nrmse": 113.50803632690874
+          }
+        ]
+      },
+      "saturation_limited": {
+        "params": {
+          "max_force": 1130.5565651380984,
+          "vel_saturation": 51.23742038243861,
+          "accel_coupling": 1731.277443018261,
+          "contact_gain": -178.86603769424633,
+          "damping_factor": 0.029966797352914885
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9217857491732497,
+        "val_one_step_nrmse": 303.82393320272786,
+        "val_rollout_nrmse": 163.51622618913717,
+        "restarts": 4,
+        "nfev": 175,
+        "elapsed_s": 18.17112898826599,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9217860276424374,
+            "val_rollout_nrmse": 164.10311901568627
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.9217856801082487,
+            "val_rollout_nrmse": 163.5162307063426
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.921785680108249,
+            "val_rollout_nrmse": 163.5162484191379
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9217857491732497,
+            "val_rollout_nrmse": 163.51622618913717
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_no_coupling": {
+        "params": {
+          "agent_acc_gain": 1656.1514958513812,
+          "agent_damping": 0.024129444170459292,
+          "contact_thresh": 13.810347674673707
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.5815518280703245,
+        "val_one_step_nrmse": 1.1834961044858274,
+        "val_rollout_nrmse": 2.4273823228471016,
+        "restarts": 4,
+        "nfev": 120,
+        "elapsed_s": 39.51993155479431,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.581551829930619,
+            "val_rollout_nrmse": 2.4556592876169487
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.5815518280703245,
+            "val_rollout_nrmse": 2.4273823228471016
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.581551831818629,
+            "val_rollout_nrmse": 2.474586353262731
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.581551838595649,
+            "val_rollout_nrmse": 2.4835043092872846
+          }
+        ]
+      },
+      "momentum_coupled": {
+        "params": {
+          "agent_mass": 1.1953140269976872,
+          "block_mass": 4.775117009795849,
+          "force_gain": 68.80056678663806,
+          "contact_stiffness": -0.02115715410474034,
+          "friction_coeff": 0.16718282606912332,
+          "damping": 1.1779713707981732
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 8186.515229579969,
+        "val_one_step_nrmse": 146.85097334034396,
+        "val_rollout_nrmse": 76.92219360484305,
+        "restarts": 4,
+        "nfev": 103,
+        "elapsed_s": 35.21212339401245,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 9828.721927819188,
+            "val_rollout_nrmse": 97.61099990958253
+          },
+          {
+            "restart": 1,
+            "train_loss": 8186.515229579969,
+            "val_rollout_nrmse": 76.92219360484305
+          },
+          {
+            "restart": 2,
+            "train_loss": 10688.899729477265,
+            "val_rollout_nrmse": 95.87684415983163
+          },
+          {
+            "restart": 3,
+            "train_loss": 9430.714732053568,
+            "val_rollout_nrmse": 82.2886429318141
+          }
+        ]
+      },
+      "threshold_contact": {
+        "params": {
+          "agent_accel": 79.99987043342229,
+          "agent_drag": 0.8204224106697131,
+          "contact_distance": 15.0,
+          "push_strength": 0.5
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7240.46947442813,
+        "val_one_step_nrmse": 146.80627519985646,
+        "val_rollout_nrmse": 77.273023918045,
+        "restarts": 4,
+        "nfev": 100,
+        "elapsed_s": 30.194187879562378,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7240.46947442813,
+            "val_rollout_nrmse": 77.273023918045
+          },
+          {
+            "restart": 1,
+            "train_loss": 12150.93286389725,
+            "val_rollout_nrmse": 96.85371615416915
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.581551828080466,
+            "val_rollout_nrmse": 102.17503114668477
+          },
+          {
+            "restart": 3,
+            "train_loss": 8695.723880755877,
+            "val_rollout_nrmse": 90.38638193486662
+          }
+        ]
+      },
+      "angular_inertia": {
+        "params": {
+          "agent_acc": 24.721918556805175,
+          "damping": 0.6436725727561688,
+          "contact_radius": 3.7207535759002033,
+          "moment_of_inertia": 179.31626968879215,
+          "torque_factor": 2.786035857489599
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 3158.321168514713,
+        "val_one_step_nrmse": 100.03200424330723,
+        "val_rollout_nrmse": 59.68406088943546,
+        "restarts": 4,
+        "nfev": 104,
+        "elapsed_s": 31.369861602783203,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 10686.397205669651,
+            "val_rollout_nrmse": 99.31065382261374
+          },
+          {
+            "restart": 1,
+            "train_loss": 17372.543605179235,
+            "val_rollout_nrmse": 124.88139614478212
+          },
+          {
+            "restart": 2,
+            "train_loss": 3158.321168514713,
+            "val_rollout_nrmse": 59.68406088943546
+          },
+          {
+            "restart": 3,
+            "train_loss": 6876.270435829462,
+            "val_rollout_nrmse": 75.51075168830336
+          }
+        ]
+      },
+      "gated_response": {
+        "params": {
+          "acc_scale": 1655.6105867308231,
+          "vel_decay": 0.02413680267748882,
+          "gate_width": 0.12471930067713116,
+          "efficiency_peak": 0.9375385868131869,
+          "contact_range": 9.75867561090746
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.58155182727157,
+        "val_one_step_nrmse": 1.1908627041102333,
+        "val_rollout_nrmse": 47.28120932125077,
+        "restarts": 4,
+        "nfev": 123,
+        "elapsed_s": 39.49074697494507,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6025.914470983394,
+            "val_rollout_nrmse": 58.628975077706265
+          },
+          {
+            "restart": 1,
+            "train_loss": 3908.107238081792,
+            "val_rollout_nrmse": 54.36321294323343
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.58155182727157,
+            "val_rollout_nrmse": 47.28120932125077
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.581551827272664,
+            "val_rollout_nrmse": 110.3323844262155
+          }
+        ]
+      },
+      "saturation_limited": {
+        "params": {
+          "max_force": 104246.85705701474,
+          "vel_saturation": 28.72459810600925,
+          "accel_coupling": -159728.84517837226,
+          "contact_gain": 0.7887296096576522,
+          "damping_factor": -0.00026778999493795575
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.590280539429905,
+        "val_one_step_nrmse": 290.889550613822,
+        "val_rollout_nrmse": 166.03302777514764,
+        "restarts": 4,
+        "nfev": 737,
+        "elapsed_s": 440.01477813720703,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.299921489569776,
+            "val_rollout_nrmse": 170.51439952880494
+          },
+          {
+            "restart": 1,
+            "train_loss": 2703.87921335924,
+            "val_rollout_nrmse": 168.73989528505962
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.3275949274653325,
+            "val_rollout_nrmse": 169.18213888013202
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.590280539429905,
+            "val_rollout_nrmse": 166.03302777514764
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "linear_no_coupling",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_no_coupling": 2.4842248446678448,
+        "momentum_coupled": 163.51625106587974,
+        "threshold_contact": 107.97694433113963,
+        "angular_inertia": 87.20172954146668,
+        "gated_response": 52.16091564189147,
+        "saturation_limited": 163.51622618913717
+      }
+    },
+    "active_one_step": {
+      "winner": "gated_response",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "linear_no_coupling": 9.006487308336721,
+        "momentum_coupled": Infinity,
+        "threshold_contact": Infinity,
+        "angular_inertia": Infinity,
+        "gated_response": 4.689506653479478,
+        "saturation_limited": Infinity
+      },
+      "probes": [
+        {
+          "disagreement": 10.03700616464989,
+          "actions": [
+            [
+              -0.04949410024153966,
+              0.3844810211322605
+            ],
+            [
+              -0.04949410024153966,
+              0.3844810211322605
+            ],
+            [
+              -0.04949410024153966,
+              0.3844810211322605
+            ]
+          ],
+          "start": {
+            "agent.x": 260.254,
+            "agent.y": 212.647,
+            "agent.vx": 2.952,
+            "agent.vy": 17.337,
+            "block.x": 255.657,
+            "block.y": 227.154,
+            "block.angle": 0.522
+          },
+          "errors": {
+            "linear_no_coupling": 5.065155167109391,
+            "momentum_coupled": Infinity,
+            "threshold_contact": Infinity,
+            "angular_inertia": Infinity,
+            "gated_response": 6.583013389766721,
+            "saturation_limited": Infinity
+          }
+        },
+        {
+          "disagreement": 8.71386129617644,
+          "actions": [
+            [
+              -0.3627190261861279,
+              0.39083171476024686
+            ],
+            [
+              -0.3627190261861279,
+              0.39083171476024686
+            ],
+            [
+              -0.3627190261861279,
+              0.39083171476024686
+            ]
+          ],
+          "start": {
+            "agent.x": 412.31,
+            "agent.y": 184.464,
+            "agent.vx": -29.262,
+            "agent.vy": -41.554,
+            "block.x": 379.962,
+            "block.y": 227.19,
+            "block.angle": 1.938
+          },
+          "errors": {
+            "linear_no_coupling": 8.907133767960909,
+            "momentum_coupled": Infinity,
+            "threshold_contact": Infinity,
+            "angular_inertia": Infinity,
+            "gated_response": 4.869496238149671,
+            "saturation_limited": Infinity
+          }
+        },
+        {
+          "disagreement": 8.09483717015526,
+          "actions": [
+            [
+              -0.3018328113053871,
+              0.5375142840770004
+            ],
+            [
+              -0.3018328113053871,
+              0.5375142840770004
+            ],
+            [
+              -0.3018328113053871,
+              0.5375142840770004
+            ]
+          ],
+          "start": {
+            "agent.x": 382.637,
+            "agent.y": 168.396,
+            "agent.vx": -39.952,
+            "agent.vy": -35.926,
+            "block.x": 360.57,
+            "block.y": 207.861,
+            "block.angle": 1.748
+          },
+          "errors": {
+            "linear_no_coupling": 15.591859044342916,
+            "momentum_coupled": Infinity,
+            "threshold_contact": 5.228166437347678,
+            "angular_inertia": 5.22796002447115,
+            "gated_response": 5.2279094057206565,
+            "saturation_limited": Infinity
+          }
+        },
+        {
+          "disagreement": 6.305192033247892,
+          "actions": [
+            [
+              -0.0954629312226789,
+              0.3930658275340683
+            ],
+            [
+              -0.0954629312226789,
+              0.3930658275340683
+            ],
+            [
+              -0.0954629312226789,
+              0.3930658275340683
+            ]
+          ],
+          "start": {
+            "agent.x": 362.047,
+            "agent.y": 161.206,
+            "agent.vx": -20.202,
+            "agent.vy": 13.229,
+            "block.x": 347.537,
+            "block.y": 198.36,
+            "block.angle": 1.561
+          },
+          "errors": {
+            "linear_no_coupling": 6.652943692230387,
+            "momentum_coupled": Infinity,
+            "threshold_contact": Infinity,
+            "angular_inertia": Infinity,
+            "gated_response": 2.7545694396073555,
+            "saturation_limited": Infinity
+          }
+        },
+        {
+          "disagreement": 5.936259986981952,
+          "actions": [
+            [
+              -0.638518112687589,
+              0.23328293846508102
+            ],
+            [
+              0.2571436810111404,
+              -0.10975054419861496
+            ],
+            [
+              0.361758593477286,
+              -0.43980790837497574
+            ]
+          ],
+          "start": {
+            "agent.x": 418.984,
+            "agent.y": 225.629,
+            "agent.vx": -47.132,
+            "agent.vy": -94.711,
+            "block.x": 382.664,
+            "block.y": 243.61,
+            "block.angle": 2.311
+          },
+          "errors": {
+            "linear_no_coupling": 8.815344870040011,
+            "momentum_coupled": Infinity,
+            "threshold_contact": Infinity,
+            "angular_inertia": 4.012537289830362,
+            "gated_response": 4.01254479415299,
+            "saturation_limited": Infinity
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.044771671295166016
+    },
+    "offline_multi_step": {
+      "winner": "linear_no_coupling",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_no_coupling": 2.4273823228471016,
+        "momentum_coupled": 76.92219360484305,
+        "threshold_contact": 77.273023918045,
+        "angular_inertia": 59.68406088943546,
+        "gated_response": 47.28120932125077,
+        "saturation_limited": 166.03302777514764
+      }
+    },
+    "active_multi_step": {
+      "winner": "gated_response",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "linear_no_coupling": 1.3041467325652814,
+        "momentum_coupled": 32.12464217348092,
+        "threshold_contact": 16.818622785460935,
+        "angular_inertia": 11.029356311620056,
+        "gated_response": 1.3041348097116785,
+        "saturation_limited": 1.3753749313561496
+      },
+      "probes": [
+        {
+          "disagreement": 16.818183791439367,
+          "actions": [
+            [
+              0.20845825320898614,
+              -0.3512666664861589
+            ],
+            [
+              0.20845825320898614,
+              -0.3512666664861589
+            ],
+            [
+              0.20845825320898614,
+              -0.3512666664861589
+            ]
+          ],
+          "start": {
+            "agent.x": 260.474,
+            "agent.y": 149.288,
+            "agent.vx": -172.213,
+            "agent.vy": -182.222,
+            "block.x": 387.401,
+            "block.y": 282.968,
+            "block.angle": 2.681
+          },
+          "errors": {
+            "linear_no_coupling": 1.6171482181974708,
+            "momentum_coupled": 35.99038972741481,
+            "threshold_contact": 19.1007161819661,
+            "angular_inertia": 11.79519590734346,
+            "gated_response": 1.617143019280419,
+            "saturation_limited": 1.6566468074666034
+          }
+        },
+        {
+          "disagreement": 16.444095740787738,
+          "actions": [
+            [
+              -0.1434706301351127,
+              -0.038883842087887144
+            ],
+            [
+              -0.1434706301351127,
+              -0.038883842087887144
+            ],
+            [
+              -0.1434706301351127,
+              -0.038883842087887144
+            ]
+          ],
+          "start": {
+            "agent.x": 260.474,
+            "agent.y": 149.288,
+            "agent.vx": -172.213,
+            "agent.vy": -182.222,
+            "block.x": 387.401,
+            "block.y": 282.968,
+            "block.angle": 2.681
+          },
+          "errors": {
+            "linear_no_coupling": 0.623946830421635,
+            "momentum_coupled": 35.215715135650676,
+            "threshold_contact": 18.47237750736268,
+            "angular_inertia": 11.714033805961183,
+            "gated_response": 0.6239260100047471,
+            "saturation_limited": 0.7392990326202068
+          }
+        },
+        {
+          "disagreement": 14.97139790635057,
+          "actions": [
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ],
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ],
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ]
+          ],
+          "start": {
+            "agent.x": 228.275,
+            "agent.y": 163.922,
+            "agent.vx": -161.743,
+            "agent.vy": -173.011,
+            "block.x": 221.571,
+            "block.y": 210.686,
+            "block.angle": 1.156
+          },
+          "errors": {
+            "linear_no_coupling": 0.8164836027997144,
+            "momentum_coupled": 32.027990030554804,
+            "threshold_contact": 16.62363296923603,
+            "angular_inertia": 11.365303971507416,
+            "gated_response": 0.8164681838694031,
+            "saturation_limited": 0.9117213905531816
+          }
+        },
+        {
+          "disagreement": 13.564975289730759,
+          "actions": [
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ],
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ],
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ]
+          ],
+          "start": {
+            "agent.x": 222.314,
+            "agent.y": 134.426,
+            "agent.vx": -202.542,
+            "agent.vy": -133.601,
+            "block.x": 255.583,
+            "block.y": 227.269,
+            "block.angle": 0.522
+          },
+          "errors": {
+            "linear_no_coupling": 1.4119226699383456,
+            "momentum_coupled": 28.936188234645837,
+            "threshold_contact": 14.582380256927244,
+            "angular_inertia": 11.803948477151526,
+            "gated_response": 1.4119081393799284,
+            "saturation_limited": 1.4992902190567172
+          }
+        },
+        {
+          "disagreement": 13.252856723787206,
+          "actions": [
+            [
+              -0.49789373593253344,
+              0.417297093854513
+            ],
+            [
+              -0.3402132733453627,
+              -0.18999512746740238
+            ],
+            [
+              0.2632789789994495,
+              0.3256929944930504
+            ]
+          ],
+          "start": {
+            "agent.x": 174.514,
+            "agent.y": 133.605,
+            "agent.vx": -197.647,
+            "agent.vy": -5.277,
+            "block.x": 252.159,
+            "block.y": 239.799,
+            "block.angle": 0.464
+          },
+          "errors": {
+            "linear_no_coupling": 2.051232341469241,
+            "momentum_coupled": 28.452927739138463,
+            "threshold_contact": 15.314007011812613,
+            "angular_inertia": 8.468299396136693,
+            "gated_response": 2.0512286960238946,
+            "saturation_limited": 2.069917207084039
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.0482943058013916
+    }
+  },
+  "args": {
+    "env": "pusht",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_train.jsonl",
+    "val_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_val.jsonl",
+    "max_train_episodes": 40,
+    "max_val_episodes": 10,
+    "output_dir": "artifacts/visualpatchworld/llm_family/v1_pusht_coder_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 817.5618062019348
+}

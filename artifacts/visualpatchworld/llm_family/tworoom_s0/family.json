@@ -1,0 +1,936 @@
+{
+  "env": "tworoom",
+  "llm_model": "Qwen/Qwen3.5-397B-A17B",
+  "schema": {
+    "state_keys": [
+      "agent.x",
+      "agent.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "agent.x": {
+        "min": 14.06,
+        "max": 199.404
+      },
+      "agent.y": {
+        "min": 21.0,
+        "max": 208.141
+      },
+      "target.x": {
+        "min": 22.652,
+        "max": 205.757
+      },
+      "target.y": {
+        "min": 19.804,
+        "max": 207.074
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -1.0,
+      -1.0
+    ],
+    "action_max": [
+      1.0,
+      1.0
+    ],
+    "num_episodes": 51,
+    "num_transitions": 892
+  },
+  "scales": {
+    "agent.x": 10.597528584591904,
+    "agent.y": 11.175281778471136,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "linear_velocity",
+      "mechanism": "Agent position changes proportionally to action with constant velocity scale (simple baseline).",
+      "code": "# HYPOTHESIS: linear_velocity\n# MECHANISM: Agent position changes proportionally to action with constant velocity scale (simple baseline).\nPARAMS = {\"velocity_scale\": 25.0}\n\ndef step(state, action, p, meta):\n    \"\"\"state: dict mapping \"object.field\" -> float (do not mutate).\n    action: list of floats. p: dict of fitted constants (same keys as PARAMS).\n    meta: dict of static scene metadata (may be empty).\n    Return a NEW dict with exactly the same keys as `state`.\"\"\"\n    import math\n    new_state = {}\n    for k in state:\n        new_state[k] = state[k]\n    new_state[\"agent.x\"] = state[\"agent.x\"] + p[\"velocity_scale\"] * action[0]\n    new_state[\"agent.y\"] = state[\"agent.y\"] + p[\"velocity_scale\"] * action[1]\n    return new_state",
+      "init_params": {
+        "velocity_scale": 25.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "action_nonlinearity",
+      "mechanism": "Large actions experience diminishing returns through tanh saturation.",
+      "code": "# HYPOTHESIS: action_nonlinearity\n# MECHANISM: Large actions experience diminishing returns through tanh saturation.\nPARAMS = {\"velocity_scale\": 25.0, \"saturation_k\": 0.5}\n\ndef step(state, action, p, meta):\n    \"\"\"state: dict mapping \"object.field\" -> float (do not mutate).\n    action: list of floats. p: dict of fitted constants (same keys as PARAMS).\n    meta: dict of static scene metadata (may be empty).\n    Return a NEW dict with exactly the same keys as `state`.\"\"\"\n    import math\n    new_state = {}\n    for k in state:\n        new_state[k] = state[k]\n    k = p[\"saturation_k\"]\n    if abs(k) < 1e-8:\n        eff_ax, eff_ay = action[0], action[1]\n    else:\n        eff_ax = math.tanh(k * action[0]) / k\n        eff_ay = math.tanh(k * action[1]) / k\n    new_state[\"agent.x\"] = state[\"agent.x\"] + p[\"velocity_scale\"] * eff_ax\n    new_state[\"agent.y\"] = state[\"agent.y\"] + p[\"velocity_scale\"] * eff_ay\n    return new_state",
+      "init_params": {
+        "velocity_scale": 25.0,
+        "saturation_k": 0.5
+      },
+      "repaired": false
+    },
+    {
+      "name": "position_dependent_gain",
+      "mechanism": "Movement efficiency varies linearly with agent position in the arena.",
+      "code": "# HYPOTHESIS: position_dependent_gain\n# MECHANISM: Movement efficiency varies linearly with agent position in the arena.\nPARAMS = {\"base_scale\": 25.0, \"x_gradient\": 0.0, \"y_gradient\": 0.0}\n\ndef step(state, action, p, meta):\n    \"\"\"state: dict mapping \"object.field\" -> float (do not mutate).\n    action: list of floats. p: dict of fitted constants (same keys as PARAMS).\n    meta: dict of static scene metadata (may be empty).\n    Return a NEW dict with exactly the same keys as `state`.\"\"\"\n    import math\n    new_state = {}\n    for k in state:\n        new_state[k] = state[k]\n    scale_x = p[\"base_scale\"] + p[\"x_gradient\"] * state[\"agent.x\"]\n    scale_y = p[\"base_scale\"] + p[\"y_gradient\"] * state[\"agent.y\"]\n    new_state[\"agent.x\"] = state[\"agent.x\"] + scale_x * action[0]\n    new_state[\"agent.y\"] = state[\"agent.y\"] + scale_y * action[1]\n    return new_state",
+      "init_params": {
+        "base_scale": 25.0,
+        "x_gradient": 0.0,
+        "y_gradient": 0.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "boundary_constraints",
+      "mechanism": "Movement is damped near arena boundaries, creating soft wall effects.",
+      "code": "# HYPOTHESIS: boundary_constraints\n# MECHANISM: Movement is damped near arena boundaries, creating soft wall effects.\nPARAMS = {\"base_scale\": 25.0, \"boundary_margin\": 30.0, \"boundary_strength\": 0.3}\n\ndef step(state, action, p, meta):\n    \"\"\"state: dict mapping \"object.field\" -> float (do not mutate).\n    action: list of floats. p: dict of fitted constants (same keys as PARAMS).\n    meta: dict of static scene metadata (may be empty).\n    Return a NEW dict with exactly the same keys as `state`.\"\"\"\n    import math\n    new_state = {}\n    for k in state:\n        new_state[k] = state[k]\n    x_min, x_max = 10.0, 210.0\n    y_min, y_max = 10.0, 210.0\n    margin = p[\"boundary_margin\"]\n    strength = p[\"boundary_strength\"]\n    \n    damp_x = 1.0\n    if state[\"agent.x\"] < x_min + margin:\n        damp_x *= strength + (1 - strength) * (state[\"agent.x\"] - x_min) / margin\n    if state[\"agent.x\"] > x_max - margin:\n        damp_x *= strength + (1 - strength) * (x_max - state[\"agent.x\"]) / margin\n    \n    damp_y = 1.0\n    if state[\"agent.y\"] < y_min + margin:\n        damp_y *= strength + (1 - strength) * (state[\"agent.y\"] - y_min) / margin\n    if state[\"agent.y\"] > y_max - margin:\n        damp_y *= strength + (1 - strength) * (y_max - state[\"agent.y\"]) / margin\n    \n    damp_x = max(0.0, min(1.0, damp_x))\n    damp_y = max(0.0, min(1.0, damp_y))\n    \n    new_state[\"agent.x\"] = state[\"agent.x\"] + p[\"base_scale\"] * action[0] * damp_x\n    new_state[\"agent.y\"] = state[\"agent.y\"] + p[\"base_scale\"] * action[1] * damp_y\n    return new_state",
+      "init_params": {
+        "base_scale": 25.0,
+        "boundary_margin": 30.0,
+        "boundary_strength": 0.3
+      },
+      "repaired": false
+    },
+    {
+      "name": "target_coupling",
+      "mechanism": "Agent movement is biased toward or away from target position.",
+      "code": "# HYPOTHESIS: target_coupling\n# MECHANISM: Agent movement is biased toward or away from target position.\nPARAMS = {\"base_scale\": 20.0, \"target_coupling\": 0.5}\n\ndef step(state, action, p, meta):\n    \"\"\"state: dict mapping \"object.field\" -> float (do not mutate).\n    action: list of floats. p: dict of fitted constants (same keys as PARAMS).\n    meta: dict of static scene metadata (may be empty).\n    Return a NEW dict with exactly the same keys as `state`.\"\"\"\n    import math\n    new_state = {}\n    for k in state:\n        new_state[k] = state[k]\n    dx = state[\"target.x\"] - state[\"agent.x\"]\n    dy = state[\"target.y\"] - state[\"agent.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    if dist < 0.001:\n        dist = 0.001\n    ux, uy = dx / dist, dy / dist\n    mod_ax = action[0] + p[\"target_coupling\"] * ux\n    mod_ay = action[1] + p[\"target_coupling\"] * uy\n    new_state[\"agent.x\"] = state[\"agent.x\"] + p[\"base_scale\"] * mod_ax\n    new_state[\"agent.y\"] = state[\"agent.y\"] + p[\"base_scale\"] * mod_ay\n    return new_state",
+      "init_params": {
+        "base_scale": 20.0,
+        "target_coupling": 0.5
+      },
+      "repaired": false
+    },
+    {
+      "name": "action_cross_coupling",
+      "mechanism": "X and Y action components affect each other through rotational coupling.",
+      "code": "# HYPOTHESIS: action_cross_coupling\n# MECHANISM: X and Y action components affect each other through rotational coupling.\nPARAMS = {\"velocity_scale\": 25.0, \"cross_coupling\": 0.0}\n\ndef step(state, action, p, meta):\n    \"\"\"state: dict mapping \"object.field\" -> float (do not mutate).\n    action: list of floats. p: dict of fitted constants (same keys as PARAMS).\n    meta: dict of static scene metadata (may be empty).\n    Return a NEW dict with exactly the same keys as `state`.\"\"\"\n    import math\n    new_state = {}\n    for k in state:\n        new_state[k] = state[k]\n    cc = p[\"cross_coupling\"]\n    eff_ax = action[0] + cc * action[1]\n    eff_ay = action[1] + cc * action[0]\n    new_state[\"agent.x\"] = state[\"agent.x\"] + p[\"velocity_scale\"] * eff_ax\n    new_state[\"agent.y\"] = state[\"agent.y\"] + p[\"velocity_scale\"] * eff_ay\n    return new_state",
+      "init_params": {
+        "velocity_scale": 25.0,
+        "cross_coupling": 0.0
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_velocity": {
+        "params": {
+          "velocity_scale": 23.710023664290333
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03523599876445178,
+        "val_one_step_nrmse": 0.05759272537065468,
+        "val_rollout_nrmse": 0.1105930784617024,
+        "restarts": 4,
+        "nfev": 10,
+        "elapsed_s": 0.10103440284729004,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307860531271
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523599876445178,
+            "val_rollout_nrmse": 0.11059307876747232
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307862186181
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523599876445178,
+            "val_rollout_nrmse": 0.1105930784617024
+          }
+        ]
+      },
+      "action_nonlinearity": {
+        "params": {
+          "velocity_scale": 23.709959742760216,
+          "saturation_k": -0.0004177227159748302
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.035235998870766845,
+        "val_one_step_nrmse": 0.05759392173518455,
+        "val_rollout_nrmse": 0.11059613767322221,
+        "restarts": 4,
+        "nfev": 82,
+        "elapsed_s": 0.6660306453704834,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035235998776773164,
+            "val_rollout_nrmse": 0.1105988010729795
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523599879290532,
+            "val_rollout_nrmse": 0.11060166912053783
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035235998997661576,
+            "val_rollout_nrmse": 0.11059640542814175
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.035235998870766845,
+            "val_rollout_nrmse": 0.11059613767322221
+          }
+        ]
+      },
+      "position_dependent_gain": {
+        "params": {
+          "base_scale": 23.897823176843044,
+          "x_gradient": -0.012335359179381096,
+          "y_gradient": 0.010341677881204964
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03397659816997722,
+        "val_one_step_nrmse": 0.06891209920023404,
+        "val_rollout_nrmse": 0.13409220758351564,
+        "restarts": 4,
+        "nfev": 13,
+        "elapsed_s": 0.1397571563720703,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03397659816997722,
+            "val_rollout_nrmse": 0.13409220758351564
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03397659816997721,
+            "val_rollout_nrmse": 0.13409220805999827
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03397659816997721,
+            "val_rollout_nrmse": 0.13409220808250313
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03397659816997722,
+            "val_rollout_nrmse": 0.1340922082919674
+          }
+        ]
+      },
+      "boundary_constraints": {
+        "params": {
+          "base_scale": 23.710186047319883,
+          "boundary_margin": 32.38354246941185,
+          "boundary_strength": 3.6163690312099557
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03523599878657883,
+        "val_one_step_nrmse": 0.05758971257516819,
+        "val_rollout_nrmse": 0.11058537357216071,
+        "restarts": 4,
+        "nfev": 77,
+        "elapsed_s": 0.7453205585479736,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035235998765959745,
+            "val_rollout_nrmse": 0.11059106716805792
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523599877822449,
+            "val_rollout_nrmse": 0.11058699972462864
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03523599876587153,
+            "val_rollout_nrmse": 0.11059112688427822
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523599878657883,
+            "val_rollout_nrmse": 0.11058537357216071
+          }
+        ]
+      },
+      "target_coupling": {
+        "params": {
+          "base_scale": 23.797162717507568,
+          "target_coupling": -0.005805450799064027
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.035201847218999716,
+        "val_one_step_nrmse": 0.057986936163197,
+        "val_rollout_nrmse": 0.11677287398286382,
+        "restarts": 4,
+        "nfev": 16,
+        "elapsed_s": 0.1674211025238037,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03520184721899971,
+            "val_rollout_nrmse": 0.11677287442270366
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03520184721899972,
+            "val_rollout_nrmse": 0.11677287425662934
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035201847218999716,
+            "val_rollout_nrmse": 0.11677287398286382
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03520184721899971,
+            "val_rollout_nrmse": 0.11677287408040696
+          }
+        ]
+      },
+      "action_cross_coupling": {
+        "params": {
+          "velocity_scale": 23.710556945807056,
+          "cross_coupling": -0.00452587936537175
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03522631033929966,
+        "val_one_step_nrmse": 0.057588046601930974,
+        "val_rollout_nrmse": 0.11037482654034293,
+        "restarts": 4,
+        "nfev": 16,
+        "elapsed_s": 0.1369788646697998,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03522631033929966,
+            "val_rollout_nrmse": 0.110374826780776
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03522631033929966,
+            "val_rollout_nrmse": 0.11037482695508985
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03522631033929966,
+            "val_rollout_nrmse": 0.11037482654034293
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03522631033929967,
+            "val_rollout_nrmse": 0.11037482665314496
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_velocity": {
+        "params": {
+          "velocity_scale": 23.496798762551993
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919190484882868,
+        "val_one_step_nrmse": 0.061699129520703846,
+        "val_rollout_nrmse": 0.12094199828077688,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 0.48481249809265137,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919190484882865,
+            "val_rollout_nrmse": 0.12094199863640513
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.1209419991178051
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.12094199828077688
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.12094199852714489
+          }
+        ]
+      },
+      "action_nonlinearity": {
+        "params": {
+          "velocity_scale": 23.49679363748314,
+          "saturation_k": -6.919686554962329e-06
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.169191904849252,
+        "val_one_step_nrmse": 0.06169923159483482,
+        "val_rollout_nrmse": 0.12094225212182795,
+        "restarts": 4,
+        "nfev": 110,
+        "elapsed_s": 6.521480083465576,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919190522780456,
+            "val_rollout_nrmse": 0.12095654628169722
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.169191904849252,
+            "val_rollout_nrmse": 0.12094225212182795
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190556571248,
+            "val_rollout_nrmse": 0.1209476724992466
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1691919050590873,
+            "val_rollout_nrmse": 0.1209480845581736
+          }
+        ]
+      },
+      "position_dependent_gain": {
+        "params": {
+          "base_scale": 23.379958727380327,
+          "x_gradient": -0.0122676334374194,
+          "y_gradient": 0.014917200396938071
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16029526645623451,
+        "val_one_step_nrmse": 0.0776581783371535,
+        "val_rollout_nrmse": 0.15360422195633924,
+        "restarts": 4,
+        "nfev": 19,
+        "elapsed_s": 1.697463035583496,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16029526645658515,
+            "val_rollout_nrmse": 0.1536046178069552
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16029526645623451,
+            "val_rollout_nrmse": 0.15360422195633924
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16029526645610356,
+            "val_rollout_nrmse": 0.15360434123896347
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16029526645610126,
+            "val_rollout_nrmse": 0.15360435354343022
+          }
+        ]
+      },
+      "boundary_constraints": {
+        "params": {
+          "base_scale": 23.50155750209673,
+          "boundary_margin": 30.910891920017704,
+          "boundary_strength": 1.033453671583729
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919199631891138,
+        "val_one_step_nrmse": 0.06160441952703507,
+        "val_rollout_nrmse": 0.12070640479601834,
+        "restarts": 4,
+        "nfev": 71,
+        "elapsed_s": 4.283746242523193,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919199631891138,
+            "val_rollout_nrmse": 0.12070640479601834
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190486040417,
+            "val_rollout_nrmse": 0.12093934696918543
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.169191905448299,
+            "val_rollout_nrmse": 0.12096107927433389
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1691919048834752,
+            "val_rollout_nrmse": 0.12094658539443806
+          }
+        ]
+      },
+      "target_coupling": {
+        "params": {
+          "base_scale": 23.624588030058266,
+          "target_coupling": -0.004556397487390562
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1689912863280559,
+        "val_one_step_nrmse": 0.06076928218226599,
+        "val_rollout_nrmse": 0.12266658932014839,
+        "restarts": 4,
+        "nfev": 24,
+        "elapsed_s": 1.5398387908935547,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1689912863280559,
+            "val_rollout_nrmse": 0.12266658998208649
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1689912863280559,
+            "val_rollout_nrmse": 0.12266658932014839
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.1689912863280559,
+            "val_rollout_nrmse": 0.12266658976007304
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16899128632805716,
+            "val_rollout_nrmse": 0.12266660986478191
+          }
+        ]
+      },
+      "action_cross_coupling": {
+        "params": {
+          "velocity_scale": 23.50501865987381,
+          "cross_coupling": 0.016236033918288956
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1685995049514307,
+        "val_one_step_nrmse": 0.06264208063128734,
+        "val_rollout_nrmse": 0.12391159194323943,
+        "restarts": 4,
+        "nfev": 16,
+        "elapsed_s": 0.8658936023712158,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16859950495143072,
+            "val_rollout_nrmse": 0.12391159268252609
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16859950495143067,
+            "val_rollout_nrmse": 0.1239115926830289
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16859950495143067,
+            "val_rollout_nrmse": 0.12391159226936384
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1685995049514307,
+            "val_rollout_nrmse": 0.12391159194323943
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "action_cross_coupling",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_velocity": 0.1105930784617024,
+        "action_nonlinearity": 0.11059613767322221,
+        "position_dependent_gain": 0.13409220758351564,
+        "boundary_constraints": 0.11058537357216071,
+        "target_coupling": 0.11677287398286382,
+        "action_cross_coupling": 0.11037482654034293
+      }
+    },
+    "active_one_step": {
+      "winner": "boundary_constraints",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scores": {
+        "linear_velocity": 0.5143449096863592,
+        "action_nonlinearity": 0.5143461009798803,
+        "position_dependent_gain": 0.5687534390364849,
+        "boundary_constraints": 0.5143419341709631,
+        "target_coupling": 0.5181024269694786,
+        "action_cross_coupling": 0.5191644369828831
+      },
+      "probes": [
+        {
+          "disagreement": 0.07557487453047555,
+          "actions": [
+            [
+              -0.9433606577090741,
+              -0.7514334470008721
+            ],
+            [
+              -0.9433606577090741,
+              -0.7514334470008721
+            ],
+            [
+              -0.9433606577090741,
+              -0.7514334470008721
+            ]
+          ],
+          "start": {
+            "agent.x": 198.462,
+            "agent.y": 83.864,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "linear_velocity": 0.15543554619850813,
+            "action_nonlinearity": 0.15544337680705206,
+            "position_dependent_gain": 0.32376843858726073,
+            "boundary_constraints": 0.15541597950471142,
+            "target_coupling": 0.15177843958898898,
+            "action_cross_coupling": 0.167851085320486
+          }
+        },
+        {
+          "disagreement": 0.06772776967488636,
+          "actions": [
+            [
+              0.7168868545990232,
+              -0.06666692062878021
+            ],
+            [
+              0.6597825623218976,
+              0.04779312845380934
+            ],
+            [
+              0.9126693188452377,
+              0.4332156674645373
+            ]
+          ],
+          "start": {
+            "agent.x": 193.436,
+            "agent.y": 88.864,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "linear_velocity": 1.3856511360902497,
+            "action_nonlinearity": 1.38564630920318,
+            "position_dependent_gain": 1.2090353727892802,
+            "boundary_constraints": 1.3856632458509772,
+            "target_coupling": 1.4054814068432662,
+            "action_cross_coupling": 1.3847594506601097
+          }
+        },
+        {
+          "disagreement": 0.06735272613229995,
+          "actions": [
+            [
+              0.8873555304583756,
+              -0.6014033186410277
+            ],
+            [
+              0.8873555304583756,
+              -0.6014033186410277
+            ],
+            [
+              0.8873555304583756,
+              -0.6014033186410277
+            ]
+          ],
+          "start": {
+            "agent.x": 143.237,
+            "agent.y": 123.029,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "linear_velocity": 0.13723840440367926,
+            "action_nonlinearity": 0.13723909679775978,
+            "position_dependent_gain": 0.1654440631003797,
+            "boundary_constraints": 0.13723662982300278,
+            "target_coupling": 0.13354386119982378,
+            "action_cross_coupling": 0.13415448191331122
+          }
+        },
+        {
+          "disagreement": 0.06674158085890017,
+          "actions": [
+            [
+              0.8649589861175722,
+              0.8588340012457134
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134
+            ]
+          ],
+          "start": {
+            "agent.x": 140.504,
+            "agent.y": 71.143,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "linear_velocity": 0.12955892948606554,
+            "action_nonlinearity": 0.1295661175947674,
+            "position_dependent_gain": 0.21757087482336215,
+            "boundary_constraints": 0.1295409570810197,
+            "target_coupling": 0.12866404762577735,
+            "action_cross_coupling": 0.14149275449575385
+          }
+        },
+        {
+          "disagreement": 0.06455711334281534,
+          "actions": [
+            [
+              -0.35389261378836423,
+              0.8551176189319254
+            ],
+            [
+              -0.35389261378836423,
+              0.8551176189319254
+            ],
+            [
+              -0.35389261378836423,
+              0.8551176189319254
+            ]
+          ],
+          "start": {
+            "agent.x": 44.262,
+            "agent.y": 170.512,
+            "target.x": 198.978,
+            "target.y": 189.591
+          },
+          "errors": {
+            "linear_velocity": 0.7638405322532931,
+            "action_nonlinearity": 0.7638356044966422,
+            "position_dependent_gain": 0.9279484458821419,
+            "boundary_constraints": 0.7638528585951045,
+            "target_coupling": 0.7710443795895365,
+            "action_cross_coupling": 0.7675644125247549
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.8752002716064453
+    },
+    "offline_multi_step": {
+      "winner": "boundary_constraints",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_velocity": 0.12094199828077688,
+        "action_nonlinearity": 0.12094225212182795,
+        "position_dependent_gain": 0.15360422195633924,
+        "boundary_constraints": 0.12070640479601834,
+        "target_coupling": 0.12266658932014839,
+        "action_cross_coupling": 0.12391159194323943
+      }
+    },
+    "active_multi_step": {
+      "winner": "action_cross_coupling",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scores": {
+        "linear_velocity": 0.28155226253707155,
+        "action_nonlinearity": 0.28155258610756617,
+        "position_dependent_gain": 0.42548959573847267,
+        "boundary_constraints": 0.2812520436901831,
+        "target_coupling": 0.2774056584588882,
+        "action_cross_coupling": 0.2561801286416242
+      },
+      "probes": [
+        {
+          "disagreement": 0.09480407691718741,
+          "actions": [
+            [
+              -0.9433606577090741,
+              -0.7514334470008721
+            ],
+            [
+              -0.9433606577090741,
+              -0.7514334470008721
+            ],
+            [
+              -0.9433606577090741,
+              -0.7514334470008721
+            ]
+          ],
+          "start": {
+            "agent.x": 198.462,
+            "agent.y": 83.864,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "linear_velocity": 0.18112854117231747,
+            "action_nonlinearity": 0.1811291587634317,
+            "position_dependent_gain": 0.37403074249830365,
+            "boundary_constraints": 0.18055512657480563,
+            "target_coupling": 0.17095261175856719,
+            "action_cross_coupling": 0.1362212313932423
+          }
+        },
+        {
+          "disagreement": 0.08902593176249675,
+          "actions": [
+            [
+              -0.35389261378836423,
+              0.8551176189319254
+            ],
+            [
+              -0.35389261378836423,
+              0.8551176189319254
+            ],
+            [
+              -0.35389261378836423,
+              0.8551176189319254
+            ]
+          ],
+          "start": {
+            "agent.x": 44.262,
+            "agent.y": 170.512,
+            "target.x": 198.978,
+            "target.y": 189.591
+          },
+          "errors": {
+            "linear_velocity": 0.7477269367105102,
+            "action_nonlinearity": 0.7477265511532378,
+            "position_dependent_gain": 0.9553916859735906,
+            "boundary_constraints": 0.748084953643759,
+            "target_coupling": 0.7577099130500544,
+            "action_cross_coupling": 0.7365680424369391
+          }
+        },
+        {
+          "disagreement": 0.08615525015722998,
+          "actions": [
+            [
+              0.8873555304583756,
+              -0.6014033186410277
+            ],
+            [
+              0.8873555304583756,
+              -0.6014033186410277
+            ],
+            [
+              0.8873555304583756,
+              -0.6014033186410277
+            ]
+          ],
+          "start": {
+            "agent.x": 143.237,
+            "agent.y": 123.029,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "linear_velocity": 0.1414208708536836,
+            "action_nonlinearity": 0.14142101455760242,
+            "position_dependent_gain": 0.20287290448256698,
+            "boundary_constraints": 0.14128830517234198,
+            "target_coupling": 0.13475719983352533,
+            "action_cross_coupling": 0.1631919137721068
+          }
+        },
+        {
+          "disagreement": 0.08501980343605284,
+          "actions": [
+            [
+              0.8649589861175722,
+              0.8588340012457134
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134
+            ]
+          ],
+          "start": {
+            "agent.x": 140.504,
+            "agent.y": 71.143,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "linear_velocity": 0.15351639831264932,
+            "action_nonlinearity": 0.15351698143972142,
+            "position_dependent_gain": 0.26225684768282986,
+            "boundary_constraints": 0.15297510865030828,
+            "target_coupling": 0.1454432603980703,
+            "action_cross_coupling": 0.11026275982727733
+          }
+        },
+        {
+          "disagreement": 0.08475116386590532,
+          "actions": [
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ]
+          ],
+          "start": {
+            "agent.x": 129.849,
+            "agent.y": 54.117,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_velocity": 0.1839685656361972,
+            "action_nonlinearity": 0.18396922462383733,
+            "position_dependent_gain": 0.33289579805507213,
+            "boundary_constraints": 0.18335672440970038,
+            "target_coupling": 0.1781653072542239,
+            "action_cross_coupling": 0.1346566957785554
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.19811677932739258
+    }
+  },
+  "args": {
+    "env": "tworoom",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "output_dir": "artifacts/visualpatchworld/llm_family/tworoom_s0",
+    "num_hypotheses": 6,
+    "model": null,
+    "seed": 0,
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 97.66462779045105
+}

@@ -1,0 +1,1047 @@
+{
+  "env": "pusht",
+  "llm_model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+  "schema": {
+    "state_keys": [
+      "agent.vx",
+      "agent.vy",
+      "agent.x",
+      "agent.y",
+      "block.angle",
+      "block.x",
+      "block.y"
+    ],
+    "state_ranges": {
+      "agent.vx": {
+        "min": -239.038,
+        "max": 197.288
+      },
+      "agent.vy": {
+        "min": -164.106,
+        "max": 212.259
+      },
+      "agent.x": {
+        "min": 44.226,
+        "max": 431.137
+      },
+      "agent.y": {
+        "min": 166.867,
+        "max": 468.784
+      },
+      "block.angle": {
+        "min": 0.743,
+        "max": 2.948
+      },
+      "block.x": {
+        "min": 188.561,
+        "max": 253.842
+      },
+      "block.y": {
+        "min": 257.991,
+        "max": 341.005
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.643,
+      -0.44
+    ],
+    "action_max": [
+      0.53,
+      0.571
+    ],
+    "num_episodes": 40,
+    "num_transitions": 4320
+  },
+  "scales": {
+    "agent.vx": 29.0491526697332,
+    "agent.vy": 33.10328911582162,
+    "agent.x": 8.784955836446613,
+    "agent.y": 7.583339167070911,
+    "block.angle": 0.03517513204333592,
+    "block.x": 1.5088737783332182,
+    "block.y": 1.686962387941111
+  },
+  "candidates": [
+    {
+      "name": "linear_pusher_no_momentum",
+      "mechanism": "Agent moves instantaneously to commanded position; block moves only when contacted, with no momentum or rotation.",
+      "code": "# HYPOTHESIS: linear_pusher_no_momentum\n# MECHANISM: Agent moves instantaneously to commanded position; block moves only when contacted, with no momentum or rotation.\nPARAMS = {\"agent_gain\": 1.0, \"contact_threshold\": 10.0, \"friction_coeff\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    next_state = {}\n    # Agent moves directly based on action (no velocity integration)\n    next_state[\"agent.x\"] = state[\"agent.x\"] + action[0] * p[\"agent_gain\"]\n    next_state[\"agent.y\"] = state[\"agent.y\"] + action[1] * p[\"agent_gain\"]\n    next_state[\"agent.vx\"] = 0.0\n    next_state[\"agent.vy\"] = 0.0\n\n    # Block only moves if agent is close enough\n    dx_agent_block = state[\"agent.x\"] - state[\"block.x\"]\n    dy_agent_block = state[\"agent.y\"] - state[\"block.y\"]\n    dist = math.sqrt(dx_agent_block**2 + dy_agent_block**2)\n\n    if dist < p[\"contact_threshold\"]:\n        # Move block with agent\n        next_state[\"block.x\"] = state[\"block.x\"] + action[0] * p[\"agent_gain\"] * (1 - p[\"friction_coeff\"])\n        next_state[\"block.y\"] = state[\"block.y\"] + action[1] * p[\"agent_gain\"] * (1 - p[\"friction_coeff\"])\n    else:\n        next_state[\"block.x\"] = state[\"block.x\"]\n        next_state[\"block.y\"] = state[\"block.y\"]\n\n    # Angle does not change\n    next_state[\"block.angle\"] = state[\"block.angle\"]\n    return next_state",
+      "init_params": {
+        "agent_gain": 1.0,
+        "contact_threshold": 10.0,
+        "friction_coeff": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "pusher_with_velocity_and_inertia",
+      "mechanism": "Agent accelerates under action force, integrates velocity to get position; block responds via impulses upon contact with damping.",
+      "code": "# HYPOTHESIS: pusher_with_velocity_and_inertia\n# MECHANISM: Agent accelerates under action force, integrates velocity to get position; block responds via impulses upon contact with damping.\nPARAMS = {\"agent_mass\": 1.0, \"block_mass\": 2.0, \"dt\": 0.1, \"damping\": 0.05, \"contact_distance\": 15.0}\n\ndef step(state, action, p, meta):\n    import math\n    next_state = {}\n\n    # Update agent: F = ma => v += a*dt; x += v*dt\n    ax_agent = action[0] / p[\"agent_mass\"]\n    ay_agent = action[1] / p[\"agent_mass\"]\n    vx_new = state[\"agent.vx\"] + ax_agent * p[\"dt\"]\n    vy_new = state[\"agent.vy\"] + ay_agent * p[\"dt\"]\n    x_new = state[\"agent.x\"] + vx_new * p[\"dt\"]\n    y_new = state[\"agent.y\"] + vy_new * p[\"dt\"]\n\n    next_state[\"agent.vx\"] = vx_new\n    next_state[\"agent.vy\"] = vy_new\n    next_state[\"agent.x\"] = x_new\n    next_state[\"agent.y\"] = y_new\n\n    # Compute distance between agent and block\n    dx = x_new - state[\"block.x\"]\n    dy = y_new - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n\n    # If in contact, apply impulse\n    if dist < p[\"contact_distance\"]:\n        # Simple elastic impulse model: transfer some velocity\n        vbx = state[\"block.x\"] - state[\"block.x\"]  # Assume zero initial block velocity in x\n        vby = state[\"block.y\"] - state[\"block.y\"]  # Same for y\n        dvx = vx_new - vbx\n        dvy = vy_new - vby\n        impulse_scale = 0.5  # Fraction of relative velocity transferred\n        new_bx = state[\"block.x\"] + dvx * impulse_scale * p[\"dt\"]\n        new_by = state[\"block.y\"] + dvy * impulse_scale * p[\"dt\"]\n        next_state[\"block.x\"] = new_bx\n        next_state[\"block.y\"] = new_by\n        # Apply damping to block movement\n        next_state[\"block.x\"] -= (new_bx - state[\"block.x\"]) * p[\"damping\"]\n        next_state[\"block.y\"] -= (new_by - state[\"block.y\"]) * p[\"damping\"]\n    else:\n        next_state[\"block.x\"] = state[\"block.x\"]\n        next_state[\"block.y\"] = state[\"block.y\"]\n\n    # No rotation assumed\n    next_state[\"block.angle\"] = state[\"block.angle\"]\n    return next_state",
+      "init_params": {
+        "agent_mass": 1.0,
+        "block_mass": 2.0,
+        "dt": 0.1,
+        "damping": 0.05,
+        "contact_distance": 15.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "gated_push_with_angle_response",
+      "mechanism": "Action affects agent velocity which integrates to position; block rotates when pushed at specific contact points.",
+      "code": "# HYPOTHESIS: gated_push_with_angle_response\n# MECHANISM: Action affects agent velocity which integrates to position; block rotates when pushed at specific contact points.\nPARAMS = {\"agent_accel_gain\": 10.0, \"agent_damping\": 0.1, \"block_inertia\": 0.5, \"contact_radius\": 20.0, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    next_state = {}\n\n    # Agent dynamics: acceleration from action, damped velocity integration\n    ax = action[0] * p[\"agent_accel_gain\"]\n    ay = action[1] * p[\"agent_accel_gain\"]\n    vx_new = (state[\"agent.vx\"] + ax * p[\"dt\"]) * (1 - p[\"agent_damping\"])\n    vy_new = (state[\"agent.vy\"] + ay * p[\"dt\"]) * (1 - p[\"agent_damping\"])\n    x_new = state[\"agent.x\"] + vx_new * p[\"dt\"]\n    y_new = state[\"agent.y\"] + vy_new * p[\"dt\"]\n\n    next_state[\"agent.vx\"] = vx_new\n    next_state[\"agent.vy\"] = vy_new\n    next_state[\"agent.x\"] = x_new\n    next_state[\"agent.y\"] = y_new\n\n    # Check contact condition for block rotation\n    dx = x_new - state[\"block.x\"]\n    dy = y_new - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n\n    if dist < p[\"contact_radius\"]:\n        # Torque ~ lever arm \u00d7 force\n        torque = (-dy)*vx_new + (dx)*vy_new  # 2D cross product equivalent\n        delta_angle = torque / p[\"block_inertia\"] * p[\"dt\"]\n        next_state[\"block.angle\"] = state[\"block.angle\"] + delta_angle\n        # Also translate block slightly\n        next_state[\"block.x\"] = state[\"block.x\"] + 0.1 * vx_new * p[\"dt\"]\n        next_state[\"block.y\"] = state[\"block.y\"] + 0.1 * vy_new * p[\"dt\"]\n    else:\n        next_state[\"block.angle\"] = state[\"block.angle\"]\n        next_state[\"block.x\"] = state[\"block.x\"]\n        next_state[\"block.y\"] = state[\"block.y\"]\n\n    return next_state",
+      "init_params": {
+        "agent_accel_gain": 10.0,
+        "agent_damping": 0.1,
+        "block_inertia": 0.5,
+        "contact_radius": 20.0,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "passive_block_contact_push",
+      "mechanism": "Agent has inertia and momentum; block behaves as a passive object that translates and rotates under contact forces.",
+      "code": "# HYPOTHESIS: passive_block_contact_push\n# MECHANISM: Agent has inertia and momentum; block behaves as a passive object that translates and rotates under contact forces.\nPARAMS = {\"agent_mass\": 1.0, \"agent_damping\": 0.05, \"block_mass\": 5.0, \"block_inertia\": 2.0, \"dt\": 0.1, \"contact_stiffness\": 100.0}\n\ndef step(state, action, p, meta):\n    import math\n    next_state = {}\n\n    # Agent physics: second order with damping\n    ax = action[0] / p[\"agent_mass\"]\n    ay = action[1] / p[\"agent_mass\"]\n    vx_new = (state[\"agent.vx\"] + ax * p[\"dt\"]) * (1 - p[\"agent_damping\"])\n    vy_new = (state[\"agent.vy\"] + ay * p[\"dt\"]) * (1 - p[\"agent_damping\"])\n    x_new = state[\"agent.x\"] + vx_new * p[\"dt\"]\n    y_new = state[\"agent.y\"] + vy_new * p[\"dt\"]\n\n    next_state[\"agent.vx\"] = vx_new\n    next_state[\"agent.vy\"] = vy_new\n    next_state[\"agent.x\"] = x_new\n    next_state[\"agent.y\"] = y_new\n\n    # Contact force calculation\n    dx = x_new - state[\"block.x\"]\n    dy = y_new - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    if dist < 30.0:  # Assume approximate contact radius\n        # Normalized direction vector\n        nx = dx / (dist + 1e-8)\n        ny = dy / (dist + 1e-8)\n        # Spring-like repulsion/contact force\n        force_mag = p[\"contact_stiffness\"] * (30.0 - dist) / p[\"block_mass\"]\n        fx = nx * force_mag\n        fy = ny * force_mag\n\n        # Update block translation\n        bx_new = state[\"block.x\"] + fx * p[\"dt\"]**2\n        by_new = state[\"block.y\"] + fy * p[\"dt\"]**2\n        next_state[\"block.x\"] = bx_new\n        next_state[\"block.y\"] = by_new\n\n        # Torque = r x F -> rotation effect\n        torque = dx * fy - dy * fx\n        angular_acc = torque / p[\"block_inertia\"]\n        delta_angle = angular_acc * p[\"dt\"]**2\n        next_state[\"block.angle\"] = state[\"block.angle\"] + delta_angle\n    else:\n        next_state[\"block.x\"] = state[\"block.x\"]\n        next_state[\"block.y\"] = state[\"block.y\"]\n        next_state[\"block.angle\"] = state[\"block.angle\"]\n\n    return next_state",
+      "init_params": {
+        "agent_mass": 1.0,
+        "agent_damping": 0.05,
+        "block_mass": 5.0,
+        "block_inertia": 2.0,
+        "dt": 0.1,
+        "contact_stiffness": 100.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "sticky_push_with_coulomb_friction",
+      "mechanism": "Agent sticks and drags block when in contact; both slide with Coulomb-type friction resisting motion.",
+      "code": "# HYPOTHESIS: sticky_push_with_coulomb_friction\n# MECHANISM: Agent sticks and drags block when in contact; both slide with Coulomb-type friction resisting motion.\nPARAMS = {\"stick_threshold\": 10.0, \"friction_coefficient\": 0.2, \"drag_ratio\": 0.8, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    next_state = {}\n\n    # Agent moves according to action\n    ax = action[0]\n    ay = action[1]\n    vx_new = ax\n    vy_new = ay\n    x_new = state[\"agent.x\"] + vx_new * p[\"dt\"]\n    y_new = state[\"agent.y\"] + vy_new * p[\"dt\"]\n\n    next_state[\"agent.vx\"] = vx_new\n    next_state[\"agent.vy\"] = vy_new\n    next_state[\"agent.x\"] = x_new\n    next_state[\"agent.y\"] = y_new\n\n    # Distance check for sticking\n    dx = x_new - state[\"block.x\"]\n    dy = y_new - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n\n    if dist < p[\"stick_threshold\"]:\n        # Move block proportionally\n        dbx = ax * p[\"drag_ratio\"] * p[\"dt\"]\n        dby = ay * p[\"drag_ratio\"] * p[\"dt\"]\n\n        # Friction reduces movement\n        speed = math.sqrt(dbx**2 + dby**2)\n        if speed > 1e-6:\n            friction_factor = max(0.0, 1.0 - p[\"friction_coefficient\"])\n            dbx *= friction_factor\n            dby *= friction_factor\n\n        next_state[\"block.x\"] = state[\"block.x\"] + dbx\n        next_state[\"block.y\"] = state[\"block.y\"] + dby\n        next_state[\"block.angle\"] = state[\"block.angle\"]  # No rotation\n    else:\n        next_state[\"block.x\"] = state[\"block.x\"]\n        next_state[\"block.y\"] = state[\"block.y\"]\n        next_state[\"block.angle\"] = state[\"block.angle\"]\n\n    return next_state",
+      "init_params": {
+        "stick_threshold": 10.0,
+        "friction_coefficient": 0.2,
+        "drag_ratio": 0.8,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "baseline_random_walk",
+      "mechanism": "Baseline where agent performs noisy random walk independent of actions; block remains static.",
+      "code": "# HYPOTHESIS: baseline_random_walk\n# MECHANISM: Baseline where agent performs noisy random walk independent of actions; block remains static.\nPARAMS = {\"noise_level\": 0.0}  # To be fitted to represent residual randomness\n\ndef step(state, action, p, meta):\n    import math\n    import random\n    next_state = {}\n\n    # Random walk regardless of action\n    noise_x = (random.random() - 0.5) * p[\"noise_level\"]\n    noise_y = (random.random() - 0.5) * p[\"noise_level\"]\n\n    next_state[\"agent.x\"] = state[\"agent.x\"] + noise_x\n    next_state[\"agent.y\"] = state[\"agent.y\"] + noise_y\n    next_state[\"agent.vx\"] = 0.0\n    next_state[\"agent.vy\"] = 0.0\n\n    # Block doesn't move\n    next_state[\"block.x\"] = state[\"block.x\"]\n    next_state[\"block.y\"] = state[\"block.y\"]\n    next_state[\"block.angle\"] = state[\"block.angle\"]\n\n    return next_state",
+      "init_params": {
+        "noise_level": 0.0
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_pusher_no_momentum": {
+        "params": {
+          "agent_gain": 39.7930661973199,
+          "contact_threshold": 10.0,
+          "friction_coeff": 0.1
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 2.40918801772236,
+        "val_one_step_nrmse": 1.3030520239956318,
+        "val_rollout_nrmse": 2.5311698239242966,
+        "restarts": 4,
+        "nfev": 66,
+        "elapsed_s": 3.1908016204833984,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.40918801772236,
+            "val_rollout_nrmse": 2.5311698239242966
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.409188017508568,
+            "val_rollout_nrmse": 2.5338940239767207
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.4091880175248037,
+            "val_rollout_nrmse": 2.5311912381559294
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.409188017613721,
+            "val_rollout_nrmse": 2.535087520692192
+          }
+        ]
+      },
+      "pusher_with_velocity_and_inertia": {
+        "params": {
+          "agent_mass": 0.002911246225803427,
+          "block_mass": 3.8841268658652215,
+          "dt": 0.09611927626882297,
+          "damping": 0.01383471687786509,
+          "contact_distance": 23.587555187468126
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8139016494379445,
+        "val_one_step_nrmse": 0.8059240787033813,
+        "val_rollout_nrmse": 2.4495580094478244,
+        "restarts": 4,
+        "nfev": 108,
+        "elapsed_s": 8.786038637161255,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.8294223649837832,
+            "val_rollout_nrmse": 2.5455660201442827
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8294223709576775,
+            "val_rollout_nrmse": 2.5690501990596517
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.8139016402801178,
+            "val_rollout_nrmse": 2.565409177629674
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.8139016494379445,
+            "val_rollout_nrmse": 2.4495580094478244
+          }
+        ]
+      },
+      "gated_push_with_angle_response": {
+        "params": {
+          "agent_accel_gain": 94924.92872401817,
+          "agent_damping": 0.9646542060617913,
+          "block_inertia": -700.2060068930327,
+          "contact_radius": 21.006625076392286,
+          "dt": 0.10719350728434378
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212681056896555,
+        "val_one_step_nrmse": 0.7788880901052533,
+        "val_rollout_nrmse": 2.4513543644924183,
+        "restarts": 4,
+        "nfev": 246,
+        "elapsed_s": 22.806700468063354,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212681057903076,
+            "val_rollout_nrmse": 117.69062273517754
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681056896555,
+            "val_rollout_nrmse": 2.4513543644924183
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.521268105851682,
+            "val_rollout_nrmse": 114.36277222975541
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212681055731045,
+            "val_rollout_nrmse": 134.32633358697595
+          }
+        ]
+      },
+      "passive_block_contact_push": {
+        "params": {
+          "agent_mass": -8041.318632452643,
+          "agent_damping": 0.07529500408984399,
+          "block_mass": 6.7949740603544155,
+          "block_inertia": 1.9811577128926932,
+          "dt": 0.11143325131478218,
+          "contact_stiffness": 119.82138836638563
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8187312055624943,
+        "val_one_step_nrmse": 0.9352806368348304,
+        "val_rollout_nrmse": 2.668343726107572,
+        "restarts": 4,
+        "nfev": 53,
+        "elapsed_s": 7.292968511581421,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.8187312055765158,
+            "val_rollout_nrmse": 2.6874924700018696
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8187312055624943,
+            "val_rollout_nrmse": 2.668343726107572
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.8187311995562079,
+            "val_rollout_nrmse": 2.7705571187120905
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.8187312074928943,
+            "val_rollout_nrmse": 2.7764519935948315
+          }
+        ]
+      },
+      "sticky_push_with_coulomb_friction": {
+        "params": {
+          "stick_threshold": 10.595264943003308,
+          "friction_coefficient": 0.2233758620302655,
+          "drag_ratio": 1.2323350580476347,
+          "dt": 39.79655104724464
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 2.3990508026478556,
+        "val_one_step_nrmse": 1.295402240502119,
+        "val_rollout_nrmse": 2.5068660465020316,
+        "restarts": 4,
+        "nfev": 82,
+        "elapsed_s": 4.4130332469940186,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.3990508028814728,
+            "val_rollout_nrmse": 2.516645947953658
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.3990508026478556,
+            "val_rollout_nrmse": 2.5068660465020316
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.399050802735648,
+            "val_rollout_nrmse": 2.5388713893530817
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.399050803175897,
+            "val_rollout_nrmse": 2.5284947406613716
+          }
+        ]
+      },
+      "baseline_random_walk": {
+        "params": {
+          "noise_level": 0.09096029230976577
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 2.708931264560674,
+        "val_one_step_nrmse": 1.374808493430249,
+        "val_rollout_nrmse": 2.9118489930261897,
+        "restarts": 4,
+        "nfev": 31,
+        "elapsed_s": 0.8096163272857666,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.708931264560674,
+            "val_rollout_nrmse": 2.9118489930261897
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.708970173759966,
+            "val_rollout_nrmse": 2.9118729059225017
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.708972583761081,
+            "val_rollout_nrmse": 2.9118684983658913
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.708965762392325,
+            "val_rollout_nrmse": 2.911872168241523
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_pusher_no_momentum": {
+        "params": {
+          "agent_gain": 40.23386581515914,
+          "contact_threshold": 15.994362383530454,
+          "friction_coeff": 0.0744699209183332
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.99913952963869,
+        "val_one_step_nrmse": 1.303576894940566,
+        "val_rollout_nrmse": 2.5312774660883273,
+        "restarts": 4,
+        "nfev": 77,
+        "elapsed_s": 13.343841791152954,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.999139532058158,
+            "val_rollout_nrmse": 2.532386944108395
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.999139527595284,
+            "val_rollout_nrmse": 2.532829191011688
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.99913952963869,
+            "val_rollout_nrmse": 2.5312774660883273
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.999139532573454,
+            "val_rollout_nrmse": 2.536541191894583
+          }
+        ]
+      },
+      "pusher_with_velocity_and_inertia": {
+        "params": {
+          "agent_mass": -4882.404952700636,
+          "block_mass": 1.9929708080166584,
+          "dt": 0.07818634272316331,
+          "damping": -1.684535626987935,
+          "contact_distance": 15.0
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.634026695509353,
+        "val_one_step_nrmse": 0.8432328380793986,
+        "val_rollout_nrmse": 2.5284813087475975,
+        "restarts": 4,
+        "nfev": 84,
+        "elapsed_s": 33.16657590866089,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.634026695509353,
+            "val_rollout_nrmse": 2.5284813087475975
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.6340266529904905,
+            "val_rollout_nrmse": 2.5653937399845024
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.3570090537224395,
+            "val_rollout_nrmse": 2.5451211525856614
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.615593762084393,
+            "val_rollout_nrmse": 2.55072757588237
+          }
+        ]
+      },
+      "gated_push_with_angle_response": {
+        "params": {
+          "agent_accel_gain": 24466.861409814886,
+          "agent_damping": 0.8760804132688321,
+          "block_inertia": -2059.402287019972,
+          "contact_radius": 17.968673717152885,
+          "dt": 0.10825572792337415
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049047023084664,
+        "val_one_step_nrmse": 0.7168832899802272,
+        "val_rollout_nrmse": 2.2971222836730028,
+        "restarts": 4,
+        "nfev": 159,
+        "elapsed_s": 60.409026861190796,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.049047022115627,
+            "val_rollout_nrmse": 22.165356687497138
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.26128960378583,
+            "val_rollout_nrmse": 115.22709886577537
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.049047023084664,
+            "val_rollout_nrmse": 2.2971222836730028
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049047022290003,
+            "val_rollout_nrmse": 10.026085527392583
+          }
+        ]
+      },
+      "passive_block_contact_push": {
+        "params": {
+          "agent_mass": -5380.064588282643,
+          "agent_damping": 0.15438065127646555,
+          "block_mass": 0.38235246263804407,
+          "block_inertia": 1.9999933953888227,
+          "dt": 0.1278919916668296,
+          "contact_stiffness": -80.5862883701793
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.234086498714506,
+        "val_one_step_nrmse": 3.9608421286011857,
+        "val_rollout_nrmse": 4.410946283559818,
+        "restarts": 4,
+        "nfev": 152,
+        "elapsed_s": 79.25755143165588,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.234086498714506,
+            "val_rollout_nrmse": 4.410946283559818
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.234086253977047,
+            "val_rollout_nrmse": 4.411796610800455
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.234086166563401,
+            "val_rollout_nrmse": 4.411572461812566
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.233597091573291,
+            "val_rollout_nrmse": 4.7042183658192
+          }
+        ]
+      },
+      "sticky_push_with_coulomb_friction": {
+        "params": {
+          "stick_threshold": 10.595264943003308,
+          "friction_coefficient": 0.2233758620302655,
+          "drag_ratio": 1.2323350580476347,
+          "dt": 40.23422490321757
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.988712704728315,
+        "val_one_step_nrmse": 1.2954129010476976,
+        "val_rollout_nrmse": 2.5065783847856573,
+        "restarts": 4,
+        "nfev": 73,
+        "elapsed_s": 16.191059589385986,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.988712705179282,
+            "val_rollout_nrmse": 2.516278019382664
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.988712704728315,
+            "val_rollout_nrmse": 2.5065783847856573
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.9887127040740715,
+            "val_rollout_nrmse": 2.538540599408933
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.988712702530008,
+            "val_rollout_nrmse": 2.5278998130645416
+          }
+        ]
+      },
+      "baseline_random_walk": {
+        "params": {
+          "noise_level": 0.036159503487987146
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 9.980387595794499,
+        "val_one_step_nrmse": 1.3747904484705509,
+        "val_rollout_nrmse": 2.911866972997403,
+        "restarts": 4,
+        "nfev": 41,
+        "elapsed_s": 4.2099974155426025,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 9.980452386591576,
+            "val_rollout_nrmse": 2.9118753333731506
+          },
+          {
+            "restart": 1,
+            "train_loss": 9.980454349339114,
+            "val_rollout_nrmse": 2.9118706545954622
+          },
+          {
+            "restart": 2,
+            "train_loss": 9.980464005949647,
+            "val_rollout_nrmse": 2.911877794676531
+          },
+          {
+            "restart": 3,
+            "train_loss": 9.980387595794499,
+            "val_rollout_nrmse": 2.911866972997403
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "pusher_with_velocity_and_inertia",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_pusher_no_momentum": 2.5311698239242966,
+        "pusher_with_velocity_and_inertia": 2.4495580094478244,
+        "gated_push_with_angle_response": 2.4513543644924183,
+        "passive_block_contact_push": 2.668343726107572,
+        "sticky_push_with_coulomb_friction": 2.5068660465020316,
+        "baseline_random_walk": 2.9118489930261897
+      }
+    },
+    "active_one_step": {
+      "winner": "linear_pusher_no_momentum",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "linear_pusher_no_momentum": 5.424303488200061,
+        "pusher_with_velocity_and_inertia": 5.626107424482635,
+        "gated_push_with_angle_response": 5.6274399158038175,
+        "passive_block_contact_push": 6.992470829545743,
+        "sticky_push_with_coulomb_friction": 5.553486676001052,
+        "baseline_random_walk": 6.676918845237718
+      },
+      "probes": [
+        {
+          "disagreement": 4.681103758988281,
+          "actions": [
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ],
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ],
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ]
+          ],
+          "start": {
+            "agent.x": 280.564,
+            "agent.y": 196.025,
+            "agent.vx": -33.638,
+            "agent.vy": 51.769,
+            "block.x": 273.088,
+            "block.y": 208.745,
+            "block.angle": 0.741
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 7.883877314678189,
+            "pusher_with_velocity_and_inertia": 9.00667797895017,
+            "gated_push_with_angle_response": 10.578008716609974,
+            "passive_block_contact_push": 10.667376842269496,
+            "sticky_push_with_coulomb_friction": 4.362812550205834,
+            "baseline_random_walk": 11.583787390302698
+          }
+        },
+        {
+          "disagreement": 4.424947434050099,
+          "actions": [
+            [
+              0.09418216991195949,
+              0.46526636016378825
+            ],
+            [
+              -0.44360354642637884,
+              -0.28853648311990787
+            ],
+            [
+              -0.5000086943736858,
+              -0.36272014985168266
+            ]
+          ],
+          "start": {
+            "agent.x": 279.898,
+            "agent.y": 171.977,
+            "agent.vx": -30.875,
+            "agent.vy": 14.418,
+            "block.x": 275.136,
+            "block.y": 193.105,
+            "block.angle": 1.043
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 5.722215556277657,
+            "pusher_with_velocity_and_inertia": 3.5667661333163028,
+            "gated_push_with_angle_response": 3.863070625257924,
+            "passive_block_contact_push": 5.089069930124961,
+            "sticky_push_with_coulomb_friction": 5.8058887807037936,
+            "baseline_random_walk": 4.729451809962489
+          }
+        },
+        {
+          "disagreement": 4.414838550104989,
+          "actions": [
+            [
+              -0.04949410024153966,
+              0.3844810211322605
+            ],
+            [
+              -0.04949410024153966,
+              0.3844810211322605
+            ],
+            [
+              -0.04949410024153966,
+              0.3844810211322605
+            ]
+          ],
+          "start": {
+            "agent.x": 260.254,
+            "agent.y": 212.647,
+            "agent.vx": 2.952,
+            "agent.vy": 17.337,
+            "block.x": 255.657,
+            "block.y": 227.154,
+            "block.angle": 0.522
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 3.667761842656897,
+            "pusher_with_velocity_and_inertia": 5.845143372779774,
+            "gated_push_with_angle_response": 6.02667494155567,
+            "passive_block_contact_push": 8.82559603171224,
+            "sticky_push_with_coulomb_friction": 3.2021982307651333,
+            "baseline_random_walk": 6.7762813428393445
+          }
+        },
+        {
+          "disagreement": 4.208967140031032,
+          "actions": [
+            [
+              -0.3018328113053871,
+              0.5375142840770004
+            ],
+            [
+              -0.3018328113053871,
+              0.5375142840770004
+            ],
+            [
+              -0.3018328113053871,
+              0.5375142840770004
+            ]
+          ],
+          "start": {
+            "agent.x": 382.637,
+            "agent.y": 168.396,
+            "agent.vx": -39.952,
+            "agent.vy": -35.926,
+            "block.x": 360.57,
+            "block.y": 207.861,
+            "block.angle": 1.748
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 5.37646110603762,
+            "pusher_with_velocity_and_inertia": 5.569253054468993,
+            "gated_push_with_angle_response": 4.465296904881691,
+            "passive_block_contact_push": 5.9106146429490325,
+            "sticky_push_with_coulomb_friction": 7.5617226080025555,
+            "baseline_random_walk": 5.769848194679452
+          }
+        },
+        {
+          "disagreement": 3.5823545596249198,
+          "actions": [
+            [
+              -0.510193073919908,
+              0.08799063817231162
+            ],
+            [
+              -0.510193073919908,
+              0.08799063817231162
+            ],
+            [
+              -0.510193073919908,
+              0.08799063817231162
+            ]
+          ],
+          "start": {
+            "agent.x": 430.753,
+            "agent.y": 267.643,
+            "agent.vx": -9.546,
+            "agent.vy": -17.941,
+            "block.x": 387.885,
+            "block.y": 274.444,
+            "block.angle": 2.636
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 4.47120162134994,
+            "pusher_with_velocity_and_inertia": 4.142696582897937,
+            "gated_push_with_angle_response": 3.20414839071383,
+            "passive_block_contact_push": 4.469696700672989,
+            "sticky_push_with_coulomb_friction": 6.83481121032794,
+            "baseline_random_walk": 4.525225488404611
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.04074835777282715
+    },
+    "offline_multi_step": {
+      "winner": "gated_push_with_angle_response",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_pusher_no_momentum": 2.5312774660883273,
+        "pusher_with_velocity_and_inertia": 2.5284813087475975,
+        "gated_push_with_angle_response": 2.2971222836730028,
+        "passive_block_contact_push": 4.410946283559818,
+        "sticky_push_with_coulomb_friction": 2.5065783847856573,
+        "baseline_random_walk": 2.911866972997403
+      }
+    },
+    "active_multi_step": {
+      "winner": "linear_pusher_no_momentum",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "linear_pusher_no_momentum": 5.111850198401657,
+        "pusher_with_velocity_and_inertia": 6.3348740941662545,
+        "gated_push_with_angle_response": 5.990705190921941,
+        "passive_block_contact_push": 12.200250177786549,
+        "sticky_push_with_coulomb_friction": 5.306783784610933,
+        "baseline_random_walk": 6.96093994053899
+      },
+      "probes": [
+        {
+          "disagreement": 8.991220838485189,
+          "actions": [
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ],
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ],
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ]
+          ],
+          "start": {
+            "agent.x": 280.564,
+            "agent.y": 196.025,
+            "agent.vx": -33.638,
+            "agent.vy": 51.769,
+            "block.x": 273.088,
+            "block.y": 208.745,
+            "block.angle": 0.741
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 3.2140230328031376,
+            "pusher_with_velocity_and_inertia": 8.273072693047991,
+            "gated_push_with_angle_response": 10.603390195384009,
+            "passive_block_contact_push": 9.611082853115303,
+            "sticky_push_with_coulomb_friction": 4.327827326568684,
+            "baseline_random_walk": 11.583268917359833
+          }
+        },
+        {
+          "disagreement": 7.87592401097839,
+          "actions": [
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ],
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ],
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ]
+          ],
+          "start": {
+            "agent.x": 260.743,
+            "agent.y": 217.995,
+            "agent.vx": -7.518,
+            "agent.vy": 19.824,
+            "block.x": 252.474,
+            "block.y": 230.662,
+            "block.angle": 0.726
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 7.798143432485384,
+            "pusher_with_velocity_and_inertia": 4.720800691011338,
+            "gated_push_with_angle_response": 4.9250163474703115,
+            "passive_block_contact_push": 10.027435317752259,
+            "sticky_push_with_coulomb_friction": 5.33585747950182,
+            "baseline_random_walk": 5.709507227929533
+          }
+        },
+        {
+          "disagreement": 7.235560191111822,
+          "actions": [
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ],
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ],
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ]
+          ],
+          "start": {
+            "agent.x": 284.486,
+            "agent.y": 189.844,
+            "agent.vx": -41.492,
+            "agent.vy": 68.629,
+            "block.x": 277.94,
+            "block.y": 204.093,
+            "block.angle": 0.75
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 2.091076491106149,
+            "pusher_with_velocity_and_inertia": 2.7887554776694876,
+            "gated_push_with_angle_response": 1.6260394329527157,
+            "passive_block_contact_push": 16.48341853008822,
+            "sticky_push_with_coulomb_friction": 1.7219422965620979,
+            "baseline_random_walk": 1.796097842975976
+          }
+        },
+        {
+          "disagreement": 6.926720978458487,
+          "actions": [
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ],
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ],
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ]
+          ],
+          "start": {
+            "agent.x": 251.808,
+            "agent.y": 219.234,
+            "agent.vx": -12.657,
+            "agent.vy": 3.227,
+            "block.x": 240.663,
+            "block.y": 229.268,
+            "block.angle": 0.747
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 5.838188931154221,
+            "pusher_with_velocity_and_inertia": 2.3240405823342103,
+            "gated_push_with_angle_response": 0.16395893690244784,
+            "passive_block_contact_push": 13.46163781979157,
+            "sticky_push_with_coulomb_friction": 1.676558942746808,
+            "baseline_random_walk": 2.0211982383177465
+          }
+        },
+        {
+          "disagreement": 6.855563773104518,
+          "actions": [
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ]
+          ],
+          "start": {
+            "agent.x": 245.215,
+            "agent.y": 224.349,
+            "agent.vx": -17.355,
+            "agent.vy": 39.688,
+            "block.x": 226.273,
+            "block.y": 223.832,
+            "block.angle": 0.935
+          },
+          "errors": {
+            "linear_pusher_no_momentum": 6.617819104459397,
+            "pusher_with_velocity_and_inertia": 13.567701026768248,
+            "gated_push_with_angle_response": 12.63512104190022,
+            "passive_block_contact_push": 11.417676368185386,
+            "sticky_push_with_coulomb_friction": 13.471732877675253,
+            "baseline_random_walk": 13.694627476111858
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.043128252029418945
+    }
+  },
+  "args": {
+    "env": "pusht",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_train.jsonl",
+    "val_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_val.jsonl",
+    "max_train_episodes": 40,
+    "max_val_episodes": 10,
+    "output_dir": "artifacts/visualpatchworld/llm_family/bank_full_pusht_coder_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/coder_general.json",
+    "experience_runs": [
+      "artifacts/visualpatchworld/llm_family/v1_tworoom_coder_s0",
+      "artifacts/visualpatchworld/llm_family/v1_reacher_coder_s0",
+      "artifacts/visualpatchworld/llm_family/v1_cube_coder_s0"
+    ],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 289.92426800727844
+}

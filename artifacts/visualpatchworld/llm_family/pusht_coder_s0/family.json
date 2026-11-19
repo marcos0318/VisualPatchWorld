@@ -1,0 +1,1033 @@
+{
+  "env": "pusht",
+  "llm_model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+  "schema": {
+    "state_keys": [
+      "agent.vx",
+      "agent.vy",
+      "agent.x",
+      "agent.y",
+      "block.angle",
+      "block.x",
+      "block.y"
+    ],
+    "state_ranges": {
+      "agent.vx": {
+        "min": -239.038,
+        "max": 197.288
+      },
+      "agent.vy": {
+        "min": -164.106,
+        "max": 212.259
+      },
+      "agent.x": {
+        "min": 44.226,
+        "max": 431.137
+      },
+      "agent.y": {
+        "min": 166.867,
+        "max": 468.784
+      },
+      "block.angle": {
+        "min": 0.743,
+        "max": 2.948
+      },
+      "block.x": {
+        "min": 188.561,
+        "max": 253.842
+      },
+      "block.y": {
+        "min": 257.991,
+        "max": 341.005
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.643,
+      -0.44
+    ],
+    "action_max": [
+      0.53,
+      0.571
+    ],
+    "num_episodes": 40,
+    "num_transitions": 4320
+  },
+  "scales": {
+    "agent.vx": 29.0491526697332,
+    "agent.vy": 33.10328911582162,
+    "agent.x": 8.784955836446613,
+    "agent.y": 7.583339167070911,
+    "block.angle": 0.03517513204333592,
+    "block.x": 1.5088737783332182,
+    "block.y": 1.686962387941111
+  },
+  "candidates": [
+    {
+      "name": "linear_no_coupling",
+      "mechanism": "Agent responds linearly to actions with damping; block is static.",
+      "code": "# HYPOTHESIS: linear_no_coupling\n# MECHANISM: Agent responds linearly to actions with damping; block is static.\nPARAMS = {\n    \"agent_vx_factor\": 1.0,\n    \"agent_vy_factor\": 1.0,\n    \"agent_damping\": 0.95,\n    \"dt\": 1.0\n}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    dt = p[\"dt\"]\n    \n    # Update velocities based on action\n    new_vx = state[\"agent.vx\"] * p[\"agent_damping\"] + ax * p[\"agent_vx_factor\"]\n    new_vy = state[\"agent.vy\"] * p[\"agent_damping\"] + ay * p[\"agent_vy_factor\"]\n    \n    # Update positions based on new velocities\n    new_x = state[\"agent.x\"] + new_vx * dt\n    new_y = state[\"agent.y\"] + new_vy * dt\n    \n    return {\n        \"agent.vx\": new_vx,\n        \"agent.vy\": new_vy,\n        \"agent.x\": new_x,\n        \"agent.y\": new_y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"]\n    }",
+      "init_params": {
+        "agent_vx_factor": 1.0,
+        "agent_vy_factor": 1.0,
+        "agent_damping": 0.95,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_based_agent",
+      "mechanism": "Agent accelerates based on action; block remains static.",
+      "code": "# HYPOTHESIS: momentum_based_agent\n# MECHANISM: Agent accelerates based on action; block remains static.\nPARAMS = {\n    \"agent_acc_factor\": 1.0,\n    \"agent_damping\": 0.1,\n    \"dt\": 1.0\n}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    dt = p[\"dt\"]\n    \n    # Acceleration applied to velocity\n    dvx = ax * p[\"agent_acc_factor\"] - state[\"agent.vx\"] * p[\"agent_damping\"]\n    dvy = ay * p[\"agent_acc_factor\"] - state[\"agent.vy\"] * p[\"agent_damping\"]\n    \n    new_vx = state[\"agent.vx\"] + dvx\n    new_vy = state[\"agent.vy\"] + dvy\n    \n    new_x = state[\"agent.x\"] + new_vx * dt\n    new_y = state[\"agent.y\"] + new_vy * dt\n    \n    return {\n        \"agent.vx\": new_vx,\n        \"agent.vy\": new_vy,\n        \"agent.x\": new_x,\n        \"agent.y\": new_y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"]\n    }",
+      "init_params": {
+        "agent_acc_factor": 1.0,
+        "agent_damping": 0.1,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "angular_action_coupling",
+      "mechanism": "Action rotates agent's movement vector; block unaffected.",
+      "code": "# HYPOTHESIS: angular_action_coupling\n# MECHANISM: Action rotates agent's movement vector; block unaffected.\nPARAMS = {\n    \"force_magnitude\": 1.0,\n    \"agent_damping\": 0.9,\n    \"dt\": 1.0\n}\n\nimport math\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    angle = math.atan2(ay, ax)\n    magnitude = math.sqrt(ax*ax + ay*ay) * p[\"force_magnitude\"]\n    \n    fx = magnitude * math.cos(angle)\n    fy = magnitude * math.sin(angle)\n    \n    dt = p[\"dt\"]\n    \n    # Apply force with damping\n    new_vx = state[\"agent.vx\"] * p[\"agent_damping\"] + fx\n    new_vy = state[\"agent.vy\"] * p[\"agent_damping\"] + fy\n    \n    new_x = state[\"agent.x\"] + new_vx * dt\n    new_y = state[\"agent.y\"] + new_vy * dt\n    \n    return {\n        \"agent.vx\": new_vx,\n        \"agent.vy\": new_vy,\n        \"agent.x\": new_x,\n        \"agent.y\": new_y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"]\n    }",
+      "init_params": {
+        "force_magnitude": 1.0,
+        "agent_damping": 0.9,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "contact_interaction",
+      "mechanism": "Agent interacts with block through contact when close enough; otherwise free.",
+      "code": "# HYPOTHESIS: contact_interaction\n# MECHANISM: Agent interacts with block through contact when close enough; otherwise free.\nPARAMS = {\n    \"agent_acc_factor\": 1.0,\n    \"contact_distance\": 30.0,\n    \"contact_force\": 0.5,\n    \"dt\": 1.0\n}\n\nimport math\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    dt = p[\"dt\"]\n    \n    # Compute agent acceleration from action\n    dvx = ax * p[\"agent_acc_factor\"]\n    dvy = ay * p[\"agent_acc_factor\"]\n    \n    new_vx = state[\"agent.vx\"] + dvx\n    new_vy = state[\"agent.vy\"] + dvy\n    \n    new_x = state[\"agent.x\"] + new_vx * dt\n    new_y = state[\"agent.y\"] + new_vy * dt\n    \n    # Check distance to block center\n    dx = new_x - state[\"block.x\"]\n    dy = new_y - state[\"block.y\"]\n    dist = math.sqrt(dx*dx + dy*dy)\n    \n    # If within contact distance, apply influence on block\n    if dist < p[\"contact_distance\"]:\n        scale = (p[\"contact_distance\"] - dist) / p[\"contact_distance\"]\n        # Block moves slightly towards agent\n        block_dx = -dx * scale * p[\"contact_force\"] * dt\n        block_dy = -dy * scale * p[\"contact_force\"] * dt\n        \n        new_block_x = state[\"block.x\"] + block_dx\n        new_block_y = state[\"block.y\"] + block_dy\n    else:\n        new_block_x = state[\"block.x\"]\n        new_block_y = state[\"block.y\"]\n    \n    return {\n        \"agent.vx\": new_vx,\n        \"agent.vy\": new_vy,\n        \"agent.x\": new_x,\n        \"agent.y\": new_y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": new_block_x,\n        \"block.y\": new_block_y\n    }",
+      "init_params": {
+        "agent_acc_factor": 1.0,
+        "contact_distance": 30.0,
+        "contact_force": 0.5,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "fixed_point_attraction",
+      "mechanism": "Agent is attracted toward block position with action providing perturbation.",
+      "code": "# HYPOTHESIS: fixed_point_attraction\n# MECHANISM: Agent is attracted toward block position with action providing perturbation.\nPARAMS = {\n    \"attraction_strength\": 0.1,\n    \"action_scale\": 1.0,\n    \"damping\": 0.9,\n    \"dt\": 1.0\n}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    dt = p[\"dt\"]\n    \n    # Compute attraction vector to block\n    dx = state[\"block.x\"] - state[\"agent.x\"]\n    dy = state[\"block.y\"] - state[\"agent.y\"]\n    \n    # Acceleration from attraction plus action\n    acc_x = dx * p[\"attraction_strength\"] + ax * p[\"action_scale\"]\n    acc_y = dy * p[\"attraction_strength\"] + ay * p[\"action_scale\"]\n    \n    # Update velocities with damping\n    new_vx = (state[\"agent.vx\"] + acc_x) * p[\"damping\"]\n    new_vy = (state[\"agent.vy\"] + acc_y) * p[\"damping\"]\n    \n    # Update positions\n    new_x = state[\"agent.x\"] + new_vx * dt\n    new_y = state[\"agent.y\"] + new_vy * dt\n    \n    return {\n        \"agent.vx\": new_vx,\n        \"agent.vy\": new_vy,\n        \"agent.x\": new_x,\n        \"agent.y\": new_y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"]\n    }",
+      "init_params": {
+        "attraction_strength": 0.1,
+        "action_scale": 1.0,
+        "damping": 0.9,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "saturated_control_response",
+      "mechanism": "Agent responds with capped acceleration; block can rotate but not translate.",
+      "code": "# HYPOTHESIS: saturated_control_response\n# MECHANISM: Agent responds with capped acceleration; block can rotate but not translate.\nPARAMS = {\n    \"max_acc\": 100.0,\n    \"torque_factor\": 0.5,\n    \"mass\": 1.0,\n    \"dt\": 1.0\n}\n\nimport math\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    dt = p[\"dt\"]\n    \n    # Cap the control inputs\n    mag = math.sqrt(ax*ax + ay*ay)\n    if mag > 1e-6:\n        scale = min(p[\"max_acc\"], mag) / mag\n        ax *= scale\n        ay *= scale\n    \n    # Apply forces directly as accelerations (assuming unit mass)\n    new_vx = state[\"agent.vx\"] + ax * dt\n    new_vy = state[\"agent.vy\"] + ay * dt\n    \n    new_x = state[\"agent.x\"] + new_vx * dt\n    new_y = state[\"agent.y\"] + new_vy * dt\n    \n    # Torque affects rotation if agent gets near block\n    dx = state[\"agent.x\"] - state[\"block.x\"]\n    dy = state[\"agent.y\"] - state[\"block.y\"]\n    distance = max(1e-3, math.sqrt(dx*dx + dy*dy))\n    \n    torque = (ax * (-dy) + ay * dx) / (distance + 1) * p[\"torque_factor\"] * dt\n    new_angle = state[\"block.angle\"] + torque\n    \n    # Clamp angle to valid range\n    new_angle = new_angle % (2 * math.pi)\n    \n    return {\n        \"agent.vx\": new_vx,\n        \"agent.vy\": new_vy,\n        \"agent.x\": new_x,\n        \"agent.y\": new_y,\n        \"block.angle\": new_angle,\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"]\n    }",
+      "init_params": {
+        "max_acc": 100.0,
+        "torque_factor": 0.5,
+        "mass": 1.0,
+        "dt": 1.0
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_no_coupling": {
+        "params": {
+          "agent_vx_factor": 359.6763750164638,
+          "agent_vy_factor": 359.6338649026665,
+          "agent_damping": 0.03533865426993426,
+          "dt": 0.10719471220150029
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212680988896508,
+        "val_one_step_nrmse": 0.7189234275310944,
+        "val_rollout_nrmse": 2.3083448184137865,
+        "restarts": 4,
+        "nfev": 50,
+        "elapsed_s": 6.452965259552002,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212680988896508,
+            "val_rollout_nrmse": 2.3083448184137865
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212680988895041,
+            "val_rollout_nrmse": 2.308344820894173
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212680988894048,
+            "val_rollout_nrmse": 2.3083448230857346
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212680988894782,
+            "val_rollout_nrmse": 2.3083448214146394
+          }
+        ]
+      },
+      "momentum_based_agent": {
+        "params": {
+          "agent_acc_factor": 359.658351617007,
+          "agent_damping": 0.9646536320806103,
+          "dt": 0.10719305455266959
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.521268105542104,
+        "val_one_step_nrmse": 0.7189234289271604,
+        "val_rollout_nrmse": 2.308344716675667,
+        "restarts": 4,
+        "nfev": 50,
+        "elapsed_s": 4.59521746635437,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.521268105542104,
+            "val_rollout_nrmse": 2.308344716675667
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681055419102,
+            "val_rollout_nrmse": 2.3083447202789613
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.521268105541847,
+            "val_rollout_nrmse": 2.308344721894163
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212681055417621,
+            "val_rollout_nrmse": 2.308344724909584
+          }
+        ]
+      },
+      "angular_action_coupling": {
+        "params": {
+          "force_magnitude": 359.6584333857096,
+          "agent_damping": 0.035346131650432454,
+          "dt": 0.10719305427915732
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212681055419556,
+        "val_one_step_nrmse": 0.7189234289141706,
+        "val_rollout_nrmse": 2.3083447192867568,
+        "restarts": 4,
+        "nfev": 49,
+        "elapsed_s": 5.283771514892578,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212681055419556,
+            "val_rollout_nrmse": 2.3083447192867568
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681055418458,
+            "val_rollout_nrmse": 2.308344721925131
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212681055417381,
+            "val_rollout_nrmse": 2.308344726169545
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212681055418691,
+            "val_rollout_nrmse": 2.308344721288139
+          }
+        ]
+      },
+      "contact_interaction": {
+        "params": {
+          "agent_acc_factor": 33.02568153058213,
+          "contact_distance": 20.272500741492784,
+          "contact_force": 0.6319104498205262,
+          "dt": 0.0961001712963543
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8139016416314931,
+        "val_one_step_nrmse": 0.8437577527273352,
+        "val_rollout_nrmse": 2.5890816973662263,
+        "restarts": 4,
+        "nfev": 61,
+        "elapsed_s": 4.630084991455078,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.8139016416314931,
+            "val_rollout_nrmse": 2.5890816973662263
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8139016418908613,
+            "val_rollout_nrmse": 2.5929752247443894
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.813901639876525,
+            "val_rollout_nrmse": 2.590449058300881
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.813901639863196,
+            "val_rollout_nrmse": 2.592986849482983
+          }
+        ]
+      },
+      "fixed_point_attraction": {
+        "params": {
+          "attraction_strength": 0.004420814199814005,
+          "action_scale": 10150.018978764829,
+          "damping": 0.03542930730134242,
+          "dt": 0.10719337451177592
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.521268020990111,
+        "val_one_step_nrmse": 0.7189233815961485,
+        "val_rollout_nrmse": 2.3083462299492736,
+        "restarts": 4,
+        "nfev": 262,
+        "elapsed_s": 24.189214944839478,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212680209901054,
+            "val_rollout_nrmse": 2.3083462303909337
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.521268020990111,
+            "val_rollout_nrmse": 2.3083462299492736
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212680209900848,
+            "val_rollout_nrmse": 2.3083462330965068
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212680209900843,
+            "val_rollout_nrmse": 2.308346233317513
+          }
+        ]
+      },
+      "saturated_control_response": {
+        "params": {
+          "max_acc": 76.16270792173201,
+          "torque_factor": 1.000869061428516,
+          "mass": 1.1620067678044574,
+          "dt": 0.10304253317336962
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.7726440432361992,
+        "val_one_step_nrmse": 0.8503423520337944,
+        "val_rollout_nrmse": 2.5995806598075077,
+        "restarts": 4,
+        "nfev": 100,
+        "elapsed_s": 6.1209564208984375,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.772644040074783,
+            "val_rollout_nrmse": 2.599592136954308
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.7726440400797239,
+            "val_rollout_nrmse": 2.5995909451180554
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.7726440400885957,
+            "val_rollout_nrmse": 2.599592510320715
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.7726440432361992,
+            "val_rollout_nrmse": 2.5995806598075077
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_no_coupling": {
+        "params": {
+          "agent_vx_factor": 328.24100685794593,
+          "agent_vy_factor": 328.16755579127613,
+          "agent_damping": 0.12394282714274549,
+          "dt": 0.10825845927236528
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049046966168752,
+        "val_one_step_nrmse": 0.7201308187965507,
+        "val_rollout_nrmse": 2.3078709795109424,
+        "restarts": 4,
+        "nfev": 53,
+        "elapsed_s": 19.12063479423523,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.049046966176392,
+            "val_rollout_nrmse": 2.307870982448687
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049046966169432,
+            "val_rollout_nrmse": 2.307870979894713
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.049046966298277,
+            "val_rollout_nrmse": 2.3078709967094233
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049046966168752,
+            "val_rollout_nrmse": 2.3078709795109424
+          }
+        ]
+      },
+      "momentum_based_agent": {
+        "params": {
+          "agent_acc_factor": 328.2082086352798,
+          "agent_damping": 0.8760390190434872,
+          "dt": 0.1082558888832605
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049047022122189,
+        "val_one_step_nrmse": 0.7201310684650102,
+        "val_rollout_nrmse": 2.307871009720623,
+        "restarts": 4,
+        "nfev": 51,
+        "elapsed_s": 15.72392725944519,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.049047022122189,
+            "val_rollout_nrmse": 2.307871009720623
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049047022348012,
+            "val_rollout_nrmse": 2.3078710305079095
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.049047022195098,
+            "val_rollout_nrmse": 2.307871020180192
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049047022152231,
+            "val_rollout_nrmse": 2.3078710153530886
+          }
+        ]
+      },
+      "angular_action_coupling": {
+        "params": {
+          "force_magnitude": 328.2089325362651,
+          "agent_damping": 0.12395944238372972,
+          "dt": 0.10825580483729397
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049047022115206,
+        "val_one_step_nrmse": 0.7201310238652442,
+        "val_rollout_nrmse": 2.3078710070451436,
+        "restarts": 4,
+        "nfev": 50,
+        "elapsed_s": 15.95606279373169,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.049047022115206,
+            "val_rollout_nrmse": 2.3078710070451436
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049047022192624,
+            "val_rollout_nrmse": 2.3078710199557464
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.049047022142046,
+            "val_rollout_nrmse": 2.307871013830555
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049047022236919,
+            "val_rollout_nrmse": 2.3078710236051085
+          }
+        ]
+      },
+      "contact_interaction": {
+        "params": {
+          "agent_acc_factor": 38.70568897447199,
+          "contact_distance": -52.35603775412415,
+          "contact_force": 1.4686062402359013,
+          "dt": 0.0703906593888106
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.357009054515879,
+        "val_one_step_nrmse": 0.8539688742007091,
+        "val_rollout_nrmse": 2.569339193475703,
+        "restarts": 4,
+        "nfev": 76,
+        "elapsed_s": 19.759125232696533,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.357009054515879,
+            "val_rollout_nrmse": 2.569339193475703
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.357009064649514,
+            "val_rollout_nrmse": 2.5693491888367177
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.357009057528111,
+            "val_rollout_nrmse": 2.569340833297653
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.3570090519082605,
+            "val_rollout_nrmse": 2.5693395887249983
+          }
+        ]
+      },
+      "fixed_point_attraction": {
+        "params": {
+          "attraction_strength": -0.017292271264478645,
+          "action_scale": 2697.524643404354,
+          "damping": 0.12203026922030294,
+          "dt": 0.10826601067857129
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049006727425583,
+        "val_one_step_nrmse": 0.720110801185301,
+        "val_rollout_nrmse": 2.307863125775443,
+        "restarts": 4,
+        "nfev": 133,
+        "elapsed_s": 49.62895941734314,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.049006727556762,
+            "val_rollout_nrmse": 2.3078631377391474
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.04900672742602,
+            "val_rollout_nrmse": 2.307863125938147
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.049006727442358,
+            "val_rollout_nrmse": 2.307863129024645
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049006727425583,
+            "val_rollout_nrmse": 2.307863125775443
+          }
+        ]
+      },
+      "saturated_control_response": {
+        "params": {
+          "max_acc": 70.10481990614495,
+          "torque_factor": 1.4675185409782243,
+          "mass": 2.2525310219619237,
+          "dt": 0.07752362571926441
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.943694316956941,
+        "val_one_step_nrmse": 0.8592939214828182,
+        "val_rollout_nrmse": 2.5935766392064568,
+        "restarts": 4,
+        "nfev": 100,
+        "elapsed_s": 27.810567617416382,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.9436947815906676,
+            "val_rollout_nrmse": 2.5936846020626025
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.9436942899086,
+            "val_rollout_nrmse": 2.59359479657613
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.943694316956941,
+            "val_rollout_nrmse": 2.5935766392064568
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.943694289546694,
+            "val_rollout_nrmse": 2.593596900505561
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "momentum_based_agent",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_no_coupling": 2.3083448184137865,
+        "momentum_based_agent": 2.308344716675667,
+        "angular_action_coupling": 2.3083447192867568,
+        "contact_interaction": 2.5890816973662263,
+        "fixed_point_attraction": 2.3083462299492736,
+        "saturated_control_response": 2.5995806598075077
+      }
+    },
+    "active_one_step": {
+      "winner": "fixed_point_attraction",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "linear_no_coupling": 1.6510895215094905,
+        "momentum_based_agent": 1.6510819407696011,
+        "angular_action_coupling": 1.6510820529767236,
+        "contact_interaction": 5.498219074691989,
+        "fixed_point_attraction": 1.6510377093792656,
+        "saturated_control_response": 6.013643717459923
+      },
+      "probes": [
+        {
+          "disagreement": 3.1401998730948075,
+          "actions": [
+            [
+              0.35645738597883536,
+              0.3911806678141488
+            ],
+            [
+              0.35645738597883536,
+              0.3911806678141488
+            ],
+            [
+              0.35645738597883536,
+              0.3911806678141488
+            ]
+          ],
+          "start": {
+            "agent.x": 186.501,
+            "agent.y": 134.325,
+            "agent.vx": -167.332,
+            "agent.vy": -89.276,
+            "block.x": 220.056,
+            "block.y": 210.424,
+            "block.angle": 1.133
+          },
+          "errors": {
+            "linear_no_coupling": 6.282589126979654,
+            "momentum_based_agent": 6.2825886997732425,
+            "angular_action_coupling": 6.28258872253768,
+            "contact_interaction": 8.191603077844102,
+            "fixed_point_attraction": 6.282579969012431,
+            "saturated_control_response": 8.510661396580085
+          }
+        },
+        {
+          "disagreement": 2.9999604431483644,
+          "actions": [
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ],
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ],
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ]
+          ],
+          "start": {
+            "agent.x": 222.314,
+            "agent.y": 134.426,
+            "agent.vx": -202.542,
+            "agent.vy": -133.601,
+            "block.x": 255.583,
+            "block.y": 227.269,
+            "block.angle": 0.522
+          },
+          "errors": {
+            "linear_no_coupling": 0.529682375081425,
+            "momentum_based_agent": 0.5296868877714348,
+            "angular_action_coupling": 0.5296871785808861,
+            "contact_interaction": 5.12202286416286,
+            "fixed_point_attraction": 0.5296353419324195,
+            "saturated_control_response": 5.5372936835177935
+          }
+        },
+        {
+          "disagreement": 2.9618477946971664,
+          "actions": [
+            [
+              0.4503060123974927,
+              -0.32380310775300486
+            ],
+            [
+              0.21213473233051094,
+              0.49762559183942995
+            ],
+            [
+              0.4923774207816103,
+              -0.4251319256800117
+            ]
+          ],
+          "start": {
+            "agent.x": 204.25,
+            "agent.y": 133.224,
+            "agent.vx": -187.198,
+            "agent.vy": -72.246,
+            "block.x": 247.891,
+            "block.y": 235.636,
+            "block.angle": 0.724
+          },
+          "errors": {
+            "linear_no_coupling": 0.5075229551122735,
+            "momentum_based_agent": 0.5074493330857469,
+            "angular_action_coupling": 0.5074494081660145,
+            "contact_interaction": 5.050462035087952,
+            "fixed_point_attraction": 0.5074586314070055,
+            "saturated_control_response": 5.554687182044878
+          }
+        },
+        {
+          "disagreement": 2.9036287388886373,
+          "actions": [
+            [
+              0.4639340186138372,
+              -0.23850937757303953
+            ],
+            [
+              0.4639340186138372,
+              -0.23850937757303953
+            ],
+            [
+              0.4639340186138372,
+              -0.23850937757303953
+            ]
+          ],
+          "start": {
+            "agent.x": 125.734,
+            "agent.y": 162.566,
+            "agent.vx": -132.363,
+            "agent.vy": 71.73,
+            "block.x": 216.063,
+            "block.y": 234.772,
+            "block.angle": 1.006
+          },
+          "errors": {
+            "linear_no_coupling": 0.44360607069069746,
+            "momentum_based_agent": 0.4435590752026049,
+            "angular_action_coupling": 0.4435593057747704,
+            "contact_interaction": 4.764996350044364,
+            "fixed_point_attraction": 0.4434086894677869,
+            "saturated_control_response": 5.446974142744619
+          }
+        },
+        {
+          "disagreement": 2.6249526142971344,
+          "actions": [
+            [
+              0.5079417819978218,
+              0.527739491586684
+            ],
+            [
+              -0.46849981365127996,
+              0.5433277307750073
+            ],
+            [
+              0.40089440686017075,
+              0.3914199396460441
+            ]
+          ],
+          "start": {
+            "agent.x": 430.857,
+            "agent.y": 208.68,
+            "agent.vx": -71.564,
+            "agent.vy": -72.316,
+            "block.x": 388.137,
+            "block.y": 244.722,
+            "block.angle": 2.174
+          },
+          "errors": {
+            "linear_no_coupling": 0.4920470796834031,
+            "momentum_based_agent": 0.49212570801497746,
+            "angular_action_coupling": 0.4921256498242681,
+            "contact_interaction": 4.362011046320672,
+            "fixed_point_attraction": 0.4921059150766852,
+            "saturated_control_response": 5.018602182412239
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.05330777168273926
+    },
+    "offline_multi_step": {
+      "winner": "fixed_point_attraction",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_no_coupling": 2.3078709795109424,
+        "momentum_based_agent": 2.307871009720623,
+        "angular_action_coupling": 2.3078710070451436,
+        "contact_interaction": 2.569339193475703,
+        "fixed_point_attraction": 2.307863125775443,
+        "saturated_control_response": 2.5935766392064568
+      }
+    },
+    "active_multi_step": {
+      "winner": "fixed_point_attraction",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "linear_no_coupling": 1.6915444125613335,
+        "momentum_based_agent": 1.6915669957857804,
+        "angular_action_coupling": 1.6915646821012955,
+        "contact_interaction": 5.264006475184894,
+        "fixed_point_attraction": 1.6892899777336925,
+        "saturated_control_response": 5.817170147465355
+      },
+      "probes": [
+        {
+          "disagreement": 2.877641508019771,
+          "actions": [
+            [
+              0.35645738597883536,
+              0.3911806678141488
+            ],
+            [
+              0.35645738597883536,
+              0.3911806678141488
+            ],
+            [
+              0.35645738597883536,
+              0.3911806678141488
+            ]
+          ],
+          "start": {
+            "agent.x": 186.501,
+            "agent.y": 134.325,
+            "agent.vx": -167.332,
+            "agent.vy": -89.276,
+            "block.x": 220.056,
+            "block.y": 210.424,
+            "block.angle": 1.133
+          },
+          "errors": {
+            "linear_no_coupling": 6.284674659759094,
+            "momentum_based_agent": 6.2846759308559,
+            "angular_action_coupling": 6.284675818835196,
+            "contact_interaction": 8.012461221377501,
+            "fixed_point_attraction": 6.284623795845465,
+            "saturated_control_response": 8.326492232161915
+          }
+        },
+        {
+          "disagreement": 2.696726345335153,
+          "actions": [
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ],
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ],
+            [
+              0.19333673150544184,
+              0.2771727621630404
+            ]
+          ],
+          "start": {
+            "agent.x": 222.314,
+            "agent.y": 134.426,
+            "agent.vx": -202.542,
+            "agent.vy": -133.601,
+            "block.x": 255.583,
+            "block.y": 227.269,
+            "block.angle": 0.522
+          },
+          "errors": {
+            "linear_no_coupling": 0.48929454133914946,
+            "momentum_based_agent": 0.48931276921735656,
+            "angular_action_coupling": 0.48931196004044686,
+            "contact_interaction": 4.7842210201440984,
+            "fixed_point_attraction": 0.48868064932809735,
+            "saturated_control_response": 5.212326249649792
+          }
+        },
+        {
+          "disagreement": 2.69613441845853,
+          "actions": [
+            [
+              0.4639340186138372,
+              -0.23850937757303953
+            ],
+            [
+              0.4639340186138372,
+              -0.23850937757303953
+            ],
+            [
+              0.4639340186138372,
+              -0.23850937757303953
+            ]
+          ],
+          "start": {
+            "agent.x": 125.734,
+            "agent.y": 162.566,
+            "agent.vx": -132.363,
+            "agent.vy": 71.73,
+            "block.x": 216.063,
+            "block.y": 234.772,
+            "block.angle": 1.006
+          },
+          "errors": {
+            "linear_no_coupling": 0.43495664748602303,
+            "momentum_based_agent": 0.4349588498534493,
+            "angular_action_coupling": 0.43495719180536546,
+            "contact_interaction": 4.52393243395685,
+            "fixed_point_attraction": 0.43453659795444977,
+            "saturated_control_response": 5.276051880392503
+          }
+        },
+        {
+          "disagreement": 2.694175782735721,
+          "actions": [
+            [
+              0.4503060123974927,
+              -0.32380310775300486
+            ],
+            [
+              0.21213473233051094,
+              0.49762559183942995
+            ],
+            [
+              0.4923774207816103,
+              -0.4251319256800117
+            ]
+          ],
+          "start": {
+            "agent.x": 204.25,
+            "agent.y": 133.224,
+            "agent.vx": -187.198,
+            "agent.vy": -72.246,
+            "block.x": 247.891,
+            "block.y": 235.636,
+            "block.angle": 0.724
+          },
+          "errors": {
+            "linear_no_coupling": 0.6095396891917506,
+            "momentum_based_agent": 0.6094697060638353,
+            "angular_action_coupling": 0.6094656068567199,
+            "contact_interaction": 4.798579648735174,
+            "fixed_point_attraction": 0.6045949474331337,
+            "saturated_control_response": 5.3524687300142295
+          }
+        },
+        {
+          "disagreement": 2.417569892321664,
+          "actions": [
+            [
+              0.5079417819978218,
+              0.527739491586684
+            ],
+            [
+              -0.46849981365127996,
+              0.5433277307750073
+            ],
+            [
+              0.40089440686017075,
+              0.3914199396460441
+            ]
+          ],
+          "start": {
+            "agent.x": 430.857,
+            "agent.y": 208.68,
+            "agent.vx": -71.564,
+            "agent.vy": -72.316,
+            "block.x": 388.137,
+            "block.y": 244.722,
+            "block.angle": 2.174
+          },
+          "errors": {
+            "linear_no_coupling": 0.6392565250306497,
+            "momentum_based_agent": 0.6394177229383614,
+            "angular_action_coupling": 0.63941283296875,
+            "contact_interaction": 4.2008380517108455,
+            "fixed_point_attraction": 0.6340138981073175,
+            "saturated_control_response": 4.918511645108335
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.04278755187988281
+    }
+  },
+  "args": {
+    "env": "pusht",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_train.jsonl",
+    "val_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_val.jsonl",
+    "max_train_episodes": 40,
+    "max_val_episodes": 10,
+    "output_dir": "artifacts/visualpatchworld/llm_family/pusht_coder_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "seed": 0,
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 232.64125990867615
+}

@@ -1,0 +1,1208 @@
+{
+  "env": "cube",
+  "llm_model": "openai/gpt-oss-120b",
+  "schema": {
+    "state_keys": [
+      "block.x",
+      "block.y",
+      "block.z",
+      "effector.x",
+      "effector.y",
+      "effector.z",
+      "goal.x",
+      "goal.y",
+      "goal.z"
+    ],
+    "state_ranges": {
+      "block.x": {
+        "min": 0.251,
+        "max": 0.557
+      },
+      "block.y": {
+        "min": -0.339,
+        "max": 0.294
+      },
+      "block.z": {
+        "min": 0.019,
+        "max": 0.335
+      },
+      "effector.x": {
+        "min": 0.248,
+        "max": 0.567
+      },
+      "effector.y": {
+        "min": -0.339,
+        "max": 0.294
+      },
+      "effector.z": {
+        "min": 0.015,
+        "max": 0.335
+      },
+      "goal.x": {
+        "min": 0.304,
+        "max": 0.536
+      },
+      "goal.y": {
+        "min": -0.285,
+        "max": 0.283
+      },
+      "goal.z": {
+        "min": 0.02,
+        "max": 0.02
+      }
+    },
+    "action_dim": 5,
+    "action_min": [
+      -1.0,
+      -1.0,
+      -1.0,
+      -1.0,
+      -0.321
+    ],
+    "action_max": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.567
+    ],
+    "num_episodes": 51,
+    "num_transitions": 2040
+  },
+  "scales": {
+    "block.x": 0.015027326695920107,
+    "block.y": 0.02119843666027467,
+    "block.z": 0.04406113733540159,
+    "effector.x": 0.025943293893212635,
+    "effector.y": 0.03839158734668915,
+    "effector.z": 0.06011630803798929,
+    "goal.x": 1.0,
+    "goal.y": 1.0,
+    "goal.z": 1.0
+  },
+  "candidates": [
+    {
+      "name": "simple_point_mass_deadzone",
+      "mechanism": "The effector moves as a saturated point\u2011mass driven directly by the first three action components; a dead\u2011zone on the fourth action component opens/closes a binary grasp that, when active and the hand is close enough, forces the block to follow the effector position.",
+      "code": "# HYPOTHESIS: simple_point_mass_deadzone\n# MECHANISM: The effector moves as a saturated point\u2011mass driven directly by the first three action components; a dead\u2011zone on the fourth action component opens/closes a binary grasp that, when active and the hand is close enough, forces the block to follow the effector position.\nPARAMS = {\n    \"dt\": 0.05,\n    \"v_max\": 0.12,          # maximum speed per axis\n    \"grasp_thresh\": 0.03,   # distance below which a grasp can be formed\n    \"deadzone\": 0.05        # dead\u2011zone width for the grasp command\n}\n\ndef step(state, action, p, meta):\n    # helpers\n    def clamp(v, lo, hi):\n        return max(lo, min(hi, v))\n    # ---- effector update -------------------------------------------------\n    dx = clamp(action[0] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    dy = clamp(action[1] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    dz = clamp(action[2] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    eff_x = state[\"effector.x\"] + dx\n    eff_y = state[\"effector.y\"] + dy\n    eff_z = state[\"effector.z\"] + dz\n    # ---- grasp command (dead\u2011zone) ---------------------------------------\n    grasp_cmd = action[3]\n    if abs(grasp_cmd) < p[\"deadzone\"]:\n        grasp_active = False\n    else:\n        grasp_active = True if grasp_cmd > 0 else False\n    # ---- block update ----------------------------------------------------\n    blk_x, blk_y, blk_z = state[\"block.x\"], state[\"block.y\"], state[\"block.z\"]\n    # distance between hand and block\n    dist = ((eff_x - blk_x)**2 + (eff_y - blk_y)**2 + (eff_z - blk_z)**2)**0.5\n    if grasp_active and dist < p[\"grasp_thresh\"]:\n        # rigid attachment \u2013 block follows effector exactly\n        blk_x, blk_y, blk_z = eff_x, eff_y, eff_z\n    # ---- assemble next state ---------------------------------------------\n    new_state = {\n        \"block.x\": blk_x, \"block.y\": blk_y, \"block.z\": blk_z,\n        \"effector.x\": eff_x, \"effector.y\": eff_y, \"effector.z\": eff_z,\n        \"goal.x\": state[\"goal.x\"], \"goal.y\": state[\"goal.y\"], \"goal.z\": state[\"goal.z\"]\n    }\n    return new_state",
+      "init_params": {
+        "dt": 0.05,
+        "v_max": 0.12,
+        "grasp_thresh": 0.03,
+        "deadzone": 0.05
+      },
+      "repaired": false
+    },
+    {
+      "name": "mass_damper_with_spring_coupling",
+      "mechanism": "The effector receives a force proportional to the first three action components; its motion follows a first\u2011order mass\u2011damper ODE. When the hand is within a coupling radius, a linear spring pulls the block toward the effector.",
+      "code": "# HYPOTHESIS: mass_damper_with_spring_coupling\n# MECHANISM: The effector receives a force proportional to the first three action components; its motion follows a first\u2011order mass\u2011damper ODE. When the hand is within a coupling radius, a linear spring pulls the block toward the effector.\nPARAMS = {\n    \"dt\": 0.05,\n    \"m_eff\": 0.8,\n    \"b_eff\": 0.3,\n    \"k_spring\": 2.0,\n    \"couple_thresh\": 0.04,\n    \"force_scale\": 0.1\n}\n\ndef step(state, action, p, meta):\n    def clamp(v, lo, hi):\n        return max(lo, min(hi, v))\n    # ---- effector dynamics (mass\u2011damper) -------------------------------\n    fx = action[0] * p[\"force_scale\"]\n    fy = action[1] * p[\"force_scale\"]\n    fz = action[2] * p[\"force_scale\"]\n    # approximate velocity as previous displacement (zero\u2011order)\n    # v_new = (force - b*v)/m * dt  (treated as incremental position)\n    # we neglect stored velocity and use a simple Euler step:\n    dx = clamp((fx - p[\"b_eff\"]*0.0) / p[\"m_eff\"] * p[\"dt\"], -0.2, 0.2)\n    dy = clamp((fy - p[\"b_eff\"]*0.0) / p[\"m_eff\"] * p[\"dt\"], -0.2, 0.2)\n    dz = clamp((fz - p[\"b_eff\"]*0.0) / p[\"m_eff\"] * p[\"dt\"], -0.2, 0.2)\n    eff_x = state[\"effector.x\"] + dx\n    eff_y = state[\"effector.y\"] + dy\n    eff_z = state[\"effector.z\"] + dz\n    # ---- spring coupling to block --------------------------------------\n    blk_x, blk_y, blk_z = state[\"block.x\"], state[\"block.y\"], state[\"block.z\"]\n    dist = ((eff_x - blk_x)**2 + (eff_y - blk_y)**2 + (eff_z - blk_z)**2)**0.5\n    if dist < p[\"couple_thresh\"]:\n        # linear spring force pulling block toward hand\n        fx_s = -p[\"k_spring\"] * (blk_x - eff_x)\n        fy_s = -p[\"k_spring\"] * (blk_y - eff_y)\n        fz_s = -p[\"k_spring\"] * (blk_z - eff_z)\n        # simple Euler update (mass of block assumed 1)\n        blk_x += fx_s * p[\"dt\"]\n        blk_y += fy_s * p[\"dt\"]\n        blk_z += fz_s * p[\"dt\"]\n    # ---- assemble next state -------------------------------------------\n    return {\n        \"block.x\": blk_x, \"block.y\": blk_y, \"block.z\": blk_z,\n        \"effector.x\": eff_x, \"effector.y\": eff_y, \"effector.z\": eff_z,\n        \"goal.x\": state[\"goal.x\"], \"goal.y\": state[\"goal.y\"], \"goal.z\": state[\"goal.z\"]\n    }",
+      "init_params": {
+        "dt": 0.05,
+        "m_eff": 0.8,
+        "b_eff": 0.3,
+        "k_spring": 2.0,
+        "couple_thresh": 0.04,
+        "force_scale": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "elastic_coupling_with_deadzone_grasp",
+      "mechanism": "The effector moves by saturated translation of the first three actions. When the fourth action exceeds a dead\u2011zone and the hand is close enough, a bidirectional elastic coupling (spring) links the block and effector, pulling them together.",
+      "code": "# HYPOTHESIS: elastic_coupling_with_deadzone_grasp\n# MECHANISM: The effector moves by saturated translation of the first three actions. When the fourth action exceeds a dead\u2011zone and the hand is close enough, a bidirectional elastic coupling (spring) links the block and effector, pulling them together.\nPARAMS = {\n    \"dt\": 0.05,\n    \"v_max\": 0.10,\n    \"deadzone\": 0.07,\n    \"attach_thresh\": 0.035,\n    \"k_elastic\": 1.5\n}\n\ndef step(state, action, p, meta):\n    def clamp(v, lo, hi):\n        return max(lo, min(hi, v))\n    # ---- effector translation -----------------------------------------\n    dx = clamp(action[0] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    dy = clamp(action[1] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    dz = clamp(action[2] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    eff_x = state[\"effector.x\"] + dx\n    eff_y = state[\"effector.y\"] + dy\n    eff_z = state[\"effector.z\"] + dz\n    # ---- grasp dead\u2011zone ------------------------------------------------\n    grasp_active = abs(action[3]) > p[\"deadzone\"]\n    # ---- elastic coupling -----------------------------------------------\n    blk_x, blk_y, blk_z = state[\"block.x\"], state[\"block.y\"], state[\"block.z\"]\n    if grasp_active:\n        dist = ((eff_x - blk_x)**2 + (eff_y - blk_y)**2 + (eff_z - blk_z)**2)**0.5\n        if dist < p[\"attach_thresh\"]:\n            # spring force on block (block mass assumed 1)\n            fx = -p[\"k_elastic\"] * (blk_x - eff_x)\n            fy = -p[\"k_elastic\"] * (blk_y - eff_y)\n            fz = -p[\"k_elastic\"] * (blk_z - eff_z)\n            blk_x += fx * p[\"dt\"]\n            blk_y += fy * p[\"dt\"]\n            blk_z += fz * p[\"dt\"]\n    # ---- assemble -------------------------------------------------------\n    return {\n        \"block.x\": blk_x, \"block.y\": blk_y, \"block.z\": blk_z,\n        \"effector.x\": eff_x, \"effector.y\": eff_y, \"effector.z\": eff_z,\n        \"goal.x\": state[\"goal.x\"], \"goal.y\": state[\"goal.y\"], \"goal.z\": state[\"goal.z\"]\n    }",
+      "init_params": {
+        "dt": 0.05,
+        "v_max": 0.1,
+        "deadzone": 0.07,
+        "attach_thresh": 0.035,
+        "k_elastic": 1.5
+      },
+      "repaired": false
+    },
+    {
+      "name": "velocity_threshold_switch_damping",
+      "mechanism": "The effector receives a force from the first three actions; its damping coefficient switches between high and low values depending on the instantaneous speed magnitude (computed from the action). This creates a non\u2011linear speed\u2011dependent response.",
+      "code": "# HYPOTHESIS: velocity_threshold_switch_damping\n# MECHANISM: The effector receives a force from the first three actions; its damping coefficient switches between high and low values depending on the instantaneous speed magnitude (computed from the action). This creates a non\u2011linear speed\u2011dependent response.\nPARAMS = {\n    \"dt\": 0.05,\n    \"m_eff\": 1.0,\n    \"v_thr\": 0.08,\n    \"b_low\": 0.1,\n    \"b_high\": 0.6,\n    \"force_scale\": 0.12\n}\n\ndef step(state, action, p, meta):\n    def clamp(v, lo, hi):\n        return max(lo, min(hi, v))\n    # instantaneous speed estimate from action magnitude\n    speed_est = (action[0]**2 + action[1]**2 + action[2]**2)**0.5\n    b = p[\"b_high\"] if speed_est > p[\"v_thr\"] else p[\"b_low\"]\n    # force from action\n    fx = action[0] * p[\"force_scale\"]\n    fy = action[1] * p[\"force_scale\"]\n    fz = action[2] * p[\"force_scale\"]\n    # acceleration = (F - b*v)/m ; we approximate v\u22480 for each step\n    ax = (fx - b*0.0) / p[\"m_eff\"]\n    ay = (fy - b*0.0) / p[\"m_eff\"]\n    az = (fz - b*0.0) / p[\"m_eff\"]\n    # Euler integration\n    dx = clamp(ax * p[\"dt\"], -0.2, 0.2)\n    dy = clamp(ay * p[\"dt\"], -0.2, 0.2)\n    dz = clamp(az * p[\"dt\"], -0.2, 0.2)\n    eff_x = state[\"effector.x\"] + dx\n    eff_y = state[\"effector.y\"] + dy\n    eff_z = state[\"effector.z\"] + dz\n    # block unchanged (no contact model here)\n    return {\n        \"block.x\": state[\"block.x\"], \"block.y\": state[\"block.y\"], \"block.z\": state[\"block.z\"],\n        \"effector.x\": eff_x, \"effector.y\": eff_y, \"effector.z\": eff_z,\n        \"goal.x\": state[\"goal.x\"], \"goal.y\": state[\"goal.y\"], \"goal.z\": state[\"goal.z\"]\n    }",
+      "init_params": {
+        "dt": 0.05,
+        "m_eff": 1.0,
+        "v_thr": 0.08,
+        "b_low": 0.1,
+        "b_high": 0.6,
+        "force_scale": 0.12
+      },
+      "repaired": false
+    },
+    {
+      "name": "pid_position_control_effector",
+      "mechanism": "The first three action components are desired position set\u2011points for the effector; a PID controller (with parameters) generates a saturated velocity command that moves the effector toward the target. The fourth action is ignored; the block moves only when a grasp is formed via proximity (no explicit grasp command).",
+      "code": "# HYPOTHESIS: pid_position_control_effector\n# MECHANISM: The first three action components are desired position set\u2011points for the effector; a PID controller (with parameters) generates a saturated velocity command that moves the effector toward the target. The fourth action is ignored; the block moves only when a grasp is formed via proximity (no explicit grasp command).\nPARAMS = {\n    \"dt\": 0.05,\n    \"kp\": 2.0,\n    \"kd\": 0.4,\n    \"ki\": 0.0,\n    \"v_max\": 0.12,\n    \"integral_x\": 0.0,\n    \"integral_y\": 0.0,\n    \"integral_z\": 0.0,\n    \"prev_err_x\": 0.0,\n    \"prev_err_y\": 0.0,\n    \"prev_err_z\": 0.0,\n    \"grasp_thresh\": 0.03\n}\n\ndef step(state, action, p, meta):\n    # helper\n    def clamp(v, lo, hi):\n        return max(lo, min(hi, v))\n    # PID for each axis (stateful integrals/prev_err are stored in p)\n    target_x, target_y, target_z = action[0], action[1], action[2]\n    err_x = target_x - state[\"effector.x\"]\n    err_y = target_y - state[\"effector.y\"]\n    err_z = target_z - state[\"effector.z\"]\n    # update integrals\n    int_x = p[\"integral_x\"] + err_x * p[\"dt\"]\n    int_y = p[\"integral_y\"] + err_y * p[\"dt\"]\n    int_z = p[\"integral_z\"] + err_z * p[\"dt\"]\n    # derivative\n    der_x = (err_x - p[\"prev_err_x\"]) / p[\"dt\"]\n    der_y = (err_y - p[\"prev_err_y\"]) / p[\"dt\"]\n    der_z = (err_z - p[\"prev_err_z\"]) / p[\"dt\"]\n    # PID output (velocity command)\n    vel_x = p[\"kp\"]*err_x + p[\"kd\"]*der_x + p[\"ki\"]*int_x\n    vel_y = p[\"kp\"]*err_y + p[\"kd\"]*der_y + p[\"ki\"]*int_y\n    vel_z = p[\"kp\"]*err_z + p[\"kd\"]*der_z + p[\"ki\"]*int_z\n    # saturate speed\n    vel_x = clamp(vel_x, -p[\"v_max\"], p[\"v_max\"])\n    vel_y = clamp(vel_y, -p[\"v_max\"], p[\"v_max\"])\n    vel_z = clamp(vel_z, -p[\"v_max\"], p[\"v_max\"])\n    # integrate\n    eff_x = state[\"effector.x\"] + vel_x * p[\"dt\"]\n    eff_y = state[\"effector.y\"] + vel_y * p[\"dt\"]\n    eff_z = state[\"effector.z\"] + vel_z * p[\"dt\"]\n    # update block if within grasp threshold (passive attachment)\n    blk_x, blk_y, blk_z = state[\"block.x\"], state[\"block.y\"], state[\"block.z\"]\n    dist = ((eff_x - blk_x)**2 + (eff_y - blk_y)**2 + (eff_z - blk_z)**2)**0.5\n    if dist < p[\"grasp_thresh\"]:\n        blk_x, blk_y, blk_z = eff_x, eff_y, eff_z\n    # store updated integrals/prev_err back into p for the next call (mutating p is allowed)\n    p[\"integral_x\"], p[\"integral_y\"], p[\"integral_z\"] = int_x, int_y, int_z\n    p[\"prev_err_x\"], p[\"prev_err_y\"], p[\"prev_err_z\"] = err_x, err_y, err_z\n    return {\n        \"block.x\": blk_x, \"block.y\": blk_y, \"block.z\": blk_z,\n        \"effector.x\": eff_x, \"effector.y\": eff_y, \"effector.z\": eff_z,\n        \"goal.x\": state[\"goal.x\"], \"goal.y\": state[\"goal.y\"], \"goal.z\": state[\"goal.z\"]\n    }",
+      "init_params": {
+        "dt": 0.05,
+        "kp": 2.0,
+        "kd": 0.4,
+        "ki": 0.0,
+        "v_max": 0.12,
+        "integral_x": 0.0,
+        "integral_y": 0.0,
+        "integral_z": 0.0,
+        "prev_err_x": 0.0,
+        "prev_err_y": 0.0,
+        "prev_err_z": 0.0,
+        "grasp_thresh": 0.03
+      },
+      "repaired": false
+    },
+    {
+      "name": "grasp_attach_release_mechanism",
+      "mechanism": "The fourth action component is a binary grasp command (positive = close, negative = open). When the hand is within a distance threshold and the command is \u201cclose\u201d, the block becomes rigidly attached to the effector (its pose follows the hand). The fifth action component is ignored. The effector moves by simple saturated translation of the first three actions.",
+      "code": "# HYPOTHESIS: grasp_attach_release_mechanism\n# MECHANISM: The fourth action component is a binary grasp command (positive = close, negative = open). When the hand is within a distance threshold and the command is \u201cclose\u201d, the block becomes rigidly attached to the effector (its pose follows the hand). The fifth action component is ignored. The effector moves by simple saturated translation of the first three actions.\nPARAMS = {\n    \"dt\": 0.05,\n    \"v_max\": 0.11,\n    \"attach_thresh\": 0.035,\n    \"deadzone\": 0.06\n}\n\ndef step(state, action, p, meta):\n    def clamp(v, lo, hi):\n        return max(lo, min(hi, v))\n    # ---- effector motion -------------------------------------------------\n    dx = clamp(action[0] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    dy = clamp(action[1] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    dz = clamp(action[2] * p[\"dt\"], -p[\"v_max\"]*p[\"dt\"], p[\"v_max\"]*p[\"dt\"])\n    eff_x = state[\"effector.x\"] + dx\n    eff_y = state[\"effector.y\"] + dy\n    eff_z = state[\"effector.z\"] + dz\n    # ---- grasp command ---------------------------------------------------\n    grasp_cmd = action[3]\n    close_cmd = grasp_cmd > p[\"deadzone\"]\n    open_cmd = grasp_cmd < -p[\"deadzone\"]\n    # ---- attachment logic -----------------------------------------------\n    # keep attachment state inside p (persistent across steps)\n    attached = p.get(\"attached\", False)\n    # distance check\n    dist = ((eff_x - state[\"block.x\"])**2 + (eff_y - state[\"block.y\"])**2 + (eff_z - state[\"block.z\"])**2)**0.5\n    if close_cmd and not attached and dist < p[\"attach_thresh\"]:\n        attached = True\n    if open_cmd:\n        attached = False\n    # update block position if attached\n    if attached:\n        blk_x, blk_y, blk_z = eff_x, eff_y, eff_z\n    else:\n        blk_x, blk_y, blk_z = state[\"block.x\"], state[\"block.y\"], state[\"block.z\"]\n    # store attachment flag\n    p[\"attached\"] = attached\n    # ---- assemble next state ---------------------------------------------\n    return {\n        \"block.x\": blk_x, \"block.y\": blk_y, \"block.z\": blk_z,\n        \"effector.x\": eff_x, \"effector.y\": eff_y, \"effector.z\": eff_z,\n        \"goal.x\": state[\"goal.x\"], \"goal.y\": state[\"goal.y\"], \"goal.z\": state[\"goal.z\"]\n    }",
+      "init_params": {
+        "dt": 0.05,
+        "v_max": 0.11,
+        "attach_thresh": 0.035,
+        "deadzone": 0.06
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "simple_point_mass_deadzone": {
+        "params": {
+          "dt": 0.09809505445166697,
+          "v_max": 1.2580343520143071,
+          "grasp_thresh": 0.03,
+          "deadzone": 0.05
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36613565036192947,
+        "val_one_step_nrmse": 0.5962336540704821,
+        "val_rollout_nrmse": 1.4623362969875784,
+        "restarts": 4,
+        "nfev": 100,
+        "elapsed_s": 5.532835960388184,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.36613565036192947,
+            "val_rollout_nrmse": 1.4623362969875784
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.7335327652789887,
+            "val_rollout_nrmse": 1.836580516053974
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.6682220892063324,
+            "val_rollout_nrmse": 1.8220649405185418
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.36612103776744187,
+            "val_rollout_nrmse": 1.4647595494302466
+          }
+        ]
+      },
+      "mass_damper_with_spring_coupling": {
+        "params": {
+          "dt": 0.6969346634301811,
+          "m_eff": 0.64230321938448,
+          "b_eff": 0.19093555743583515,
+          "k_spring": 0.8034860315970919,
+          "couple_thresh": 0.053283415063180364,
+          "force_scale": 0.08506942281454201
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.35393094737244785,
+        "val_one_step_nrmse": 0.5859049411505708,
+        "val_rollout_nrmse": 1.44636487392868,
+        "restarts": 4,
+        "nfev": 99,
+        "elapsed_s": 8.082889318466187,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.36185987664059616,
+            "val_rollout_nrmse": 1.45629679233174
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.3661210382605577,
+            "val_rollout_nrmse": 1.464758403596984
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.3661210378887192,
+            "val_rollout_nrmse": 1.4647590555676309
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.35393094737244785,
+            "val_rollout_nrmse": 1.44636487392868
+          }
+        ]
+      },
+      "elastic_coupling_with_deadzone_grasp": {
+        "params": {
+          "dt": 0.09826321316982203,
+          "v_max": 1.0174965996235046,
+          "deadzone": 0.07,
+          "attach_thresh": 0.035,
+          "k_elastic": 6.760787989290037
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36508668934654803,
+        "val_one_step_nrmse": 0.5959496590918498,
+        "val_rollout_nrmse": 1.463503803581839,
+        "restarts": 4,
+        "nfev": 85,
+        "elapsed_s": 5.561998605728149,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.36508668934654803,
+            "val_rollout_nrmse": 1.463503803581839
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.3661210378131233,
+            "val_rollout_nrmse": 1.4647601794404226
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.6681712739220179,
+            "val_rollout_nrmse": 1.8221102386322308
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.36612103778774635,
+            "val_rollout_nrmse": 1.464759409675861
+          }
+        ]
+      },
+      "velocity_threshold_switch_damping": {
+        "params": {
+          "dt": 0.2654186611819118,
+          "m_eff": 0.928666951240466,
+          "v_thr": 0.039819981772762816,
+          "b_low": -0.02115715410474034,
+          "b_high": 0.39669309839198186,
+          "force_scale": 0.342796686376558
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36612103795842693,
+        "val_one_step_nrmse": 0.5957484377304878,
+        "val_rollout_nrmse": 1.4647588939378402,
+        "restarts": 4,
+        "nfev": 63,
+        "elapsed_s": 5.404013156890869,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3661210377978944,
+            "val_rollout_nrmse": 1.4647593587507102
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.36612103795842693,
+            "val_rollout_nrmse": 1.4647588939378402
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.3661210378588202,
+            "val_rollout_nrmse": 1.4647591381458622
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.36612103779205296,
+            "val_rollout_nrmse": 1.4647593871551334
+          }
+        ]
+      },
+      "pid_position_control_effector": {
+        "params": {
+          "dt": 0.00324926523436484,
+          "kp": 26.51696370201722,
+          "kd": -0.005281054589883401,
+          "ki": -0.2541345298676018,
+          "v_max": 32.52273908795229,
+          "integral_x": -41.830236901420946,
+          "integral_y": 0.6450345521108497,
+          "integral_z": -2.6992587114561934,
+          "prev_err_x": -1.8094272562955283,
+          "prev_err_y": 0.7721303805358516,
+          "prev_err_z": 0.7316267353481697,
+          "grasp_thresh": 0.03
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.3933237432359288,
+        "val_one_step_nrmse": 0.6184552649453836,
+        "val_rollout_nrmse": 1.4883919502017464,
+        "restarts": 4,
+        "nfev": 158,
+        "elapsed_s": 24.02819514274597,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3933237432359288,
+            "val_rollout_nrmse": 1.4883919502017464
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.3515030274820451,
+            "val_rollout_nrmse": 1.706231118160481
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.2217473400419891,
+            "val_rollout_nrmse": 1.9349439026541524
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3124465637213473,
+            "val_rollout_nrmse": 1.5023002116386581
+          }
+        ]
+      },
+      "grasp_attach_release_mechanism": {
+        "params": {
+          "dt": 0.0923636312893189,
+          "v_max": 1.1083796689216596,
+          "attach_thresh": 0.03500000064300461,
+          "deadzone": 0.06
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.4295555579484542,
+        "val_one_step_nrmse": 0.5679387297578973,
+        "val_rollout_nrmse": 1.3789732289230014,
+        "restarts": 4,
+        "nfev": 109,
+        "elapsed_s": 6.163665771484375,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4295555579484542,
+            "val_rollout_nrmse": 1.3789732289230014
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5580531771071332,
+            "val_rollout_nrmse": 1.4075055192284516
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.36612103847525584,
+            "val_rollout_nrmse": 1.4647613299632616
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3661210382171054,
+            "val_rollout_nrmse": 1.4647584624282783
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "simple_point_mass_deadzone": {
+        "params": {
+          "dt": 0.10340580453844479,
+          "v_max": 1.0915203139763454,
+          "grasp_thresh": 0.171722569020562,
+          "deadzone": 0.14740059281285667
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.010821328982431,
+        "val_one_step_nrmse": 0.60473221993671,
+        "val_rollout_nrmse": 1.397540616339802,
+        "restarts": 4,
+        "nfev": 119,
+        "elapsed_s": 25.451539993286133,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.1346151194773766,
+            "val_rollout_nrmse": 1.4619118037173453
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.010821328982431,
+            "val_rollout_nrmse": 1.397540616339802
+          },
+          {
+            "restart": 2,
+            "train_loss": 3.3434337455380336,
+            "val_rollout_nrmse": 1.822064908809732
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.1400917879571923,
+            "val_rollout_nrmse": 1.464147245187466
+          }
+        ]
+      },
+      "mass_damper_with_spring_coupling": {
+        "params": {
+          "dt": 0.592331565209904,
+          "m_eff": 0.8512740433666506,
+          "b_eff": 0.1909355574358352,
+          "k_spring": 1.4101206825517407,
+          "couple_thresh": 0.053283415063180364,
+          "force_scale": 0.06519032062566736
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.0153739443351,
+        "val_one_step_nrmse": 0.5673603150972791,
+        "val_rollout_nrmse": 1.4098276678787025,
+        "restarts": 4,
+        "nfev": 93,
+        "elapsed_s": 27.06153893470764,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.102294009022437,
+            "val_rollout_nrmse": 1.453881597103533
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.1400917555792343,
+            "val_rollout_nrmse": 1.4641469162072431
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.1400917553001113,
+            "val_rollout_nrmse": 1.4641468433247669
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.0153739443351,
+            "val_rollout_nrmse": 1.4098276678787025
+          }
+        ]
+      },
+      "elastic_coupling_with_deadzone_grasp": {
+        "params": {
+          "dt": 0.09628976446446132,
+          "v_max": 1.0006120114141555,
+          "deadzone": -0.009741111352948927,
+          "attach_thresh": 0.07253619729856536,
+          "k_elastic": 8.208746126047883
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.0121070251360584,
+        "val_one_step_nrmse": 0.5653677229397921,
+        "val_rollout_nrmse": 1.4090992687875272,
+        "restarts": 4,
+        "nfev": 94,
+        "elapsed_s": 22.448449850082397,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.1334250230768568,
+            "val_rollout_nrmse": 1.4626631856612207
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.1400917551026146,
+            "val_rollout_nrmse": 1.4641468658437014
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.0121070251360584,
+            "val_rollout_nrmse": 1.4090992687875272
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.1400917550948626,
+            "val_rollout_nrmse": 1.464146869357861
+          }
+        ]
+      },
+      "velocity_threshold_switch_damping": {
+        "params": {
+          "dt": 0.2954239066104999,
+          "m_eff": 1.350204986713785,
+          "v_thr": 0.03923964792249435,
+          "b_low": 0.11715848641284227,
+          "b_high": 0.4987284544388281,
+          "force_scale": 0.43207780083178976
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.1400917555904777,
+        "val_one_step_nrmse": 0.5962268278799976,
+        "val_rollout_nrmse": 1.464146827611553,
+        "restarts": 4,
+        "nfev": 56,
+        "elapsed_s": 16.812779903411865,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.1400917557736303,
+            "val_rollout_nrmse": 1.4641469243405414
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.1400917553346206,
+            "val_rollout_nrmse": 1.4641468410328338
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.140091755197271,
+            "val_rollout_nrmse": 1.4641468516442564
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.1400917555904777,
+            "val_rollout_nrmse": 1.464146827611553
+          }
+        ]
+      },
+      "pid_position_control_effector": {
+        "params": {
+          "dt": 0.006692347464108358,
+          "kp": 8.177611677840282,
+          "kd": 0.002361293903579439,
+          "ki": -0.12622057176326795,
+          "v_max": 9.309139647580189,
+          "integral_x": -11.613091766368115,
+          "integral_y": 0.8678022126286349,
+          "integral_z": 3.1405161873112686,
+          "prev_err_x": 0.06386987155893382,
+          "prev_err_y": -0.2221608311221648,
+          "prev_err_z": 0.0066361774314200915,
+          "grasp_thresh": 0.08991797860162284
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.470169977419619,
+        "val_one_step_nrmse": 0.608221705072833,
+        "val_rollout_nrmse": 1.51087719390722,
+        "restarts": 4,
+        "nfev": 107,
+        "elapsed_s": 61.271135330200195,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.4584605319333863,
+            "val_rollout_nrmse": 1.810470867708298
+          },
+          {
+            "restart": 1,
+            "train_loss": 3.3457376986010203,
+            "val_rollout_nrmse": 1.8322353967736646
+          },
+          {
+            "restart": 2,
+            "train_loss": 3.761163577083345,
+            "val_rollout_nrmse": 1.9399336956371878
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.470169977419619,
+            "val_rollout_nrmse": 1.51087719390722
+          }
+        ]
+      },
+      "grasp_attach_release_mechanism": {
+        "params": {
+          "dt": 0.09094100999271329,
+          "v_max": 1.0127308049540633,
+          "attach_thresh": 0.035,
+          "deadzone": 0.06
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.1254956727306458,
+        "val_one_step_nrmse": 0.5685303120415571,
+        "val_rollout_nrmse": 1.379363398465432,
+        "restarts": 4,
+        "nfev": 115,
+        "elapsed_s": 27.09777283668518,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.1254956727306458,
+            "val_rollout_nrmse": 1.379363398465432
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.077289195643532,
+            "val_rollout_nrmse": 1.415158005858247
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.1400917752246187,
+            "val_rollout_nrmse": 1.4641471622051205
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.140091755403514,
+            "val_rollout_nrmse": 1.4641469072983138
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "grasp_attach_release_mechanism",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_point_mass_deadzone": 1.4623362969875784,
+        "mass_damper_with_spring_coupling": 1.44636487392868,
+        "elastic_coupling_with_deadzone_grasp": 1.463503803581839,
+        "velocity_threshold_switch_damping": 1.4647588939378402,
+        "pid_position_control_effector": 1.4883919502017464,
+        "grasp_attach_release_mechanism": 1.3789732289230014
+      }
+    },
+    "active_one_step": {
+      "winner": "mass_damper_with_spring_coupling",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "block.x",
+        "block.y",
+        "block.z",
+        "effector.x",
+        "effector.y",
+        "effector.z"
+      ],
+      "scores": {
+        "simple_point_mass_deadzone": 1.9077738798936603,
+        "mass_damper_with_spring_coupling": 1.6325755208508919,
+        "elastic_coupling_with_deadzone_grasp": 1.8192939557244312,
+        "velocity_threshold_switch_damping": 2.0268227056898263,
+        "pid_position_control_effector": 1.7606128284149005,
+        "grasp_attach_release_mechanism": 1.664719903947527
+      },
+      "probes": [
+        {
+          "disagreement": 0.8140896666312837,
+          "actions": [
+            [
+              -0.23845898337822113,
+              -0.14045187764284672,
+              -0.02230090633307147,
+              0.9529246438720891,
+              0.36781377503442353
+            ],
+            [
+              -0.23845898337822113,
+              -0.14045187764284672,
+              -0.02230090633307147,
+              0.9529246438720891,
+              0.36781377503442353
+            ],
+            [
+              -0.23845898337822113,
+              -0.14045187764284672,
+              -0.02230090633307147,
+              0.9529246438720891,
+              0.36781377503442353
+            ]
+          ],
+          "start": {
+            "block.x": 0.354,
+            "block.y": 0.222,
+            "block.z": 0.171,
+            "effector.x": 0.35,
+            "effector.y": 0.22,
+            "effector.z": 0.169,
+            "goal.x": 0.524,
+            "goal.y": 0.027,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 1.9081737357760629,
+            "mass_damper_with_spring_coupling": 0.8390257708777293,
+            "elastic_coupling_with_deadzone_grasp": 1.441065116337219,
+            "velocity_threshold_switch_damping": 1.908283098007067,
+            "pid_position_control_effector": 1.923778383438975,
+            "grasp_attach_release_mechanism": 0.48838619181135173
+          }
+        },
+        {
+          "disagreement": 0.5754432159517417,
+          "actions": [
+            [
+              0.35153488389491994,
+              0.1165578959500686,
+              -0.22541016989625207,
+              0.24780556387826858,
+              0.20460967149413006
+            ],
+            [
+              -0.3193522852386672,
+              -0.3935979746715095,
+              0.09149775803857318,
+              0.22468347800370148,
+              0.2213890137625661
+            ],
+            [
+              -0.23432398220429018,
+              0.1315478144325104,
+              0.9715392703928383,
+              -0.14395096191209666,
+              0.4275970665559115
+            ]
+          ],
+          "start": {
+            "block.x": 0.546,
+            "block.y": 0.018,
+            "block.z": 0.194,
+            "effector.x": 0.54,
+            "effector.y": 0.016,
+            "effector.z": 0.195,
+            "goal.x": 0.524,
+            "goal.y": 0.027,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 1.096593020348015,
+            "mass_damper_with_spring_coupling": 0.9996650576193842,
+            "elastic_coupling_with_deadzone_grasp": 1.0390295309651878,
+            "velocity_threshold_switch_damping": 1.096612810805401,
+            "pid_position_control_effector": 1.219866617191801,
+            "grasp_attach_release_mechanism": 1.3771815515209442
+          }
+        },
+        {
+          "disagreement": 0.5600190833099755,
+          "actions": [
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ],
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ],
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ]
+          ],
+          "start": {
+            "block.x": 0.547,
+            "block.y": -0.123,
+            "block.z": 0.087,
+            "effector.x": 0.548,
+            "effector.y": -0.12,
+            "effector.z": 0.085,
+            "goal.x": 0.546,
+            "goal.y": -0.119,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 4.18104455232673,
+            "mass_damper_with_spring_coupling": 4.073830213855242,
+            "elastic_coupling_with_deadzone_grasp": 4.184281624640778,
+            "velocity_threshold_switch_damping": 4.178706481282577,
+            "pid_position_control_effector": 3.616446043215846,
+            "grasp_attach_release_mechanism": 4.074872593348124
+          }
+        },
+        {
+          "disagreement": 0.5564497812587932,
+          "actions": [
+            [
+              -0.2945131686071898,
+              0.03966614866846352,
+              -0.14655771253951788,
+              -0.9187648762545095,
+              -0.14870362004809565
+            ],
+            [
+              -0.2945131686071898,
+              0.03966614866846352,
+              -0.14655771253951788,
+              -0.9187648762545095,
+              -0.14870362004809565
+            ],
+            [
+              -0.2945131686071898,
+              0.03966614866846352,
+              -0.14655771253951788,
+              -0.9187648762545095,
+              -0.14870362004809565
+            ]
+          ],
+          "start": {
+            "block.x": 0.546,
+            "block.y": 0.018,
+            "block.z": 0.194,
+            "effector.x": 0.54,
+            "effector.y": 0.016,
+            "effector.z": 0.195,
+            "goal.x": 0.524,
+            "goal.y": 0.027,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 1.8374521442873983,
+            "mass_damper_with_spring_coupling": 1.584873078403248,
+            "elastic_coupling_with_deadzone_grasp": 1.8373720308360926,
+            "velocity_threshold_switch_damping": 1.8375111252330658,
+            "pid_position_control_effector": 1.8593970444561052,
+            "grasp_attach_release_mechanism": 1.841151331421567
+          }
+        },
+        {
+          "disagreement": 0.5148291682690723,
+          "actions": [
+            [
+              -0.06692660641482462,
+              0.13889204065419425,
+              0.12418798949072363,
+              0.08583132385886039,
+              0.18171131086256115
+            ],
+            [
+              -0.06692660641482462,
+              0.13889204065419425,
+              0.12418798949072363,
+              0.08583132385886039,
+              0.18171131086256115
+            ],
+            [
+              -0.06692660641482462,
+              0.13889204065419425,
+              0.12418798949072363,
+              0.08583132385886039,
+              0.18171131086256115
+            ]
+          ],
+          "start": {
+            "block.x": 0.434,
+            "block.y": -0.047,
+            "block.z": 0.231,
+            "effector.x": 0.433,
+            "effector.y": -0.044,
+            "effector.z": 0.232,
+            "goal.x": 0.474,
+            "goal.y": -0.061,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 0.5156059467300967,
+            "mass_damper_with_spring_coupling": 0.6654834834988556,
+            "elastic_coupling_with_deadzone_grasp": 0.5947214758428794,
+            "velocity_threshold_switch_damping": 1.1130000131210207,
+            "pid_position_control_effector": 0.18357605377177502,
+            "grasp_attach_release_mechanism": 0.5420078516356464
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.4914360046386719
+    },
+    "offline_multi_step": {
+      "winner": "grasp_attach_release_mechanism",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_point_mass_deadzone": 1.397540616339802,
+        "mass_damper_with_spring_coupling": 1.4098276678787025,
+        "elastic_coupling_with_deadzone_grasp": 1.4090992687875272,
+        "velocity_threshold_switch_damping": 1.464146827611553,
+        "pid_position_control_effector": 1.51087719390722,
+        "grasp_attach_release_mechanism": 1.379363398465432
+      }
+    },
+    "active_multi_step": {
+      "winner": "pid_position_control_effector",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "block.x",
+        "block.y",
+        "block.z",
+        "effector.x",
+        "effector.y",
+        "effector.z"
+      ],
+      "scores": {
+        "simple_point_mass_deadzone": 4.024064010204082,
+        "mass_damper_with_spring_coupling": 3.3727190663138154,
+        "elastic_coupling_with_deadzone_grasp": 3.7313876548737896,
+        "velocity_threshold_switch_damping": 3.7069993665944487,
+        "pid_position_control_effector": 2.3512504944677834,
+        "grasp_attach_release_mechanism": 3.663035137693588
+      },
+      "probes": [
+        {
+          "disagreement": 3.3851956498017133,
+          "actions": [
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ]
+          ],
+          "start": {
+            "block.x": 0.338,
+            "block.y": 0.023,
+            "block.z": 0.02,
+            "effector.x": 0.337,
+            "effector.y": 0.021,
+            "effector.z": 0.02,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 1.7349533996083786,
+            "mass_damper_with_spring_coupling": 5.92982429969565,
+            "elastic_coupling_with_deadzone_grasp": 5.712309187827462,
+            "velocity_threshold_switch_damping": 5.709434338904066,
+            "pid_position_control_effector": 3.246018373482749,
+            "grasp_attach_release_mechanism": 5.705873138319373
+          }
+        },
+        {
+          "disagreement": 3.327735974402351,
+          "actions": [
+            [
+              0.86203463196231,
+              -0.9189785776231307,
+              0.46401239131312155,
+              0.22874649389799329,
+              -0.2958115557791933
+            ],
+            [
+              0.86203463196231,
+              -0.9189785776231307,
+              0.46401239131312155,
+              0.22874649389799329,
+              -0.2958115557791933
+            ],
+            [
+              0.86203463196231,
+              -0.9189785776231307,
+              0.46401239131312155,
+              0.22874649389799329,
+              -0.2958115557791933
+            ]
+          ],
+          "start": {
+            "block.x": 0.371,
+            "block.y": -0.064,
+            "block.z": 0.02,
+            "effector.x": 0.369,
+            "effector.y": -0.065,
+            "effector.z": 0.019,
+            "goal.x": 0.373,
+            "goal.y": -0.067,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 6.3360815086549875,
+            "mass_damper_with_spring_coupling": 1.6311532537752444,
+            "elastic_coupling_with_deadzone_grasp": 0.5052349839282682,
+            "velocity_threshold_switch_damping": 0.4707906030434813,
+            "pid_position_control_effector": 3.0363596568167734,
+            "grasp_attach_release_mechanism": 0.4225913291576824
+          }
+        },
+        {
+          "disagreement": 3.303510466151686,
+          "actions": [
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ],
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ],
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ]
+          ],
+          "start": {
+            "block.x": 0.534,
+            "block.y": -0.165,
+            "block.z": 0.02,
+            "effector.x": 0.531,
+            "effector.y": -0.171,
+            "effector.z": 0.016,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 0.8956404290065142,
+            "mass_damper_with_spring_coupling": 5.95498947152164,
+            "elastic_coupling_with_deadzone_grasp": 6.586370691883764,
+            "velocity_threshold_switch_damping": 6.589847481031761,
+            "pid_position_control_effector": 3.079594121579386,
+            "grasp_attach_release_mechanism": 6.598816075209516
+          }
+        },
+        {
+          "disagreement": 3.1755550501213747,
+          "actions": [
+            [
+              -0.9180529521276106,
+              -0.9669447289429418,
+              0.6265404784005448,
+              0.8255111545554434,
+              0.2176925688812556
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418,
+              0.6265404784005448,
+              0.8255111545554434,
+              0.2176925688812556
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418,
+              0.6265404784005448,
+              0.8255111545554434,
+              0.2176925688812556
+            ]
+          ],
+          "start": {
+            "block.x": 0.36,
+            "block.y": -0.248,
+            "block.z": 0.02,
+            "effector.x": 0.362,
+            "effector.y": -0.25,
+            "effector.z": 0.053,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 7.455735555582578,
+            "mass_damper_with_spring_coupling": 0.756899947632651,
+            "elastic_coupling_with_deadzone_grasp": 1.9723422413490765,
+            "velocity_threshold_switch_damping": 1.9085053642944043,
+            "pid_position_control_effector": 0.8134041795337169,
+            "grasp_attach_release_mechanism": 1.7785986594010408
+          }
+        },
+        {
+          "disagreement": 3.1129424863455744,
+          "actions": [
+            [
+              0.9923723511595031,
+              0.4444399786539883,
+              -0.3208865808225274,
+              0.8377494324687351,
+              0.31160309679847337
+            ],
+            [
+              0.9923723511595031,
+              0.4444399786539883,
+              -0.3208865808225274,
+              0.8377494324687351,
+              0.31160309679847337
+            ],
+            [
+              0.9923723511595031,
+              0.4444399786539883,
+              -0.3208865808225274,
+              0.8377494324687351,
+              0.31160309679847337
+            ]
+          ],
+          "start": {
+            "block.x": 0.474,
+            "block.y": -0.061,
+            "block.z": 0.02,
+            "effector.x": 0.473,
+            "effector.y": -0.063,
+            "effector.z": 0.024,
+            "goal.x": 0.474,
+            "goal.y": -0.061,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_point_mass_deadzone": 3.6979091581679513,
+            "mass_damper_with_spring_coupling": 2.5907283589438928,
+            "elastic_coupling_with_deadzone_grasp": 3.8806811693803747,
+            "velocity_threshold_switch_damping": 3.8564190456985328,
+            "pid_position_control_effector": 1.5808761409262915,
+            "grasp_attach_release_mechanism": 3.809296486380328
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.23262715339660645
+    }
+  },
+  "args": {
+    "env": "cube",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/bank_general_cube_gptoss_s0",
+    "num_hypotheses": 6,
+    "model": "openai/gpt-oss-120b",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/gptoss_general.frozen.json",
+    "experience_runs": [],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 472.9243083000183
+}

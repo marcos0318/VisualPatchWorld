@@ -1,0 +1,942 @@
+{
+  "env": "tworoom",
+  "llm_model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+  "schema": {
+    "state_keys": [
+      "agent.x",
+      "agent.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "agent.x": {
+        "min": 14.06,
+        "max": 199.404
+      },
+      "agent.y": {
+        "min": 21.0,
+        "max": 208.141
+      },
+      "target.x": {
+        "min": 22.652,
+        "max": 205.757
+      },
+      "target.y": {
+        "min": 19.804,
+        "max": 207.074
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -1.0,
+      -1.0
+    ],
+    "action_max": [
+      1.0,
+      1.0
+    ],
+    "num_episodes": 51,
+    "num_transitions": 892
+  },
+  "scales": {
+    "agent.x": 10.597528584591904,
+    "agent.y": 11.175281778471136,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "linear_no_momentum",
+      "mechanism": "Agent moves with linear response to action, no momentum, no obstacles.",
+      "code": "# HYPOTHESIS: linear_no_momentum\n# MECHANISM: Agent moves with linear response to action, no momentum, no obstacles.\nPARAMS = {\"speed\": 25.0}\n\ndef step(state, action, p, meta):\n    dx = action[0] * p[\"speed\"]\n    dy = action[1] * p[\"speed\"]\n    return {\n        \"agent.x\": state[\"agent.x\"] + dx,\n        \"agent.y\": state[\"agent.y\"] + dy,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "speed": 25.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_xy",
+      "mechanism": "Agent has velocity that changes gradually based on action; first-order momentum.",
+      "code": "# HYPOTHESIS: momentum_xy\n# MECHANISM: Agent has velocity that changes gradually based on action; first-order momentum.\nPARAMS = {\"acceleration\": 20.0, \"drag\": 0.8}\n\ndef step(state, action, p, meta):\n    vx = state.get(\"agent.vx\", 0.0)\n    vy = state.get(\"agent.vy\", 0.0)\n    dvx = action[0] * p[\"acceleration\"]\n    dvy = action[1] * p[\"acceleration\"]\n    vx_new = (vx + dvx) * p[\"drag\"]\n    vy_new = (vy + dvy) * p[\"drag\"]\n    return {\n        \"agent.x\": state[\"agent.x\"] + vx_new,\n        \"agent.y\": state[\"agent.y\"] + vy_new,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n        \"agent.vx\": vx_new,\n        \"agent.vy\": vy_new,\n    }",
+      "init_params": {
+        "acceleration": 20.0,
+        "drag": 0.8
+      },
+      "repaired": false
+    },
+    {
+      "name": "velocity_clamp",
+      "mechanism": "Agent accelerates with momentum but velocity magnitude is capped.",
+      "code": "# HYPOTHESIS: velocity_clamp\n# MECHANISM: Agent accelerates with momentum but velocity magnitude is capped.\nPARAMS = {\"acceleration\": 15.0, \"drag\": 0.7, \"max_speed\": 10.0}\n\ndef step(state, action, p, meta):\n    vx = state.get(\"agent.vx\", 0.0)\n    vy = state.get(\"agent.vy\", 0.0)\n    dvx = action[0] * p[\"acceleration\"]\n    dvy = action[1] * p[\"acceleration\"]\n    vx_new = (vx + dvx) * p[\"drag\"]\n    vy_new = (vy + dvy) * p[\"drag\"]\n    speed = math.sqrt(vx_new**2 + vy_new**2)\n    if speed > p[\"max_speed\"] > 0:\n        scale = p[\"max_speed\"] / speed\n        vx_new *= scale\n        vy_new *= scale\n    return {\n        \"agent.x\": state[\"agent.x\"] + vx_new,\n        \"agent.y\": state[\"agent.y\"] + vy_new,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n        \"agent.vx\": vx_new,\n        \"agent.vy\": vy_new,\n    }",
+      "init_params": {
+        "acceleration": 15.0,
+        "drag": 0.7,
+        "max_speed": 10.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "directional_friction",
+      "mechanism": "Motion is resisted differently along x vs y axes (anisotropic friction).",
+      "code": "# HYPOTHESIS: directional_friction\n# MECHANISM: Motion is resisted differently along x vs y axes (anisotropic friction).\nPARAMS = {\"acc_x\": 20.0, \"acc_y\": 20.0, \"drag_x\": 0.8, \"drag_y\": 0.9}\n\ndef step(state, action, p, meta):\n    vx = state.get(\"agent.vx\", 0.0)\n    vy = state.get(\"agent.vy\", 0.0)\n    dvx = action[0] * p[\"acc_x\"]\n    dvy = action[1] * p[\"acc_y\"]\n    vx_new = (vx + dvx) * p[\"drag_x\"]\n    vy_new = (vy + dvy) * p[\"drag_y\"]\n    return {\n        \"agent.x\": state[\"agent.x\"] + vx_new,\n        \"agent.y\": state[\"agent.y\"] + vy_new,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n        \"agent.vx\": vx_new,\n        \"agent.vy\": vy_new,\n    }",
+      "init_params": {
+        "acc_x": 20.0,
+        "acc_y": 20.0,
+        "drag_x": 0.8,
+        "drag_y": 0.9
+      },
+      "repaired": false
+    },
+    {
+      "name": "attract_to_target",
+      "mechanism": "Agent is attracted toward the target position with controllable strength.",
+      "code": "# HYPOTHESIS: attract_to_target\n# MECHANISM: Agent is attracted toward the target position with controllable strength.\nPARAMS = {\"control_gain\": 15.0, \"attraction_strength\": 0.05, \"drag\": 0.85}\n\ndef step(state, action, p, meta):\n    ax = action[0] * p[\"control_gain\"]\n    ay = action[1] * p[\"control_gain\"]\n    tx = state[\"target.x\"]\n    ty = state[\"target.y\"]\n    px = state[\"agent.x\"]\n    py = state[\"agent.y\"]\n    attract_x = (tx - px) * p[\"attraction_strength\"]\n    attract_y = (ty - py) * p[\"attraction_strength\"]\n    vx = state.get(\"agent.vx\", 0.0)\n    vy = state.get(\"agent.vy\", 0.0)\n    dvx = ax + attract_x\n    dvy = ay + attract_y\n    vx_new = (vx + dvx) * p[\"drag\"]\n    vy_new = (vy + dvy) * p[\"drag\"]\n    return {\n        \"agent.x\": state[\"agent.x\"] + vx_new,\n        \"agent.y\": state[\"agent.y\"] + vy_new,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n        \"agent.vx\": vx_new,\n        \"agent.vy\": vy_new,\n    }",
+      "init_params": {
+        "control_gain": 15.0,
+        "attraction_strength": 0.05,
+        "drag": 0.85
+      },
+      "repaired": false
+    },
+    {
+      "name": "bounded_action_response",
+      "mechanism": "Action components are non-linearly mapped through a tanh saturation function.",
+      "code": "# HYPOTHESIS: bounded_action_response\n# MECHANISM: Action components are non-linearly mapped through a tanh saturation function.\nPARAMS = {\"scale\": 30.0, \"drag\": 0.8}\n\ndef step(state, action, p, meta):\n    ax = math.tanh(action[0]) * p[\"scale\"]\n    ay = math.tanh(action[1]) * p[\"scale\"]\n    vx = state.get(\"agent.vx\", 0.0)\n    vy = state.get(\"agent.vy\", 0.0)\n    vx_new = (vx + ax) * p[\"drag\"]\n    vy_new = (vy + ay) * p[\"drag\"]\n    return {\n        \"agent.x\": state[\"agent.x\"] + vx_new,\n        \"agent.y\": state[\"agent.y\"] + vy_new,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n        \"agent.vx\": vx_new,\n        \"agent.vy\": vy_new,\n    }",
+      "init_params": {
+        "scale": 30.0,
+        "drag": 0.8
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_no_momentum": {
+        "params": {
+          "speed": 23.710023664290333
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03523599876445178,
+        "val_one_step_nrmse": 0.05759272537065468,
+        "val_rollout_nrmse": 0.1105930784617024,
+        "restarts": 4,
+        "nfev": 10,
+        "elapsed_s": 0.13779711723327637,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307860531271
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523599876445178,
+            "val_rollout_nrmse": 0.11059307876747232
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307862186181
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523599876445178,
+            "val_rollout_nrmse": 0.1105930784617024
+          }
+        ]
+      },
+      "momentum_xy": {
+        "params": {
+          "acceleration": 19.740456315879992,
+          "drag": 1.2010851280700894
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.0352359987670047,
+        "val_one_step_nrmse": 0.057593748868130096,
+        "val_rollout_nrmse": 0.11059569590098907,
+        "restarts": 4,
+        "nfev": 63,
+        "elapsed_s": 0.4189286231994629,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035235998776385655,
+            "val_rollout_nrmse": 0.11059873740360798
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523599876924212,
+            "val_rollout_nrmse": 0.1105966638274515
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.0352359987670047,
+            "val_rollout_nrmse": 0.11059569590098907
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523599878227569,
+            "val_rollout_nrmse": 0.110599994296598
+          }
+        ]
+      },
+      "velocity_clamp": {
+        "params": {
+          "acceleration": 13.07363248275481,
+          "drag": 1.8135713931258732,
+          "max_speed": 33.25250862591394
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.035235998767253696,
+        "val_one_step_nrmse": 0.057593797617680915,
+        "val_rollout_nrmse": 0.1105958205700304,
+        "restarts": 4,
+        "nfev": 86,
+        "elapsed_s": 0.8484401702880859,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03523599877713515,
+            "val_rollout_nrmse": 0.11059891239565353
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.035235998767253696,
+            "val_rollout_nrmse": 0.1105958205700304
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03523599878516185,
+            "val_rollout_nrmse": 0.11060053322021696
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523599877021952,
+            "val_rollout_nrmse": 0.11059701261596167
+          }
+        ]
+      },
+      "directional_friction": {
+        "params": {
+          "acc_x": 9.12360601160968,
+          "acc_y": 17.05664100616201,
+          "drag_x": 2.464457439119805,
+          "drag_y": 1.4660492140500974
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03390370618212362,
+        "val_one_step_nrmse": 0.06997724359886366,
+        "val_rollout_nrmse": 0.13932667348195274,
+        "restarts": 4,
+        "nfev": 66,
+        "elapsed_s": 0.7255258560180664,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03390370618329887,
+            "val_rollout_nrmse": 0.13932752007815646
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03390370619213857,
+            "val_rollout_nrmse": 0.13933059703225545
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03390370619496491,
+            "val_rollout_nrmse": 0.13933129401670874
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03390370618212362,
+            "val_rollout_nrmse": 0.13932667348195274
+          }
+        ]
+      },
+      "attract_to_target": {
+        "params": {
+          "control_gain": 15.020608511752892,
+          "attraction_strength": 0.0003184203065296702,
+          "drag": 1.576461868509871
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03523048630966931,
+        "val_one_step_nrmse": 0.057478906035367636,
+        "val_rollout_nrmse": 0.10851840979165693,
+        "restarts": 4,
+        "nfev": 75,
+        "elapsed_s": 0.7504169940948486,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03523048630966931,
+            "val_rollout_nrmse": 0.10851840979165693
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523048632589083,
+            "val_rollout_nrmse": 0.10852195093525245
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035230486321320496,
+            "val_rollout_nrmse": 0.10852114009643414
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523048631647297,
+            "val_rollout_nrmse": 0.10852015969625456
+          }
+        ]
+      },
+      "bounded_action_response": {
+        "params": {
+          "scale": 39.670708753519975,
+          "drag": 0.6813780281454048
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.038633335550366,
+        "val_one_step_nrmse": 0.06947064421172196,
+        "val_rollout_nrmse": 0.12159747005415462,
+        "restarts": 4,
+        "nfev": 67,
+        "elapsed_s": 0.4845142364501953,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.038633335550366,
+            "val_rollout_nrmse": 0.12159747005415462
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03863333555075181,
+            "val_rollout_nrmse": 0.12159762403580907
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.0386333355543246,
+            "val_rollout_nrmse": 0.12159870582699892
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.038633335556182605,
+            "val_rollout_nrmse": 0.12159913989795554
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_no_momentum": {
+        "params": {
+          "speed": 23.496798762551993
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919190484882868,
+        "val_one_step_nrmse": 0.061699129520703846,
+        "val_rollout_nrmse": 0.12094199828077688,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 0.4390861988067627,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919190484882865,
+            "val_rollout_nrmse": 0.12094199863640513
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.1209419991178051
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.12094199828077688
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.12094199852714489
+          }
+        ]
+      },
+      "momentum_xy": {
+        "params": {
+          "acceleration": 13.967130677672106,
+          "drag": 1.6822887766218544
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1691919048595753,
+        "val_one_step_nrmse": 0.061700156834828726,
+        "val_rollout_nrmse": 0.12094455303063098,
+        "restarts": 4,
+        "nfev": 67,
+        "elapsed_s": 2.8370492458343506,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1691919048655776,
+            "val_rollout_nrmse": 0.12094518765027695
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1691919048595753,
+            "val_rollout_nrmse": 0.12094455303063098
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190486059776,
+            "val_rollout_nrmse": 0.12094467179618579
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190486528318,
+            "val_rollout_nrmse": 0.12094515949313661
+          }
+        ]
+      },
+      "velocity_clamp": {
+        "params": {
+          "acceleration": 20.681341022257584,
+          "drag": 1.1361346142599489,
+          "max_speed": 32.95013049624479
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919190484934962,
+        "val_one_step_nrmse": 0.06169935572436097,
+        "val_rollout_nrmse": 0.12094256081087873,
+        "restarts": 4,
+        "nfev": 99,
+        "elapsed_s": 6.0295727252960205,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919190485633787,
+            "val_rollout_nrmse": 0.12094413382568583
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190489016522,
+            "val_rollout_nrmse": 0.12094700873129689
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190484934962,
+            "val_rollout_nrmse": 0.12094256081087873
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190488289115,
+            "val_rollout_nrmse": 0.1209465465689395
+          }
+        ]
+      },
+      "directional_friction": {
+        "params": {
+          "acc_x": 33.76362272980611,
+          "acc_y": 7.74075699454883,
+          "drag_x": 0.6485604955354963,
+          "drag_y": 3.2349742927392366
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.15921703800312828,
+        "val_one_step_nrmse": 0.07980653780424665,
+        "val_rollout_nrmse": 0.16157688242312207,
+        "restarts": 4,
+        "nfev": 59,
+        "elapsed_s": 3.4781436920166016,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1592170379905171,
+            "val_rollout_nrmse": 0.16157768335968228
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.15921703805441392,
+            "val_rollout_nrmse": 0.16158166002205077
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.15921703800312828,
+            "val_rollout_nrmse": 0.16157688242312207
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.15921703801527196,
+            "val_rollout_nrmse": 0.1615795525727679
+          }
+        ]
+      },
+      "attract_to_target": {
+        "params": {
+          "control_gain": 18.710348098073954,
+          "attraction_strength": 0.0007740129071066904,
+          "drag": 1.249614767179043
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1689787222479374,
+        "val_one_step_nrmse": 0.06270457335546406,
+        "val_rollout_nrmse": 0.12001410786370707,
+        "restarts": 4,
+        "nfev": 71,
+        "elapsed_s": 2.581742286682129,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16897872227252084,
+            "val_rollout_nrmse": 0.12001587342834792
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1689787222479374,
+            "val_rollout_nrmse": 0.12001410786370707
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16897872230468738,
+            "val_rollout_nrmse": 0.12001750024151035
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16897872234017292,
+            "val_rollout_nrmse": 0.12001891837772777
+          }
+        ]
+      },
+      "bounded_action_response": {
+        "params": {
+          "scale": 61.55135475301935,
+          "drag": 0.4339414496670785
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.18309874286381683,
+        "val_one_step_nrmse": 0.07319015327092532,
+        "val_rollout_nrmse": 0.1323965435490721,
+        "restarts": 4,
+        "nfev": 57,
+        "elapsed_s": 1.402958869934082,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1830987429676818,
+            "val_rollout_nrmse": 0.13240156807325135
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.18309874293055273,
+            "val_rollout_nrmse": 0.13240032883296604
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.18309874288699687,
+            "val_rollout_nrmse": 0.13239835607018874
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.18309874286381683,
+            "val_rollout_nrmse": 0.1323965435490721
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "attract_to_target",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_no_momentum": 0.1105930784617024,
+        "momentum_xy": 0.11059569590098907,
+        "velocity_clamp": 0.1105958205700304,
+        "directional_friction": 0.13932667348195274,
+        "attract_to_target": 0.10851840979165693,
+        "bounded_action_response": 0.12159747005415462
+      }
+    },
+    "active_one_step": {
+      "winner": "attract_to_target",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scores": {
+        "linear_no_momentum": 0.5804301205096938,
+        "momentum_xy": 0.5804300750874393,
+        "velocity_clamp": 0.5804300729245035,
+        "directional_friction": 0.6388529108323865,
+        "attract_to_target": 0.5779688863420096,
+        "bounded_action_response": 0.613371693503935
+      },
+      "probes": [
+        {
+          "disagreement": 0.16451279866327895,
+          "actions": [
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ]
+          ],
+          "start": {
+            "agent.x": 78.552,
+            "agent.y": 30.974,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_no_momentum": 1.824304893486171,
+            "momentum_xy": 1.8242994422179577,
+            "velocity_clamp": 1.8242991825752832,
+            "directional_friction": 1.940007373888107,
+            "attract_to_target": 1.8153377897623117,
+            "bounded_action_response": 1.5623987808947104
+          }
+        },
+        {
+          "disagreement": 0.14960010331726295,
+          "actions": [
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ]
+          ],
+          "start": {
+            "agent.x": 129.849,
+            "agent.y": 54.117,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_no_momentum": 0.15656526704780016,
+            "momentum_xy": 0.15657235281342455,
+            "velocity_clamp": 0.15657269030731485,
+            "directional_friction": 0.23915563101372733,
+            "attract_to_target": 0.15664278628002581,
+            "bounded_action_response": 0.47662103083108914
+          }
+        },
+        {
+          "disagreement": 0.1489484770248631,
+          "actions": [
+            [
+              -0.32037769020565077,
+              -0.9995566005794037
+            ],
+            [
+              -0.32037769020565077,
+              -0.9995566005794037
+            ],
+            [
+              -0.32037769020565077,
+              -0.9995566005794037
+            ]
+          ],
+          "start": {
+            "agent.x": 145.446,
+            "agent.y": 76.074,
+            "target.x": 178.335,
+            "target.y": 111.47
+          },
+          "errors": {
+            "linear_no_momentum": 0.42431692878118354,
+            "momentum_xy": 0.424313212483593,
+            "velocity_clamp": 0.4243130354780072,
+            "directional_friction": 0.5169701024613791,
+            "attract_to_target": 0.42013811895179376,
+            "bounded_action_response": 0.32857880757351754
+          }
+        },
+        {
+          "disagreement": 0.14660685191170184,
+          "actions": [
+            [
+              -0.18610439872138773,
+              -0.9993986197861542
+            ],
+            [
+              -0.18610439872138773,
+              -0.9993986197861542
+            ],
+            [
+              -0.18610439872138773,
+              -0.9993986197861542
+            ]
+          ],
+          "start": {
+            "agent.x": 148.126,
+            "agent.y": 77.993,
+            "target.x": 198.978,
+            "target.y": 189.591
+          },
+          "errors": {
+            "linear_no_momentum": 0.37242003892330827,
+            "momentum_xy": 0.37241656791099115,
+            "velocity_clamp": 0.37241640258842146,
+            "directional_friction": 0.4668835307121468,
+            "attract_to_target": 0.3663174107709229,
+            "bounded_action_response": 0.2843340727944378
+          }
+        },
+        {
+          "disagreement": 0.14128469435730542,
+          "actions": [
+            [
+              -0.12186357897527245,
+              0.9905996067757221
+            ],
+            [
+              -0.12186357897527245,
+              0.9905996067757221
+            ],
+            [
+              -0.12186357897527245,
+              0.9905996067757221
+            ]
+          ],
+          "start": {
+            "agent.x": 87.649,
+            "agent.y": 91.827,
+            "target.x": 207.692,
+            "target.y": 48.391
+          },
+          "errors": {
+            "linear_no_momentum": 0.12454347431000645,
+            "momentum_xy": 0.12454880001123024,
+            "velocity_clamp": 0.124549053673491,
+            "directional_friction": 0.03124791608657212,
+            "attract_to_target": 0.13140832594499346,
+            "bounded_action_response": 0.41492577542591963
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.1462230682373047
+    },
+    "offline_multi_step": {
+      "winner": "attract_to_target",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_no_momentum": 0.12094199828077688,
+        "momentum_xy": 0.12094455303063098,
+        "velocity_clamp": 0.12094256081087873,
+        "directional_friction": 0.16157688242312207,
+        "attract_to_target": 0.12001410786370707,
+        "bounded_action_response": 0.1323965435490721
+      }
+    },
+    "active_multi_step": {
+      "winner": "attract_to_target",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scores": {
+        "linear_no_momentum": 0.5804142404903889,
+        "momentum_xy": 0.5804142764321911,
+        "velocity_clamp": 0.5804142484027373,
+        "directional_friction": 0.6543780597872542,
+        "attract_to_target": 0.5761304469821342,
+        "bounded_action_response": 0.6209029036168359
+      },
+      "probes": [
+        {
+          "disagreement": 0.18067433602324348,
+          "actions": [
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ]
+          ],
+          "start": {
+            "agent.x": 78.552,
+            "agent.y": 30.974,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_no_momentum": 1.8033307227626179,
+            "momentum_xy": 1.8033256726703537,
+            "velocity_clamp": 1.8033296107784913,
+            "directional_friction": 1.9437281160654207,
+            "attract_to_target": 1.7807865032876957,
+            "bounded_action_response": 1.5412003565590742
+          }
+        },
+        {
+          "disagreement": 0.16290460782238853,
+          "actions": [
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ]
+          ],
+          "start": {
+            "agent.x": 129.849,
+            "agent.y": 54.117,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_no_momentum": 0.1839685656361972,
+            "momentum_xy": 0.18397519768405762,
+            "velocity_clamp": 0.1839700259510618,
+            "directional_friction": 0.2979662346502778,
+            "attract_to_target": 0.1914509372665998,
+            "bounded_action_response": 0.50863390755642
+          }
+        },
+        {
+          "disagreement": 0.1608250643348577,
+          "actions": [
+            [
+              -0.32037769020565077,
+              -0.9995566005794037
+            ],
+            [
+              -0.32037769020565077,
+              -0.9995566005794037
+            ],
+            [
+              -0.32037769020565077,
+              -0.9995566005794037
+            ]
+          ],
+          "start": {
+            "agent.x": 145.446,
+            "agent.y": 76.074,
+            "target.x": 178.335,
+            "target.y": 111.47
+          },
+          "errors": {
+            "linear_no_momentum": 0.4102766149725329,
+            "momentum_xy": 0.410273299736304,
+            "velocity_clamp": 0.41027588498500467,
+            "directional_friction": 0.5205928341638442,
+            "attract_to_target": 0.39912671544018463,
+            "bounded_action_response": 0.3273601434077489
+          }
+        },
+        {
+          "disagreement": 0.15873734818571922,
+          "actions": [
+            [
+              -0.18610439872138773,
+              -0.9993986197861542
+            ],
+            [
+              -0.18610439872138773,
+              -0.9993986197861542
+            ],
+            [
+              -0.18610439872138773,
+              -0.9993986197861542
+            ]
+          ],
+          "start": {
+            "agent.x": 148.126,
+            "agent.y": 77.993,
+            "target.x": 198.978,
+            "target.y": 189.591
+          },
+          "errors": {
+            "linear_no_momentum": 0.35936568311678563,
+            "momentum_xy": 0.35936261604942876,
+            "velocity_clamp": 0.3593650077733021,
+            "directional_friction": 0.47086867188410414,
+            "attract_to_target": 0.34530730061350756,
+            "bounded_action_response": 0.28911537280556515
+          }
+        },
+        {
+          "disagreement": 0.15290160053738694,
+          "actions": [
+            [
+              -0.12186357897527245,
+              0.9905996067757221
+            ],
+            [
+              -0.12186357897527245,
+              0.9905996067757221
+            ],
+            [
+              -0.12186357897527245,
+              0.9905996067757221
+            ]
+          ],
+          "start": {
+            "agent.x": 87.649,
+            "agent.y": 91.827,
+            "target.x": 207.692,
+            "target.y": 48.391
+          },
+          "errors": {
+            "linear_no_momentum": 0.14512961596381146,
+            "momentum_xy": 0.14513459602081138,
+            "velocity_clamp": 0.14513071252582693,
+            "directional_friction": 0.03873444217262421,
+            "attract_to_target": 0.1639807783026835,
+            "bounded_action_response": 0.4382047377553709
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.13843011856079102
+    }
+  },
+  "args": {
+    "env": "tworoom",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "output_dir": "artifacts/visualpatchworld/llm_family/tworoom_coder_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "seed": 0,
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 39.8332781791687
+}

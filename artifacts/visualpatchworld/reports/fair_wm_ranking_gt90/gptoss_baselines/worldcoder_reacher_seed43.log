@@ -1,0 +1,26 @@
+[fair-replan] worldcoder/reacher proto=cem_fs1_h1_r1_finger_300x10 obs=oracle sv=0.0 model=reacher_worldcoder_20261118_231809.py
+/home/comp/baijiaxin/miniconda3/envs/lewm/lib/python3.10/site-packages/gymnasium/envs/registration.py:728: UserWarning: [33mWARN: The environment is being initialised with render_mode='rgb_array' that is not in the possible render_modes ([]).[0m
+  logger.warn(
+[visualpatchworld][general-plan] env=reacher seed=43 trial=1/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=2/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=3/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=4/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=5/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=6/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=7/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=8/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=9/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=10/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=11/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=12/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=13/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=14/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=15/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=16/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=17/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=18/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=19/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=20/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=21/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=22/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=43 trial=23/50 obs=oracle sim_verify=0.0

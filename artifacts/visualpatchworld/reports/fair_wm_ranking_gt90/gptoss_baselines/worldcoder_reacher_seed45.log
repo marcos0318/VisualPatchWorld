@@ -1,0 +1,67 @@
+[fair-replan] worldcoder/reacher proto=cem_fs1_h1_r1_finger_300x10 obs=oracle sv=0.0 model=reacher_worldcoder_20261118_231809.py
+/home/comp/baijiaxin/miniconda3/envs/lewm/lib/python3.10/site-packages/gymnasium/envs/registration.py:728: UserWarning: [33mWARN: The environment is being initialised with render_mode='rgb_array' that is not in the possible render_modes ([]).[0m
+  logger.warn(
+[visualpatchworld][general-plan] env=reacher seed=45 trial=1/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=2/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=3/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=4/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=5/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=6/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=7/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=8/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=9/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=10/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=11/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=12/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=13/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=14/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=15/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=16/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=17/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=18/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=19/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=20/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=21/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=22/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=23/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=24/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=25/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=26/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=27/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=28/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=29/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=30/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=31/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=32/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=33/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=34/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=35/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=36/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=37/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=38/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=39/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=40/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=41/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=42/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=43/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=44/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=45/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=46/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=47/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=48/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=49/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=reacher seed=45 trial=50/50 obs=oracle sim_verify=0.0
+[fair-replan] RESULT worldcoder/reacher success_rate=14.000000000000002
+{
+  "wrote": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/gptoss_baselines/summary_n50_seed45.json",
+  "table": [
+    {
+      "method": "worldcoder",
+      "tworoom": null,
+      "pusht": null,
+      "cube": null,
+      "reacher": 14.000000000000002,
+      "mean": null
+    }
+  ]
+}

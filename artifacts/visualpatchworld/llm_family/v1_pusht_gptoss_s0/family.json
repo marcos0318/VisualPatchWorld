@@ -1,0 +1,1049 @@
+{
+  "env": "pusht",
+  "llm_model": "openai/gpt-oss-120b",
+  "schema": {
+    "state_keys": [
+      "agent.vx",
+      "agent.vy",
+      "agent.x",
+      "agent.y",
+      "block.angle",
+      "block.x",
+      "block.y"
+    ],
+    "state_ranges": {
+      "agent.vx": {
+        "min": -239.038,
+        "max": 197.288
+      },
+      "agent.vy": {
+        "min": -164.106,
+        "max": 212.259
+      },
+      "agent.x": {
+        "min": 44.226,
+        "max": 431.137
+      },
+      "agent.y": {
+        "min": 166.867,
+        "max": 468.784
+      },
+      "block.angle": {
+        "min": 0.743,
+        "max": 2.948
+      },
+      "block.x": {
+        "min": 188.561,
+        "max": 253.842
+      },
+      "block.y": {
+        "min": 257.991,
+        "max": 341.005
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.643,
+      -0.44
+    ],
+    "action_max": [
+      0.53,
+      0.571
+    ],
+    "num_episodes": 40,
+    "num_transitions": 4320
+  },
+  "scales": {
+    "agent.vx": 29.0491526697332,
+    "agent.vy": 33.10328911582162,
+    "agent.x": 8.784955836446613,
+    "agent.y": 7.583339167070911,
+    "block.angle": 0.03517513204333592,
+    "block.x": 1.5088737783332182,
+    "block.y": 1.686962387941111
+  },
+  "candidates": [
+    {
+      "name": "simple_linear",
+      "mechanism": "agent velocity is a direct linear map of the two\u2011dimensional action, position integrates velocity, block never moves.",
+      "code": "# HYPOTHESIS: simple_linear\n# MECHANISM: agent velocity is a direct linear map of the two\u2011dimensional action, position integrates velocity, block never moves.\nPARAMS = {\n    \"c0\": 0.0,   # bias on vx\n    \"c1\": 0.0,   # bias on vy\n    \"k0\": 150.0, # scaling for action[0] -> vx\n    \"k1\": 150.0, # scaling for action[1] -> vy\n}\n\ndef step(state, action, p, meta):\n    # linear velocity update\n    vx = p[\"k0\"] * action[0] + p[\"c0\"]\n    vy = p[\"k1\"] * action[1] + p[\"c1\"]\n    # position integration (dt = 1)\n    x = state[\"agent.x\"] + vx\n    y = state[\"agent.y\"] + vy\n    # block unchanged\n    out = {\n        \"agent.vx\": vx,\n        \"agent.vy\": vy,\n        \"agent.x\": x,\n        \"agent.y\": y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"],\n    }\n    return out",
+      "init_params": {
+        "c0": 0.0,
+        "c1": 0.0,
+        "k0": 150.0,
+        "k1": 150.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "damped_first_order",
+      "mechanism": "agent obeys first\u2011order dynamics with exponential damping; action acts as a force, velocities decay toward zero, positions integrate velocities.",
+      "code": "# HYPOTHESIS: damped_first_order\n# MECHANISM: agent obeys first\u2011order dynamics with exponential damping; action acts as a force, velocities decay toward zero, positions integrate velocities.\nPARAMS = {\n    \"mass\": 1.0,          # mass scaling for acceleration\n    \"damp\": 0.9,          # velocity damping factor (0<damp<1)\n    \"gain0\": 100.0,       # force gain for action[0]\n    \"gain1\": 100.0,       # force gain for action[1]\n}\n\ndef step(state, action, p, meta):\n    # acceleration from action\n    ax = p[\"gain0\"] * action[0] / p[\"mass\"]\n    ay = p[\"gain1\"] * action[1] / p[\"mass\"]\n    # damped velocity update\n    vx = p[\"damp\"] * state[\"agent.vx\"] + ax\n    vy = p[\"damp\"] * state[\"agent.vy\"] + ay\n    # position integration (dt = 1)\n    x = state[\"agent.x\"] + vx\n    y = state[\"agent.y\"] + vy\n    # block unchanged (no contact model here)\n    out = {\n        \"agent.vx\": vx,\n        \"agent.vy\": vy,\n        \"agent.x\": x,\n        \"agent.y\": y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"],\n    }\n    return out",
+      "init_params": {
+        "mass": 1.0,
+        "damp": 0.9,
+        "gain0": 100.0,
+        "gain1": 100.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "contact_push",
+      "mechanism": "when the circular agent touches the rectangular block (distance < contact_radius) the block is instantaneously translated by the same delta as the agent; otherwise block stays still.",
+      "code": "# HYPOTHESIS: contact_push\n# MECHANISM: when the circular agent touches the rectangular block (distance < contact_radius) the block is instantaneously translated by the same delta as the agent; otherwise block stays still.\nPARAMS = {\n    \"radius\": 15.0,   # contact radius of the circular pusher\n    \"k0\": 120.0,      # force scaling for vx\n    \"k1\": 120.0,      # force scaling for vy\n    \"damp\": 0.95,     # velocity damping\n}\n\ndef step(state, action, p, meta):\n    # agent dynamics (same as damped_first_order)\n    ax = p[\"k0\"] * action[0]\n    ay = p[\"k1\"] * action[1]\n    vx = p[\"damp\"] * state[\"agent.vx\"] + ax\n    vy = p[\"damp\"] * state[\"agent.vy\"] + ay\n    x = state[\"agent.x\"] + vx\n    y = state[\"agent.y\"] + vy\n\n    # contact test\n    dx = x - state[\"block.x\"]\n    dy = y - state[\"block.y\"]\n    dist = (dx*dx + dy*dy) ** 0.5\n    if dist < p[\"radius\"]:          # contact\n        bx = state[\"block.x\"] + vx\n        by = state[\"block.y\"] + vy\n        bang = state[\"block.angle\"]   # no rotation in this simple model\n    else:\n        bx = state[\"block.x\"]\n        by = state[\"block.y\"]\n        bang = state[\"block.angle\"]\n\n    out = {\n        \"agent.vx\": vx,\n        \"agent.vy\": vy,\n        \"agent.x\": x,\n        \"agent.y\": y,\n        \"block.angle\": bang,\n        \"block.x\": bx,\n        \"block.y\": by,\n    }\n    return out",
+      "init_params": {
+        "radius": 15.0,
+        "k0": 120.0,
+        "k1": 120.0,
+        "damp": 0.95
+      },
+      "repaired": false
+    },
+    {
+      "name": "torque_angle",
+      "mechanism": "agent pushes the block when in contact; the block translates with the agent\u2019s delta and its orientation changes proportionally to the tangential component of the push (cross product of push direction and lever arm).",
+      "code": "# HYPOTHESIS: torque_angle\n# MECHANISM: agent pushes the block when in contact; the block translates with the agent\u2019s delta and its orientation changes proportionally to the tangential component of the push (cross product of push direction and lever arm).\nPARAMS = {\n    \"radius\": 15.0,      # contact radius\n    \"k_lin\": 100.0,      # linear force gain\n    \"k_ang\": 0.02,       # angular gain (rad per unit torque)\n    \"damp\": 0.93,        # velocity damping\n}\n\ndef step(state, action, p, meta):\n    # linear agent dynamics\n    ax = p[\"k_lin\"] * action[0]\n    ay = p[\"k_lin\"] * action[1]\n    vx = p[\"damp\"] * state[\"agent.vx\"] + ax\n    vy = p[\"damp\"] * state[\"agent.vy\"] + ay\n    x = state[\"agent.x\"] + vx\n    y = state[\"agent.y\"] + vy\n\n    # contact test\n    dx = x - state[\"block.x\"]\n    dy = y - state[\"block.y\"]\n    dist = (dx*dx + dy*dy) ** 0.5\n    if dist < p[\"radius\"]:\n        # block translation follows agent\n        bx = state[\"block.x\"] + vx\n        by = state[\"block.y\"] + vy\n        # lever arm from block centre to contact point (approx agent centre)\n        lx = dx\n        ly = dy\n        # torque = r x F (2D cross product scalar)\n        torque = lx * ay - ly * ax\n        bang = state[\"block.angle\"] + p[\"k_ang\"] * torque\n    else:\n        bx = state[\"block.x\"]\n        by = state[\"block.y\"]\n        bang = state[\"block.angle\"]\n\n    out = {\n        \"agent.vx\": vx,\n        \"agent.vy\": vy,\n        \"agent.x\": x,\n        \"agent.y\": y,\n        \"block.angle\": bang,\n        \"block.x\": bx,\n        \"block.y\": by,\n    }\n    return out",
+      "init_params": {
+        "radius": 15.0,
+        "k_lin": 100.0,
+        "k_ang": 0.02,
+        "damp": 0.93
+      },
+      "repaired": false
+    },
+    {
+      "name": "saturated_action",
+      "mechanism": "actions are passed through a tanh saturation before driving a first\u2011order velocity dynamics; this captures actuator limits and yields bounded velocities.",
+      "code": "# HYPOTHESIS: saturated_action\n# MECHANISM: actions are passed through a tanh saturation before driving a first\u2011order velocity dynamics; this captures actuator limits and yields bounded velocities.\nPARAMS = {\n    \"sat_gain\": 200.0,   # scaling before tanh\n    \"damp\": 0.90,        # velocity damping\n    \"bias_vx\": 0.0,\n    \"bias_vy\": 0.0,\n}\n\ndef step(state, action, p, meta):\n    # saturated control\n    u0 = p[\"sat_gain\"] * action[0]\n    u1 = p[\"sat_gain\"] * action[1]\n    fu0 = math.tanh(u0)\n    fu1 = math.tanh(u1)\n\n    # first\u2011order velocity update\n    vx = p[\"damp\"] * state[\"agent.vx\"] + fu0 + p[\"bias_vx\"]\n    vy = p[\"damp\"] * state[\"agent.vy\"] + fu1 + p[\"bias_vy\"]\n    x = state[\"agent.x\"] + vx\n    y = state[\"agent.y\"] + vy\n\n    # block unchanged (no contact model)\n    out = {\n        \"agent.vx\": vx,\n        \"agent.vy\": vy,\n        \"agent.x\": x,\n        \"agent.y\": y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"],\n    }\n    return out",
+      "init_params": {
+        "sat_gain": 200.0,
+        "damp": 0.9,
+        "bias_vx": 0.0,
+        "bias_vy": 0.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "coupled_momentum",
+      "mechanism": "agent and block exchange momentum when in contact; the block receives a fraction of the agent\u2019s velocity (drag coefficient) and the agent\u2019s velocity is reduced by the same amount (action still provides external force).",
+      "code": "# HYPOTHESIS: coupled_momentum\n# MECHANISM: agent and block exchange momentum when in contact; the block receives a fraction of the agent\u2019s velocity (drag coefficient) and the agent\u2019s velocity is reduced by the same amount (action still provides external force).\nPARAMS = {\n    \"mass_agent\": 1.0,\n    \"mass_block\": 5.0,\n    \"drag_coeff\": 0.3,    # fraction of agent velocity transferred to block on contact\n    \"force_gain\": 110.0,  # conversion from action to force\n    \"damp\": 0.92,         # damping on agent velocity\n    \"radius\": 15.0,      # contact radius\n}\n\ndef step(state, action, p, meta):\n    # external force on agent\n    fx = p[\"force_gain\"] * action[0]\n    fy = p[\"force_gain\"] * action[1]\n    # agent acceleration (mass normalized)\n    ax = fx / p[\"mass_agent\"]\n    ay = fy / p[\"mass_agent\"]\n    # damped velocity update\n    vx = p[\"damp\"] * state[\"agent.vx\"] + ax\n    vy = p[\"damp\"] * state[\"agent.vy\"] + ay\n    x = state[\"agent.x\"] + vx\n    y = state[\"agent.y\"] + vy\n\n    # contact test\n    dx = x - state[\"block.x\"]\n    dy = y - state[\"block.y\"]\n    dist = (dx*dx + dy*dy) ** 0.5\n    if dist < p[\"radius\"]:\n        # momentum exchange\n        # amount transferred proportional to drag_coeff and relative masses\n        transfer_x = p[\"drag_coeff\"] * vx * (p[\"mass_agent\"] / (p[\"mass_agent\"] + p[\"mass_block\"]))\n        transfer_y = p[\"drag_coeff\"] * vy * (p[\"mass_agent\"] / (p[\"mass_agent\"] + p[\"mass_block\"]))\n        # update agent velocity (reaction)\n        vx = vx - transfer_x\n        vy = vy - transfer_y\n        # block velocity (implicit) -> position update\n        bx = state[\"block.x\"] + transfer_x\n        by = state[\"block.y\"] + transfer_y\n        bang = state[\"block.angle\"]\n    else:\n        bx = state[\"block.x\"]\n        by = state[\"block.y\"]\n        bang = state[\"block.angle\"]\n\n    out = {\n        \"agent.vx\": vx,\n        \"agent.vy\": vy,\n        \"agent.x\": x,\n        \"agent.y\": y,\n        \"block.angle\": bang,\n        \"block.x\": bx,\n        \"block.y\": by,\n    }\n    return out",
+      "init_params": {
+        "mass_agent": 1.0,
+        "mass_block": 5.0,
+        "drag_coeff": 0.3,
+        "force_gain": 110.0,
+        "damp": 0.92,
+        "radius": 15.0
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "simple_linear": {
+        "params": {
+          "c0": -0.04423970388035481,
+          "c1": 0.05178685540355535,
+          "k0": 67.79337947753284,
+          "k1": 56.06428114297013
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9186572937806834,
+        "val_one_step_nrmse": 1.1802654264782417,
+        "val_rollout_nrmse": 2.5960511348925692,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 1.1873140335083008,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9186572937806832,
+            "val_rollout_nrmse": 2.596051135244023
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.918657293780683,
+            "val_rollout_nrmse": 2.596051135524867
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9186572937806834,
+            "val_rollout_nrmse": 2.5960511348925692
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.918657293780683,
+            "val_rollout_nrmse": 2.5960511350473463
+          }
+        ]
+      },
+      "damped_first_order": {
+        "params": {
+          "mass": 0.44226109912849365,
+          "damp": 0.027643915825521715,
+          "gain0": 25.7266201723848,
+          "gain1": 20.74288965476228
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9153697726053758,
+        "val_one_step_nrmse": 1.1793093877317107,
+        "val_rollout_nrmse": 2.551445977158399,
+        "restarts": 4,
+        "nfev": 65,
+        "elapsed_s": 5.011844873428345,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9153697726053758,
+            "val_rollout_nrmse": 2.551445977158399
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.9153697724519079,
+            "val_rollout_nrmse": 2.551466375140752
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9153697719053064,
+            "val_rollout_nrmse": 2.551458979908091
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9153697732141466,
+            "val_rollout_nrmse": 2.5514695144403756
+          }
+        ]
+      },
+      "contact_push": {
+        "params": {
+          "radius": 15.919680883163016,
+          "k0": 58.16980645115154,
+          "k1": 46.903262964044885,
+          "damp": 0.02764758289663898
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9153697718498492,
+        "val_one_step_nrmse": 1.1787147766007613,
+        "val_rollout_nrmse": 2.475030683286528,
+        "restarts": 4,
+        "nfev": 77,
+        "elapsed_s": 4.271441459655762,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.915369773117114,
+            "val_rollout_nrmse": 2.4831443401435784
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.9153697718498492,
+            "val_rollout_nrmse": 2.475030683286528
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9153697718655744,
+            "val_rollout_nrmse": 2.501762735819325
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9153697732637658,
+            "val_rollout_nrmse": 2.5016298582124716
+          }
+        ]
+      },
+      "torque_angle": {
+        "params": {
+          "radius": 11.413480741909556,
+          "k_lin": 51.942226811057004,
+          "k_ang": -0.030928300559919873,
+          "damp": 0.02979869915126104
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9217856891881313,
+        "val_one_step_nrmse": 2.106673167561049,
+        "val_rollout_nrmse": 5.191799857338419,
+        "restarts": 4,
+        "nfev": 72,
+        "elapsed_s": 3.9650721549987793,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9217856801082487,
+            "val_rollout_nrmse": 51.04680566005731
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.921785680108262,
+            "val_rollout_nrmse": 109.04725204418384
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9217856808376912,
+            "val_rollout_nrmse": 74.75624721232941
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9217856891881313,
+            "val_rollout_nrmse": 5.191799857338419
+          }
+        ]
+      },
+      "saturated_action": {
+        "params": {
+          "sat_gain": 10.534745290063757,
+          "damp": 0.14823376828896598,
+          "bias_vx": -0.6995637612619212,
+          "bias_vy": -0.11049334821354383
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.997587845200723,
+        "val_one_step_nrmse": 1.202283127864418,
+        "val_rollout_nrmse": 2.6667777855909005,
+        "restarts": 4,
+        "nfev": 56,
+        "elapsed_s": 4.543777227401733,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9975878451894966,
+            "val_rollout_nrmse": 2.666777796151104
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.99758784517576,
+            "val_rollout_nrmse": 2.6667778098651964
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9975878451666325,
+            "val_rollout_nrmse": 2.666777818691565
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.997587845200723,
+            "val_rollout_nrmse": 2.6667777855909005
+          }
+        ]
+      },
+      "coupled_momentum": {
+        "params": {
+          "mass_agent": 1.451084919386203,
+          "mass_block": -109.45676391087964,
+          "drag_coeff": -6.155264053794767,
+          "force_gain": 75.34344167297647,
+          "damp": 0.029840809983970193,
+          "radius": 17.97672096320236
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.9217856820074826,
+        "val_one_step_nrmse": 1.174076371750151,
+        "val_rollout_nrmse": 2.51872593080099,
+        "restarts": 4,
+        "nfev": 51,
+        "elapsed_s": 5.118027925491333,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.9217856804218283,
+            "val_rollout_nrmse": 5.107878779777372
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.9217856820074826,
+            "val_rollout_nrmse": 2.51872593080099
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.9217856820096009,
+            "val_rollout_nrmse": 2.5443726986248274
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.9217856808348535,
+            "val_rollout_nrmse": 2.540242415040629
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "simple_linear": {
+        "params": {
+          "c0": -0.003651572844233675,
+          "c1": 0.013762602815170416,
+          "k0": 43.40583207782589,
+          "k1": 41.97060279517835
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.589155373357594,
+        "val_one_step_nrmse": 1.2011259773793646,
+        "val_rollout_nrmse": 2.5058953710169445,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 3.7810606956481934,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.589155373357592,
+            "val_rollout_nrmse": 2.5058953710235086
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.589155373357594,
+            "val_rollout_nrmse": 2.5058953710204106
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.589155373357594,
+            "val_rollout_nrmse": 2.5058953710169445
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.589155373357594,
+            "val_rollout_nrmse": 2.5058953710205456
+          }
+        ]
+      },
+      "damped_first_order": {
+        "params": {
+          "mass": 46.69547378374672,
+          "damp": 0.023714855014714546,
+          "gain0": 1892.7051352362316,
+          "gain1": 1840.4898383826078
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.580956836455196,
+        "val_one_step_nrmse": 1.1907943148478632,
+        "val_rollout_nrmse": 2.5052144650045,
+        "restarts": 4,
+        "nfev": 74,
+        "elapsed_s": 21.461538791656494,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.5809568314813545,
+            "val_rollout_nrmse": 2.505214535564109
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.580956831718379,
+            "val_rollout_nrmse": 2.50521452012093
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.580956836455196,
+            "val_rollout_nrmse": 2.5052144650045
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.580956835619715,
+            "val_rollout_nrmse": 2.505214564423824
+          }
+        ]
+      },
+      "contact_push": {
+        "params": {
+          "radius": 15.919680883163016,
+          "k0": 40.530312188937145,
+          "k1": 39.412945629663945,
+          "damp": 0.023736289443341396
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.580956841593809,
+        "val_one_step_nrmse": 1.1755106127642618,
+        "val_rollout_nrmse": 2.4005548866112187,
+        "restarts": 4,
+        "nfev": 104,
+        "elapsed_s": 25.087579011917114,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.580956838441985,
+            "val_rollout_nrmse": 2.4089871895437547
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.580956841593809,
+            "val_rollout_nrmse": 2.4005548866112187
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.58095683076981,
+            "val_rollout_nrmse": 2.454121184033327
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.580956830782937,
+            "val_rollout_nrmse": 2.4466859504998197
+          }
+        ]
+      },
+      "torque_angle": {
+        "params": {
+          "radius": 15.0,
+          "k_lin": 39.96115895203392,
+          "k_ang": 0.07618924279676531,
+          "damp": 0.024136693386569565
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.581551827271395,
+        "val_one_step_nrmse": 6.291219029386493,
+        "val_rollout_nrmse": 17.061589714032547,
+        "restarts": 4,
+        "nfev": 91,
+        "elapsed_s": 22.563451290130615,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.581551827271395,
+            "val_rollout_nrmse": 17.061589714032547
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.581551827271447,
+            "val_rollout_nrmse": 106.71913373198002
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.581551827330503,
+            "val_rollout_nrmse": 20.46114308083965
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.581551842537612,
+            "val_rollout_nrmse": 63.399913602366524
+          }
+        ]
+      },
+      "saturated_action": {
+        "params": {
+          "sat_gain": 117.00674705137753,
+          "damp": 0.19451190712363645,
+          "bias_vx": -1.0600156945325518,
+          "bias_vy": 0.49914244465886803
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.782787515977423,
+        "val_one_step_nrmse": 1.2234465338991198,
+        "val_rollout_nrmse": 2.6483987447919923,
+        "restarts": 4,
+        "nfev": 64,
+        "elapsed_s": 18.953883171081543,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.782787515858585,
+            "val_rollout_nrmse": 2.6483991213855487
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.782787515977423,
+            "val_rollout_nrmse": 2.6483987447919923
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.7827875250039185,
+            "val_rollout_nrmse": 2.6483995782509413
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.782787525505188,
+            "val_rollout_nrmse": 2.6483995945962717
+          }
+        ]
+      },
+      "coupled_momentum": {
+        "params": {
+          "mass_agent": 1.4664977168382762,
+          "mass_block": 24.669105109208992,
+          "drag_coeff": 15.071422453000197,
+          "force_gain": 58.60459002613225,
+          "damp": 0.024136620375711657,
+          "radius": 12.840975717389016
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.581551829645533,
+        "val_one_step_nrmse": 1.1825647629027896,
+        "val_rollout_nrmse": 2.439413223804798,
+        "restarts": 4,
+        "nfev": 59,
+        "elapsed_s": 26.050543785095215,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.581551831917703,
+            "val_rollout_nrmse": 13.302169392810834
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.581551830353803,
+            "val_rollout_nrmse": 6.974659500871658
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.581551829645533,
+            "val_rollout_nrmse": 2.439413223804798
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.581551832155038,
+            "val_rollout_nrmse": 12.393394710054745
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "contact_push",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_linear": 2.5960511348925692,
+        "damped_first_order": 2.551445977158399,
+        "contact_push": 2.475030683286528,
+        "torque_angle": 5.191799857338419,
+        "saturated_action": 2.6667777855909005,
+        "coupled_momentum": 2.51872593080099
+      }
+    },
+    "active_one_step": {
+      "winner": "damped_first_order",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "simple_linear": 3.316518770708643,
+        "damped_first_order": 3.2249137036844018,
+        "contact_push": 8.059935706524415,
+        "torque_angle": 88.73956095460478,
+        "saturated_action": 3.7739842767747342,
+        "coupled_momentum": 3.29386189076248
+      },
+      "probes": [
+        {
+          "disagreement": 39.988901148424496,
+          "actions": [
+            [
+              -0.21383438882674805,
+              0.428485212221898
+            ],
+            [
+              -0.21383438882674805,
+              0.428485212221898
+            ],
+            [
+              -0.21383438882674805,
+              0.428485212221898
+            ]
+          ],
+          "start": {
+            "agent.x": 415.812,
+            "agent.y": 189.078,
+            "agent.vx": -39.095,
+            "agent.vy": -43.701,
+            "block.x": 381.705,
+            "block.y": 230.219,
+            "block.angle": 1.985
+          },
+          "errors": {
+            "simple_linear": 2.3553930021676077,
+            "damped_first_order": 2.207526947702665,
+            "contact_push": 7.715494182930698,
+            "torque_angle": 111.91765259529706,
+            "saturated_action": 2.9719453779724483,
+            "coupled_momentum": 2.3270226409617836
+          }
+        },
+        {
+          "disagreement": 32.642371780288805,
+          "actions": [
+            [
+              -0.638518112687589,
+              0.23328293846508102
+            ],
+            [
+              0.2571436810111404,
+              -0.10975054419861496
+            ],
+            [
+              0.361758593477286,
+              -0.43980790837497574
+            ]
+          ],
+          "start": {
+            "agent.x": 418.984,
+            "agent.y": 225.629,
+            "agent.vx": -47.132,
+            "agent.vy": -94.711,
+            "block.x": 382.664,
+            "block.y": 243.61,
+            "block.angle": 2.311
+          },
+          "errors": {
+            "simple_linear": 4.001627408389045,
+            "damped_first_order": 4.00728857809247,
+            "contact_push": 9.500086058858649,
+            "torque_angle": 90.31325134870777,
+            "saturated_action": 4.254272829864084,
+            "coupled_momentum": 3.9053558188210573
+          }
+        },
+        {
+          "disagreement": 30.381091208190064,
+          "actions": [
+            [
+              -0.3627190261861279,
+              0.39083171476024686
+            ],
+            [
+              -0.3627190261861279,
+              0.39083171476024686
+            ],
+            [
+              -0.3627190261861279,
+              0.39083171476024686
+            ]
+          ],
+          "start": {
+            "agent.x": 412.31,
+            "agent.y": 184.464,
+            "agent.vx": -29.262,
+            "agent.vy": -41.554,
+            "block.x": 379.962,
+            "block.y": 227.19,
+            "block.angle": 1.938
+          },
+          "errors": {
+            "simple_linear": 4.955039298263263,
+            "damped_first_order": 4.868638565079799,
+            "contact_push": 8.646766690326944,
+            "torque_angle": 83.16663350745267,
+            "saturated_action": 5.276828899575433,
+            "coupled_momentum": 4.798111112418838
+          }
+        },
+        {
+          "disagreement": 29.815395010212914,
+          "actions": [
+            [
+              -0.2627763011779479,
+              0.28513058962774357
+            ],
+            [
+              -0.07466433536211858,
+              0.5704958671318541
+            ],
+            [
+              0.26728512831772766,
+              0.3997683871257483
+            ]
+          ],
+          "start": {
+            "agent.x": 403.466,
+            "agent.y": 180.36,
+            "agent.vx": -18.372,
+            "agent.vy": -32.822,
+            "block.x": 374.968,
+            "block.y": 221.358,
+            "block.angle": 1.878
+          },
+          "errors": {
+            "simple_linear": 2.515802212811592,
+            "damped_first_order": 2.4130755609166195,
+            "contact_push": 6.11530372921947,
+            "torque_angle": 83.12284479989123,
+            "saturated_action": 3.0690808236690454,
+            "coupled_momentum": 2.62194202153102
+          }
+        },
+        {
+          "disagreement": 27.844925753899346,
+          "actions": [
+            [
+              -0.3213552394937507,
+              0.3242539666143082
+            ],
+            [
+              -0.13222867434892427,
+              0.553574348591301
+            ],
+            [
+              -0.14010306773032344,
+              0.4064055087414851
+            ]
+          ],
+          "start": {
+            "agent.x": 411.399,
+            "agent.y": 188.548,
+            "agent.vx": -22.403,
+            "agent.vy": -42.685,
+            "block.x": 380.368,
+            "block.y": 228.377,
+            "block.angle": 1.932
+          },
+          "errors": {
+            "simple_linear": 2.754731931911708,
+            "damped_first_order": 2.6280388666304573,
+            "contact_push": 8.322027871286314,
+            "torque_angle": 75.17742252167521,
+            "saturated_action": 3.2977934527926593,
+            "coupled_momentum": 2.816877860079701
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.03979134559631348
+    },
+    "offline_multi_step": {
+      "winner": "contact_push",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_linear": 2.5058953710169445,
+        "damped_first_order": 2.5052144650045,
+        "contact_push": 2.4005548866112187,
+        "torque_angle": 17.061589714032547,
+        "saturated_action": 2.6483987447919923,
+        "coupled_momentum": 2.439413223804798
+      }
+    },
+    "active_multi_step": {
+      "winner": "damped_first_order",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "simple_linear": 4.936630757284123,
+        "damped_first_order": 4.934857587753028,
+        "contact_push": 6.3259277899268085,
+        "torque_angle": 250.36255709380484,
+        "saturated_action": 5.440076672101858,
+        "coupled_momentum": 6.481614423361331
+      },
+      "probes": [
+        {
+          "disagreement": 146.4366325454633,
+          "actions": [
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ]
+          ],
+          "start": {
+            "agent.x": 245.215,
+            "agent.y": 224.349,
+            "agent.vx": -17.355,
+            "agent.vy": 39.688,
+            "block.x": 226.273,
+            "block.y": 223.832,
+            "block.angle": 0.935
+          },
+          "errors": {
+            "simple_linear": 13.389211968091654,
+            "damped_first_order": 13.389502515551165,
+            "contact_push": 4.827050323527964,
+            "torque_angle": 424.6545493566937,
+            "saturated_action": 13.587076839973136,
+            "coupled_momentum": 13.389758642176638
+          }
+        },
+        {
+          "disagreement": 95.70774564704001,
+          "actions": [
+            [
+              -0.4825719749088226,
+              0.23098426046159587
+            ],
+            [
+              -0.4825719749088226,
+              0.23098426046159587
+            ],
+            [
+              -0.4825719749088226,
+              0.23098426046159587
+            ]
+          ],
+          "start": {
+            "agent.x": 431.81,
+            "agent.y": 270.414,
+            "agent.vx": -9.962,
+            "agent.vy": -44.423,
+            "block.x": 387.741,
+            "block.y": 276.656,
+            "block.angle": 2.662
+          },
+          "errors": {
+            "simple_linear": 2.416586626224373,
+            "damped_first_order": 2.4120285421886463,
+            "contact_push": 7.52696853935727,
+            "torque_angle": 278.4600727771807,
+            "saturated_action": 3.148490357447316,
+            "coupled_momentum": 6.478595517226191
+          }
+        },
+        {
+          "disagreement": 81.00373379970144,
+          "actions": [
+            [
+              0.4100002643928842,
+              0.5312321996755045
+            ],
+            [
+              0.06533910852990299,
+              0.08082713093857113
+            ],
+            [
+              0.3337780373230108,
+              0.21952480431160032
+            ]
+          ],
+          "start": {
+            "agent.x": 278.879,
+            "agent.y": 171.202,
+            "agent.vx": -52.53,
+            "agent.vy": 32.485,
+            "block.x": 285.786,
+            "block.y": 200.102,
+            "block.angle": 0.812
+          },
+          "errors": {
+            "simple_linear": 2.2904582926168584,
+            "damped_first_order": 2.2904030877184165,
+            "contact_push": 6.811521918540509,
+            "torque_angle": 235.43440269907572,
+            "saturated_action": 2.9014385072047872,
+            "coupled_momentum": 5.955664163540972
+          }
+        },
+        {
+          "disagreement": 54.50896354676421,
+          "actions": [
+            [
+              -0.3213552394937507,
+              0.3242539666143082
+            ],
+            [
+              -0.13222867434892427,
+              0.553574348591301
+            ],
+            [
+              -0.14010306773032344,
+              0.4064055087414851
+            ]
+          ],
+          "start": {
+            "agent.x": 411.399,
+            "agent.y": 188.548,
+            "agent.vx": -22.403,
+            "agent.vy": -42.685,
+            "block.x": 380.368,
+            "block.y": 228.377,
+            "block.angle": 1.932
+          },
+          "errors": {
+            "simple_linear": 2.553059572851278,
+            "damped_first_order": 2.544550504252223,
+            "contact_push": 5.372536901205294,
+            "torque_angle": 159.45015641055454,
+            "saturated_action": 3.276460330760389,
+            "coupled_momentum": 2.5452155802593457
+          }
+        },
+        {
+          "disagreement": 53.767977411928264,
+          "actions": [
+            [
+              -0.638518112687589,
+              0.23328293846508102
+            ],
+            [
+              0.2571436810111404,
+              -0.10975054419861496
+            ],
+            [
+              0.361758593477286,
+              -0.43980790837497574
+            ]
+          ],
+          "start": {
+            "agent.x": 418.984,
+            "agent.y": 225.629,
+            "agent.vx": -47.132,
+            "agent.vy": -94.711,
+            "block.x": 382.664,
+            "block.y": 243.61,
+            "block.angle": 2.311
+          },
+          "errors": {
+            "simple_linear": 4.033837326636447,
+            "damped_first_order": 4.037803289054686,
+            "contact_push": 7.091561267003006,
+            "torque_angle": 153.81360422551973,
+            "saturated_action": 4.286917325123663,
+            "coupled_momentum": 4.038838213603512
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.038530826568603516
+    }
+  },
+  "args": {
+    "env": "pusht",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_train.jsonl",
+    "val_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_val.jsonl",
+    "max_train_episodes": 40,
+    "max_val_episodes": 10,
+    "output_dir": "artifacts/visualpatchworld/llm_family/v1_pusht_gptoss_s0",
+    "num_hypotheses": 6,
+    "model": "openai/gpt-oss-120b",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": null,
+    "experience_runs": [],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 427.35136008262634
+}

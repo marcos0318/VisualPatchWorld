@@ -1,0 +1,1079 @@
+{
+  "env": "pusht",
+  "llm_model": "openai/gpt-oss-120b",
+  "schema": {
+    "state_keys": [
+      "agent.vx",
+      "agent.vy",
+      "agent.x",
+      "agent.y",
+      "block.angle",
+      "block.x",
+      "block.y"
+    ],
+    "state_ranges": {
+      "agent.vx": {
+        "min": -239.038,
+        "max": 197.288
+      },
+      "agent.vy": {
+        "min": -164.106,
+        "max": 212.259
+      },
+      "agent.x": {
+        "min": 44.226,
+        "max": 431.137
+      },
+      "agent.y": {
+        "min": 166.867,
+        "max": 468.784
+      },
+      "block.angle": {
+        "min": 0.743,
+        "max": 2.948
+      },
+      "block.x": {
+        "min": 188.561,
+        "max": 253.842
+      },
+      "block.y": {
+        "min": 257.991,
+        "max": 341.005
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.643,
+      -0.44
+    ],
+    "action_max": [
+      0.53,
+      0.571
+    ],
+    "num_episodes": 40,
+    "num_transitions": 4320
+  },
+  "scales": {
+    "agent.vx": 29.0491526697332,
+    "agent.vy": 33.10328911582162,
+    "agent.x": 8.784955836446613,
+    "agent.y": 7.583339167070911,
+    "block.angle": 0.03517513204333592,
+    "block.x": 1.5088737783332182,
+    "block.y": 1.686962387941111
+  },
+  "candidates": [
+    {
+      "name": "simple_point_mass_control",
+      "mechanism": "Agent velocity is driven toward a commanded velocity (action) with a first\u2011order filter; block stays static.",
+      "code": "# HYPOTHESIS: simple_point_mass_control\n# MECHANISM: Agent velocity is driven toward a commanded velocity (action) with a first\u2011order filter; block stays static.\nPARAMS = {\"k_vel\": 5.0, \"v_max\": 250.0, \"dt\": 0.05}\n\ndef step(state, action, p, meta):\n    # unpack params\n    k = p[\"k_vel\"]; vmax = p[\"v_max\"]; dt = p[\"dt\"]\n    # agent dynamics (velocity control)\n    cmd_vx, cmd_vy = action[0], action[1]\n    ax = k * (cmd_vx - state[\"agent.vx\"])\n    ay = k * (cmd_vy - state[\"agent.vy\"])\n    vx = state[\"agent.vx\"] + ax * dt\n    vy = state[\"agent.vy\"] + ay * dt\n    # clamp speed\n    if vx > vmax:   vx = vmax\n    if vx < -vmax:  vx = -vmax\n    if vy > vmax:   vy = vmax\n    if vy < -vmax:  vy = -vmax\n    # position integration\n    x = state[\"agent.x\"] + vx * dt\n    y = state[\"agent.y\"] + vy * dt\n    # block unchanged\n    return {\n        \"agent.vx\": vx, \"agent.vy\": vy,\n        \"agent.x\": x,  \"agent.y\": y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"]\n    }",
+      "init_params": {
+        "k_vel": 5.0,
+        "v_max": 250.0,
+        "dt": 0.05
+      },
+      "repaired": false
+    },
+    {
+      "name": "mass_damper_force",
+      "mechanism": "Action is a force applied to a point\u2011mass agent with linear viscous damping; block remains immobile.",
+      "code": "# HYPOTHESIS: mass_damper_force\n# MECHANISM: Action is a force applied to a point\u2011mass agent with linear viscous damping; block remains immobile.\nPARAMS = {\"mass\": 1.0, \"damping\": 2.0, \"dt\": 0.05}\n\ndef step(state, action, p, meta):\n    m = p[\"mass\"]; b = p[\"damping\"]; dt = p[\"dt\"]\n    fx, fy = action[0], action[1]\n    # acceleration from Newton's law with viscous drag\n    ax = (fx - b * state[\"agent.vx\"]) / m\n    ay = (fy - b * state[\"agent.vy\"]) / m\n    vx = state[\"agent.vx\"] + ax * dt\n    vy = state[\"agent.vy\"] + ay * dt\n    x = state[\"agent.x\"] + vx * dt\n    y = state[\"agent.y\"] + vy * dt\n    return {\n        \"agent.vx\": vx, \"agent.vy\": vy,\n        \"agent.x\": x,  \"agent.y\": y,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": state[\"block.x\"],\n        \"block.y\": state[\"block.y\"]\n    }",
+      "init_params": {
+        "mass": 1.0,
+        "damping": 2.0,
+        "dt": 0.05
+      },
+      "repaired": false
+    },
+    {
+      "name": "elastic_coupling_contact",
+      "mechanism": "When the agent is within a contact radius a linear spring couples the agent and block; both follow mass\u2011damper dynamics.",
+      "code": "# HYPOTHESIS: elastic_coupling_contact\n# MECHANISM: When the agent is within a contact radius a linear spring couples the agent and block; both follow mass\u2011damper dynamics.\nPARAMS = {\"mass_a\": 1.0, \"mass_b\": 2.0,\n          \"damping_a\": 2.0, \"damping_b\": 4.0,\n          \"k_spring\": 0.8, \"contact_radius\": 30.0,\n          \"dt\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    dt = p[\"dt\"]\n    # unpack parameters\n    ma, mb = p[\"mass_a\"], p[\"mass_b\"]\n    ba, bb = p[\"damping_a\"], p[\"damping_b\"]\n    k = p[\"k_spring\"]; r_thr = p[\"contact_radius\"]\n    # positions\n    ax, ay = state[\"agent.x\"], state[\"agent.y\"]\n    bx, by = state[\"block.x\"], state[\"block.y\"]\n    # distance\n    dx = bx - ax\n    dy = by - ay\n    dist = math.hypot(dx, dy)\n    # spring force (zero if out of range)\n    if dist < r_thr and dist > 1e-6:\n        fx = k * dx\n        fy = k * dy\n    else:\n        fx = fy = 0.0\n    # agent dynamics (mass\u2011damper with external force = action + spring)\n    fx_a = action[0] - fx\n    fy_a = action[1] - fy\n    ax_acc = (fx_a - ba * state[\"agent.vx\"]) / ma\n    ay_acc = (fy_a - ba * state[\"agent.vy\"]) / ma\n    avx = state[\"agent.vx\"] + ax_acc * dt\n    avy = state[\"agent.vy\"] + ay_acc * dt\n    ax_new = ax + avx * dt\n    ay_new = ay + avy * dt\n    # block dynamics (mass\u2011damper, only spring force)\n    bx_acc = (fx - bb * 0.0) / mb   # block velocity not observed, assume zero for simplicity\n    by_acc = (fy - bb * 0.0) / mb\n    bvx = bx_acc * dt\n    bvy = by_acc * dt\n    bx_new = bx + bvx * dt\n    by_new = by + bvy * dt\n    return {\n        \"agent.vx\": avx, \"agent.vy\": avy,\n        \"agent.x\": ax_new, \"agent.y\": ay_new,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": bx_new, \"block.y\": by_new\n    }",
+      "init_params": {
+        "mass_a": 1.0,
+        "mass_b": 2.0,
+        "damping_a": 2.0,
+        "damping_b": 4.0,
+        "k_spring": 0.8,
+        "contact_radius": 30.0,
+        "dt": 0.05
+      },
+      "repaired": false
+    },
+    {
+      "name": "contact_point_torque_with_friction",
+      "mechanism": "When in contact the agent exerts a spring force on the block; the offset creates a torque that rotates the block; Coulomb friction limits translational motion.",
+      "code": "# HYPOTHESIS: contact_point_torque_with_friction\n# MECHANISM: When in contact the agent exerts a spring force on the block; the offset creates a torque that rotates the block; Coulomb friction limits translational motion.\nPARAMS = {\"mass_a\": 1.0, \"mass_b\": 2.0,\n          \"damping_a\": 2.0, \"damping_b\": 4.0,\n          \"k_spring\": 1.2, \"contact_radius\": 30.0,\n          \"mu_fric\": 0.3, \"normal_force\": 10.0,\n          \"inertia_b\": 5.0, \"dt\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    dt = p[\"dt\"]\n    ma, mb = p[\"mass_a\"], p[\"mass_b\"]\n    ba, bb = p[\"damping_a\"], p[\"damping_b\"]\n    k = p[\"k_spring\"]; r_thr = p[\"contact_radius\"]\n    mu = p[\"mu_fric\"]; N = p[\"normal_force\"]; I = p[\"inertia_b\"]\n    # positions\n    ax, ay = state[\"agent.x\"], state[\"agent.y\"]\n    bx, by = state[\"block.x\"], state[\"block.y\"]\n    # vector from block centre to agent\n    dx = ax - bx\n    dy = ay - by\n    dist = math.hypot(dx, dy)\n    # spring force (only if contact)\n    if dist < r_thr and dist > 1e-6:\n        fx = -k * dx\n        fy = -k * dy\n        # torque from offset\n        torque = dx * fy - dy * fx\n    else:\n        fx = fy = torque = 0.0\n    # Coulomb friction opposing block translation\n    # block velocity not observed; we approximate it as zero and apply static limit\n    f_fric_x = -mu * N * (1 if fx > 0 else -1) if abs(fx) > mu * N else -fx\n    f_fric_y = -mu * N * (1 if fy > 0 else -1) if abs(fy) > mu * N else -fy\n    # net force on block\n    fx_b = fx + f_fric_x\n    fy_b = fy + f_fric_y\n    # block translational update (simple Euler, assuming zero initial velocity)\n    bx_new = bx + (fx_b / mb) * dt * dt\n    by_new = by + (fy_b / mb) * dt * dt\n    # block rotation update\n    ang_vel = state.get(\"block.angular_vel\", 0.0)  # hidden state; start at 0\n    ang_vel = ang_vel + (torque / I) * dt\n    angle_new = state[\"block.angle\"] + ang_vel * dt\n    # agent dynamics (mass\u2011damper with external action + reaction force)\n    fx_a = action[0] + fx   # reaction = +spring force on agent\n    fy_a = action[1] + fy\n    ax_acc = (fx_a - ba * state[\"agent.vx\"]) / ma\n    ay_acc = (fy_a - ba * state[\"agent.vy\"]) / ma\n    avx = state[\"agent.vx\"] + ax_acc * dt\n    avy = state[\"agent.vy\"] + ay_acc * dt\n    ax_new = ax + avx * dt\n    ay_new = ay + avy * dt\n    # store hidden angular velocity back via meta (optional)\n    meta[\"block.angular_vel\"] = ang_vel\n    return {\n        \"agent.vx\": avx, \"agent.vy\": avy,\n        \"agent.x\": ax_new, \"agent.y\": ay_new,\n        \"block.angle\": angle_new,\n        \"block.x\": bx_new,\n        \"block.y\": by_new\n    }",
+      "init_params": {
+        "mass_a": 1.0,
+        "mass_b": 2.0,
+        "damping_a": 2.0,
+        "damping_b": 4.0,
+        "k_spring": 1.2,
+        "contact_radius": 30.0,
+        "mu_fric": 0.3,
+        "normal_force": 10.0,
+        "inertia_b": 5.0,
+        "dt": 0.05
+      },
+      "repaired": false
+    },
+    {
+      "name": "velocity_threshold_switch_static_friction",
+      "mechanism": "Agent follows mass\u2011damper dynamics; the block moves only when the relative speed between agent and block exceeds a static\u2011friction threshold, otherwise it stays still.",
+      "code": "# HYPOTHESIS: velocity_threshold_switch_static_friction\n# MECHANISM: Agent follows mass\u2011damper dynamics; the block moves only when the relative speed between agent and block exceeds a static\u2011friction threshold, otherwise it stays still.\nPARAMS = {\"mass_a\": 1.0, \"damping_a\": 2.0,\n          \"mass_b\": 2.0, \"damping_b\": 4.0,\n          \"v_thr\": 20.0, \"dt\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    dt = p[\"dt\"]\n    ma, ba = p[\"mass_a\"], p[\"damping_a\"]\n    mb, bb = p[\"mass_b\"], p[\"damping_b\"]\n    v_thr = p[\"v_thr\"]\n    # agent dynamics (mass\u2011damper with external force = action)\n    fx_a = action[0]; fy_a = action[1]\n    ax_acc = (fx_a - ba * state[\"agent.vx\"]) / ma\n    ay_acc = (fy_a - ba * state[\"agent.vy\"]) / ma\n    avx = state[\"agent.vx\"] + ax_acc * dt\n    avy = state[\"agent.vy\"] + ay_acc * dt\n    ax_new = state[\"agent.x\"] + avx * dt\n    ay_new = state[\"agent.y\"] + avy * dt\n    # relative speed\n    rel_vx = avx - 0.0   # block velocity not observed, assume zero unless moving\n    rel_vy = avy - 0.0\n    rel_speed = math.hypot(rel_vx, rel_vy)\n    # block moves only if relative speed exceeds threshold\n    if rel_speed > v_thr:\n        # simple translation with same velocity as agent (sliding)\n        bx_new = state[\"block.x\"] + rel_vx * dt\n        by_new = state[\"block.y\"] + rel_vy * dt\n    else:\n        bx_new = state[\"block.x\"]\n        by_new = state[\"block.y\"]\n    # block angle unchanged\n    return {\n        \"agent.vx\": avx, \"agent.vy\": avy,\n        \"agent.x\": ax_new, \"agent.y\": ay_new,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": bx_new,\n        \"block.y\": by_new\n    }",
+      "init_params": {
+        "mass_a": 1.0,
+        "damping_a": 2.0,
+        "mass_b": 2.0,
+        "damping_b": 4.0,
+        "v_thr": 20.0,
+        "dt": 0.05
+      },
+      "repaired": false
+    },
+    {
+      "name": "grasp_attach_sticky_push",
+      "mechanism": "If the agent gets within a small radius it creates a rigid attachment; the block then follows the agent\u2019s pose (with optional offset). Detachment occurs when the distance grows beyond a release radius.",
+      "code": "# HYPOTHESIS: grasp_attach_sticky_push\n# MECHANISM: If the agent gets within a small radius it creates a rigid attachment; the block then follows the agent\u2019s pose (with optional offset). Detachment occurs when the distance grows beyond a release radius.\nPARAMS = {\"attach_radius\": 20.0, \"release_radius\": 30.0,\n          \"offset_x\": 0.0, \"offset_y\": 0.0,\n          \"mass_a\": 1.0, \"damping_a\": 2.0,\n          \"dt\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    dt = p[\"dt\"]\n    # unpack params\n    r_attach = p[\"attach_radius\"]\n    r_release = p[\"release_radius\"]\n    offx = p[\"offset_x\"]; offy = p[\"offset_y\"]\n    # agent dynamics (mass\u2011damper with force = action)\n    ma, ba = p[\"mass_a\"], p[\"damping_a\"]\n    fx_a, fy_a = action[0], action[1]\n    ax_acc = (fx_a - ba * state[\"agent.vx\"]) / ma\n    ay_acc = (fy_a - ba * state[\"agent.vy\"]) / ma\n    avx = state[\"agent.vx\"] + ax_acc * dt\n    avy = state[\"agent.vy\"] + ay_acc * dt\n    ax_new = state[\"agent.x\"] + avx * dt\n    ay_new = state[\"agent.y\"] + avy * dt\n    # distance to block\n    dx = state[\"block.x\"] - state[\"agent.x\"]\n    dy = state[\"block.y\"] - state[\"agent.y\"]\n    dist = math.hypot(dx, dy)\n    # attachment flag stored in meta (persisted across steps)\n    attached = meta.get(\"attached\", False)\n    # update attachment state\n    if not attached and dist < r_attach:\n        attached = True\n    elif attached and dist > r_release:\n        attached = False\n    meta[\"attached\"] = attached\n    # block pose update\n    if attached:\n        # block follows agent with constant offset\n        bx_new = ax_new + offx\n        by_new = ay_new + offy\n    else:\n        # block stays where it was\n        bx_new = state[\"block.x\"]\n        by_new = state[\"block.y\"]\n    # block angle unchanged (no rotation in this hypothesis)\n    return {\n        \"agent.vx\": avx, \"agent.vy\": avy,\n        \"agent.x\": ax_new, \"agent.y\": ay_new,\n        \"block.angle\": state[\"block.angle\"],\n        \"block.x\": bx_new,\n        \"block.y\": by_new\n    }",
+      "init_params": {
+        "attach_radius": 20.0,
+        "release_radius": 30.0,
+        "offset_x": 0.0,
+        "offset_y": 0.0,
+        "mass_a": 1.0,
+        "damping_a": 2.0,
+        "dt": 0.05
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "simple_point_mass_control": {
+        "params": {
+          "k_vel": 0.6814285240592386,
+          "v_max": 400.6079345714578,
+          "dt": 0.11149272554251584
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8186052412490953,
+        "val_one_step_nrmse": 0.8490201567586176,
+        "val_rollout_nrmse": 2.5725421675496447,
+        "restarts": 4,
+        "nfev": 102,
+        "elapsed_s": 12.514205932617188,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.8186052374645856,
+            "val_rollout_nrmse": 2.572555876651242
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8186052378935686,
+            "val_rollout_nrmse": 2.572551043842072
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.8186052412490953,
+            "val_rollout_nrmse": 2.5725421675496447
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.8174814324468085,
+            "val_rollout_nrmse": 2.573735474882623
+          }
+        ]
+      },
+      "mass_damper_force": {
+        "params": {
+          "mass": 0.00029804131160359875,
+          "damping": 0.0026821386620779677,
+          "dt": 0.10719302232714023
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212681055423255,
+        "val_one_step_nrmse": 0.7189234288370786,
+        "val_rollout_nrmse": 2.308344715862284,
+        "restarts": 4,
+        "nfev": 117,
+        "elapsed_s": 17.93003511428833,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212681055427626,
+            "val_rollout_nrmse": 2.3083447560725414
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681055423255,
+            "val_rollout_nrmse": 2.308344715862284
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212681055417312,
+            "val_rollout_nrmse": 2.3083447268788078
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.8187311997447425,
+            "val_rollout_nrmse": 2.572911263976466
+          }
+        ]
+      },
+      "elastic_coupling_contact": {
+        "params": {
+          "mass_a": -7675.4195032680755,
+          "mass_b": 2.000433716051582,
+          "damping_a": -5186.284984489412,
+          "damping_b": 4.0,
+          "k_spring": 0.8,
+          "contact_radius": 30.0,
+          "dt": 0.11143324777844615
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8187312083981384,
+        "val_one_step_nrmse": 0.8471743015309682,
+        "val_rollout_nrmse": 2.569684374165883,
+        "restarts": 4,
+        "nfev": 98,
+        "elapsed_s": 17.576488733291626,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.8187312083981384,
+            "val_rollout_nrmse": 2.569684374165883
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681055423664,
+            "val_rollout_nrmse": 22.308611689154187
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212681055443736,
+            "val_rollout_nrmse": 62.992966721494575
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.8187311960130793,
+            "val_rollout_nrmse": 2.570373630100766
+          }
+        ]
+      },
+      "contact_point_torque_with_friction": {
+        "params": {
+          "mass_a": -13339.56710470033,
+          "mass_b": 2.0017968957800947,
+          "damping_a": -9013.517101752848,
+          "damping_b": 4.0,
+          "k_spring": 1.2,
+          "contact_radius": 30.0,
+          "mu_fric": 0.3,
+          "normal_force": 10.0,
+          "inertia_b": 5.0,
+          "dt": 0.11143325177053001
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8187311981413146,
+        "val_one_step_nrmse": 0.8468197152712595,
+        "val_rollout_nrmse": 2.568882674677733,
+        "restarts": 4,
+        "nfev": 81,
+        "elapsed_s": 21.743346214294434,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.8187311981413146,
+            "val_rollout_nrmse": 2.568882674677733
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8187311885160388,
+            "val_rollout_nrmse": 2.571598633149611
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.8187311982993817,
+            "val_rollout_nrmse": 2.568980946459212
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212681055424925,
+            "val_rollout_nrmse": 28.004689443921613
+          }
+        ]
+      },
+      "velocity_threshold_switch_static_friction": {
+        "params": {
+          "mass_a": 2.1970213800672995e-05,
+          "damping_a": 0.0026887764078891902,
+          "mass_b": 1.3670518258913158,
+          "damping_b": 2.5770416762390402,
+          "v_thr": 15.930217318523766,
+          "dt": 0.008078297974809344
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.7743195136142865,
+        "val_one_step_nrmse": 0.7917466521949434,
+        "val_rollout_nrmse": 2.5323566000473683,
+        "restarts": 4,
+        "nfev": 124,
+        "elapsed_s": 15.67155146598816,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.0484374803476002,
+            "val_rollout_nrmse": 2.6739995491835566
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.0484453609067461,
+            "val_rollout_nrmse": 2.67205743247264
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.7743196856231244,
+            "val_rollout_nrmse": 2.53323019452238
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.7743195136142865,
+            "val_rollout_nrmse": 2.5323566000473683
+          }
+        ]
+      },
+      "grasp_attach_sticky_push": {
+        "params": {
+          "attach_radius": 10.863784429236294,
+          "release_radius": 20.706759179606976,
+          "offset_x": 0.034243604458362345,
+          "offset_y": 0.09030298633238264,
+          "mass_a": 0.0002980411377048611,
+          "damping_a": 0.002682138876771225,
+          "dt": 0.10719303795003439
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212681055418235,
+        "val_one_step_nrmse": 1.3635933784382908,
+        "val_rollout_nrmse": 2.912880402972407,
+        "restarts": 4,
+        "nfev": 102,
+        "elapsed_s": 16.105413675308228,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.818731192018618,
+            "val_rollout_nrmse": 3.1864270923888
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681055426679,
+            "val_rollout_nrmse": 3.458356010967831
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212681055418235,
+            "val_rollout_nrmse": 2.912880402972407
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.818731203950812,
+            "val_rollout_nrmse": 3.176717336309522
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "simple_point_mass_control": {
+        "params": {
+          "k_vel": 1.3394982262820936,
+          "v_max": 186.24262885482742,
+          "dt": 0.1193434898594999
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.274145948997579,
+        "val_one_step_nrmse": 0.8530034123727579,
+        "val_rollout_nrmse": 2.5662394199330145,
+        "restarts": 4,
+        "nfev": 77,
+        "elapsed_s": 19.151644706726074,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.27447548135676,
+            "val_rollout_nrmse": 2.5663125201634633
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.274475491961494,
+            "val_rollout_nrmse": 2.5663104685488696
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.2744754805696115,
+            "val_rollout_nrmse": 2.5663132697344824
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.274145948997579,
+            "val_rollout_nrmse": 2.5662394199330145
+          }
+        ]
+      },
+      "mass_damper_force": {
+        "params": {
+          "mass": 0.0003298345872438996,
+          "damping": 0.0026691416848930063,
+          "dt": 0.10825503444908634
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049047022165904,
+        "val_one_step_nrmse": 0.7201310329126501,
+        "val_rollout_nrmse": 2.307871009580819,
+        "restarts": 4,
+        "nfev": 110,
+        "elapsed_s": 35.56764841079712,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.04904702214615,
+            "val_rollout_nrmse": 2.3078710165758567
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049047022165904,
+            "val_rollout_nrmse": 2.307871009580819
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.049047022131103,
+            "val_rollout_nrmse": 2.307871012599129
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.278720174170735,
+            "val_rollout_nrmse": 2.5667036344549885
+          }
+        ]
+      },
+      "elastic_coupling_contact": {
+        "params": {
+          "mass_a": -16539.136004825083,
+          "mass_b": -13275.375534059649,
+          "damping_a": -22037.462524287905,
+          "damping_b": 4.000001776604156,
+          "k_spring": -513140.134091268,
+          "contact_radius": 30.0,
+          "dt": 0.11864800209600916
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.267530206962089,
+        "val_one_step_nrmse": 1.3988747340802314,
+        "val_rollout_nrmse": 2.7898666022766667,
+        "restarts": 4,
+        "nfev": 193,
+        "elapsed_s": 158.09482836723328,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.267530206962089,
+            "val_rollout_nrmse": 2.7898666022766667
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.219503863677948,
+            "val_rollout_nrmse": 2.9701994151960096
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.005405803590026,
+            "val_rollout_nrmse": 3.238490416639591
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.041766788011636,
+            "val_rollout_nrmse": 3.188491983560105
+          }
+        ]
+      },
+      "contact_point_torque_with_friction": {
+        "params": {
+          "mass_a": 0.018501176870414297,
+          "mass_b": 3.8760347081240627,
+          "damping_a": 0.028026695307380823,
+          "damping_b": 4.8226685140365015,
+          "k_spring": 1.8735093496070907,
+          "contact_radius": 31.47939088719561,
+          "mu_fric": 0.11135735290355518,
+          "normal_force": 6.293800747103442,
+          "inertia_b": 4.055585398574416,
+          "dt": 0.12424840379332291
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.167688380323207,
+        "val_one_step_nrmse": 1.8997413093607292,
+        "val_rollout_nrmse": 2.850602109976556,
+        "restarts": 4,
+        "nfev": 192,
+        "elapsed_s": 239.95142698287964,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.267340815001219,
+            "val_rollout_nrmse": 2.969392009972692
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.217558924867465,
+            "val_rollout_nrmse": 2.9807926534730207
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.167688380323207,
+            "val_rollout_nrmse": 2.850602109976556
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.048856909810115,
+            "val_rollout_nrmse": 34.18404967606442
+          }
+        ]
+      },
+      "velocity_threshold_switch_static_friction": {
+        "params": {
+          "mass_a": 2.4138094757414824e-05,
+          "damping_a": 0.0026717682980306606,
+          "mass_b": 1.0528983912320034,
+          "damping_b": 2.9102867542066497,
+          "v_thr": 15.16859281025662,
+          "dt": 0.008058111951314161
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.5706349643067234,
+        "val_one_step_nrmse": 0.7927918830195196,
+        "val_rollout_nrmse": 2.5312743514726366,
+        "restarts": 4,
+        "nfev": 108,
+        "elapsed_s": 92.54732418060303,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 8.696333034567068,
+            "val_rollout_nrmse": 2.677489962345339
+          },
+          {
+            "restart": 1,
+            "train_loss": 8.693882401363142,
+            "val_rollout_nrmse": 2.6716735911618903
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.5706349643067234,
+            "val_rollout_nrmse": 2.5312743514726366
+          },
+          {
+            "restart": 3,
+            "train_loss": 8.693940550732467,
+            "val_rollout_nrmse": 2.6721529957346775
+          }
+        ]
+      },
+      "grasp_attach_sticky_push": {
+        "params": {
+          "attach_radius": 10.863784429236294,
+          "release_radius": 20.706646626511024,
+          "offset_x": 0.030037407939138866,
+          "offset_y": 0.0901794791315009,
+          "mass_a": 0.0003298373349645077,
+          "damping_a": 0.0026691551208419184,
+          "dt": 0.10825577996242867
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049047022113349,
+        "val_one_step_nrmse": 1.3632026987204042,
+        "val_rollout_nrmse": 2.8883949549164702,
+        "restarts": 4,
+        "nfev": 113,
+        "elapsed_s": 75.49197769165039,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.278720142054637,
+            "val_rollout_nrmse": 3.1750888196811733
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049047022113263,
+            "val_rollout_nrmse": 3.427302587136998
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.049047022113349,
+            "val_rollout_nrmse": 2.8883949549164702
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049047022163185,
+            "val_rollout_nrmse": 3.5313664694641145
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "mass_damper_force",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_point_mass_control": 2.5725421675496447,
+        "mass_damper_force": 2.308344715862284,
+        "elastic_coupling_contact": 2.569684374165883,
+        "contact_point_torque_with_friction": 2.568882674677733,
+        "velocity_threshold_switch_static_friction": 2.5323566000473683,
+        "grasp_attach_sticky_push": 2.912880402972407
+      }
+    },
+    "active_one_step": {
+      "winner": "mass_damper_force",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "simple_point_mass_control": 5.5807280790223235,
+        "mass_damper_force": 3.7045965103649365,
+        "elastic_coupling_contact": 5.569154487439708,
+        "contact_point_torque_with_friction": 5.566203096976309,
+        "velocity_threshold_switch_static_friction": 4.408836560953211,
+        "grasp_attach_sticky_push": 9.680235563715446
+      },
+      "probes": [
+        {
+          "disagreement": 7.5659799130922645,
+          "actions": [
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ],
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ],
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ]
+          ],
+          "start": {
+            "agent.x": 246.85,
+            "agent.y": 230.401,
+            "agent.vx": -14.948,
+            "agent.vy": 11.707,
+            "block.x": 230.273,
+            "block.y": 234.412,
+            "block.angle": 0.827
+          },
+          "errors": {
+            "simple_point_mass_control": 4.2122133787819696,
+            "mass_damper_force": 0.2940522787513459,
+            "elastic_coupling_contact": 4.213567034624251,
+            "contact_point_torque_with_friction": 4.213605804270414,
+            "velocity_threshold_switch_static_friction": 2.6076488105392803,
+            "grasp_attach_sticky_push": 17.26370122886904
+          }
+        },
+        {
+          "disagreement": 5.290722323853188,
+          "actions": [
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ]
+          ],
+          "start": {
+            "agent.x": 245.215,
+            "agent.y": 224.349,
+            "agent.vx": -17.355,
+            "agent.vy": 39.688,
+            "block.x": 226.273,
+            "block.y": 223.832,
+            "block.angle": 0.935
+          },
+          "errors": {
+            "simple_point_mass_control": 13.568791911305711,
+            "mass_damper_force": 13.058483896829225,
+            "elastic_coupling_contact": 13.53589967180468,
+            "contact_point_torque_with_friction": 13.524193921816412,
+            "velocity_threshold_switch_static_friction": 12.185235051982843,
+            "grasp_attach_sticky_push": 2.5886030728283766
+          }
+        },
+        {
+          "disagreement": 4.374795607357073,
+          "actions": [
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ],
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ],
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ]
+          ],
+          "start": {
+            "agent.x": 251.808,
+            "agent.y": 219.234,
+            "agent.vx": -12.657,
+            "agent.vy": 3.227,
+            "block.x": 240.663,
+            "block.y": 229.268,
+            "block.angle": 0.747
+          },
+          "errors": {
+            "simple_point_mass_control": 2.202957735897739,
+            "mass_damper_force": 0.1501139914795241,
+            "elastic_coupling_contact": 2.2038613410492895,
+            "contact_point_torque_with_friction": 2.2038808610970957,
+            "velocity_threshold_switch_static_friction": 1.18860921492922,
+            "grasp_attach_sticky_push": 10.307330841035222
+          }
+        },
+        {
+          "disagreement": 4.36340936704947,
+          "actions": [
+            [
+              0.2910883690469962,
+              -0.20682072670732138
+            ],
+            [
+              0.2910883690469962,
+              -0.20682072670732138
+            ],
+            [
+              0.2910883690469962,
+              -0.20682072670732138
+            ]
+          ],
+          "start": {
+            "agent.x": 260.499,
+            "agent.y": 210.965,
+            "agent.vx": -15.682,
+            "agent.vy": 10.231,
+            "block.x": 256.46,
+            "block.y": 225.929,
+            "block.angle": 0.524
+          },
+          "errors": {
+            "simple_point_mass_control": 2.3356730521303195,
+            "mass_damper_force": 0.17391399632711735,
+            "elastic_coupling_contact": 2.3365558494379917,
+            "contact_point_torque_with_friction": 2.3366129188994664,
+            "velocity_threshold_switch_static_friction": 1.2732523512320746,
+            "grasp_attach_sticky_push": 10.121456518929838
+          }
+        },
+        {
+          "disagreement": 4.062685680595936,
+          "actions": [
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ],
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ],
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ]
+          ],
+          "start": {
+            "agent.x": 260.743,
+            "agent.y": 217.995,
+            "agent.vx": -7.518,
+            "agent.vy": 19.824,
+            "block.x": 252.474,
+            "block.y": 230.662,
+            "block.angle": 0.726
+          },
+          "errors": {
+            "simple_point_mass_control": 5.584004316995883,
+            "mass_damper_force": 4.846418388437472,
+            "elastic_coupling_contact": 5.555888540282326,
+            "contact_point_torque_with_friction": 5.552721978798155,
+            "velocity_threshold_switch_static_friction": 4.789437376082636,
+            "grasp_attach_sticky_push": 8.120086156914741
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.052995920181274414
+    },
+    "offline_multi_step": {
+      "winner": "mass_damper_force",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_point_mass_control": 2.5662394199330145,
+        "mass_damper_force": 2.307871009580819,
+        "elastic_coupling_contact": 2.7898666022766667,
+        "contact_point_torque_with_friction": 2.850602109976556,
+        "velocity_threshold_switch_static_friction": 2.5312743514726366,
+        "grasp_attach_sticky_push": 2.8883949549164702
+      }
+    },
+    "active_multi_step": {
+      "winner": "mass_damper_force",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "simple_point_mass_control": 5.571741641908586,
+        "mass_damper_force": 3.711378487893696,
+        "elastic_coupling_contact": 6.176985192781563,
+        "contact_point_torque_with_friction": 6.266613529622025,
+        "velocity_threshold_switch_static_friction": 4.418091640048066,
+        "grasp_attach_sticky_push": 9.520972008286375
+      },
+      "probes": [
+        {
+          "disagreement": 8.21814337542285,
+          "actions": [
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ],
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ],
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ]
+          ],
+          "start": {
+            "agent.x": 246.85,
+            "agent.y": 230.401,
+            "agent.vx": -14.948,
+            "agent.vy": 11.707,
+            "block.x": 230.273,
+            "block.y": 234.412,
+            "block.angle": 0.827
+          },
+          "errors": {
+            "simple_point_mass_control": 4.201256281631153,
+            "mass_damper_force": 0.3083807349493927,
+            "elastic_coupling_contact": 4.358338783119004,
+            "contact_point_torque_with_friction": 5.181363439573944,
+            "velocity_threshold_switch_static_friction": 2.6041403773136986,
+            "grasp_attach_sticky_push": 16.807665678958255
+          }
+        },
+        {
+          "disagreement": 6.038959964120719,
+          "actions": [
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ]
+          ],
+          "start": {
+            "agent.x": 245.215,
+            "agent.y": 224.349,
+            "agent.vx": -17.355,
+            "agent.vy": 39.688,
+            "block.x": 226.273,
+            "block.y": 223.832,
+            "block.angle": 0.935
+          },
+          "errors": {
+            "simple_point_mass_control": 13.583771623819727,
+            "mass_damper_force": 13.059075555314152,
+            "elastic_coupling_contact": 12.249710817659727,
+            "contact_point_torque_with_friction": 13.738861479403335,
+            "velocity_threshold_switch_static_friction": 12.224978938375878,
+            "grasp_attach_sticky_push": 2.947246387141732
+          }
+        },
+        {
+          "disagreement": 5.950414918397841,
+          "actions": [
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ],
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ],
+            [
+              0.3445220030039148,
+              -0.017372676748484417
+            ]
+          ],
+          "start": {
+            "agent.x": 251.808,
+            "agent.y": 219.234,
+            "agent.vx": -12.657,
+            "agent.vy": 3.227,
+            "block.x": 240.663,
+            "block.y": 229.268,
+            "block.angle": 0.747
+          },
+          "errors": {
+            "simple_point_mass_control": 2.176605433545454,
+            "mass_damper_force": 0.16397199927639833,
+            "elastic_coupling_contact": 4.956003435820591,
+            "contact_point_torque_with_friction": 3.259439282827028,
+            "velocity_threshold_switch_static_friction": 1.185502183979908,
+            "grasp_attach_sticky_push": 10.047889873451062
+          }
+        },
+        {
+          "disagreement": 5.875312509129968,
+          "actions": [
+            [
+              0.2910883690469962,
+              -0.20682072670732138
+            ],
+            [
+              0.2910883690469962,
+              -0.20682072670732138
+            ],
+            [
+              0.2910883690469962,
+              -0.20682072670732138
+            ]
+          ],
+          "start": {
+            "agent.x": 260.499,
+            "agent.y": 210.965,
+            "agent.vx": -15.682,
+            "agent.vy": 10.231,
+            "block.x": 256.46,
+            "block.y": 225.929,
+            "block.angle": 0.524
+          },
+          "errors": {
+            "simple_point_mass_control": 2.2984316230088893,
+            "mass_damper_force": 0.1790314648916426,
+            "elastic_coupling_contact": 4.871356181895799,
+            "contact_point_torque_with_friction": 3.341603522257642,
+            "velocity_threshold_switch_static_friction": 1.270683448777179,
+            "grasp_attach_sticky_push": 9.852087034277018
+          }
+        },
+        {
+          "disagreement": 5.348184373757404,
+          "actions": [
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ],
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ],
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ]
+          ],
+          "start": {
+            "agent.x": 260.743,
+            "agent.y": 217.995,
+            "agent.vx": -7.518,
+            "agent.vy": 19.824,
+            "block.x": 252.474,
+            "block.y": 230.662,
+            "block.angle": 0.726
+          },
+          "errors": {
+            "simple_point_mass_control": 5.598643247537706,
+            "mass_damper_force": 4.846432685036894,
+            "elastic_coupling_contact": 4.4495167454127,
+            "contact_point_torque_with_friction": 5.811799924048172,
+            "velocity_threshold_switch_static_friction": 4.805153251793661,
+            "grasp_attach_sticky_push": 7.949971067603813
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.05632495880126953
+    }
+  },
+  "args": {
+    "env": "pusht",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_train.jsonl",
+    "val_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_val.jsonl",
+    "max_train_episodes": 40,
+    "max_val_episodes": 10,
+    "output_dir": "artifacts/visualpatchworld/llm_family/bank_general_pusht_gptoss_s0",
+    "num_hypotheses": 6,
+    "model": "openai/gpt-oss-120b",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/gptoss_general.frozen.json",
+    "experience_runs": [],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 1076.3538489341736
+}

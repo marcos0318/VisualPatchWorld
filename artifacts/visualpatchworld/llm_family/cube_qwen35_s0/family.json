@@ -1,0 +1,1171 @@
+{
+  "env": "cube",
+  "llm_model": "Qwen/Qwen3.5-397B-A17B",
+  "schema": {
+    "state_keys": [
+      "block.x",
+      "block.y",
+      "block.z",
+      "effector.x",
+      "effector.y",
+      "effector.z",
+      "goal.x",
+      "goal.y",
+      "goal.z"
+    ],
+    "state_ranges": {
+      "block.x": {
+        "min": 0.251,
+        "max": 0.557
+      },
+      "block.y": {
+        "min": -0.339,
+        "max": 0.294
+      },
+      "block.z": {
+        "min": 0.019,
+        "max": 0.335
+      },
+      "effector.x": {
+        "min": 0.248,
+        "max": 0.567
+      },
+      "effector.y": {
+        "min": -0.339,
+        "max": 0.294
+      },
+      "effector.z": {
+        "min": 0.015,
+        "max": 0.335
+      },
+      "goal.x": {
+        "min": 0.304,
+        "max": 0.536
+      },
+      "goal.y": {
+        "min": -0.285,
+        "max": 0.283
+      },
+      "goal.z": {
+        "min": 0.02,
+        "max": 0.02
+      }
+    },
+    "action_dim": 5,
+    "action_min": [
+      -1.0,
+      -1.0,
+      -1.0,
+      -1.0,
+      -0.321
+    ],
+    "action_max": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.567
+    ],
+    "num_episodes": 51,
+    "num_transitions": 2040
+  },
+  "scales": {
+    "block.x": 0.015027326695920107,
+    "block.y": 0.02119843666027467,
+    "block.z": 0.04406113733540159,
+    "effector.x": 0.025943293893212635,
+    "effector.y": 0.03839158734668915,
+    "effector.z": 0.06011630803798929,
+    "goal.x": 1.0,
+    "goal.y": 1.0,
+    "goal.z": 1.0
+  },
+  "candidates": [
+    {
+      "name": "simple_linear",
+      "mechanism": "Effector and block positions change linearly with action components; no contact detection.",
+      "code": "# HYPOTHESIS: simple_linear\n# MECHANISM: Effector and block positions change linearly with action components; no contact detection.\nPARAMS = {\"effector_gain_xy\": 0.1, \"effector_gain_z\": 0.1, \"block_gain_xy\": 0.05, \"block_gain_z\": 0.05, \"action_scale\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    ax, ay, az, aw, av = action[0], action[1], action[2], action[3], action[4]\n    scale = p[\"action_scale\"]\n    ns[\"effector.x\"] = state[\"effector.x\"] + scale * p[\"effector_gain_xy\"] * ax\n    ns[\"effector.y\"] = state[\"effector.y\"] + scale * p[\"effector_gain_xy\"] * ay\n    ns[\"effector.z\"] = state[\"effector.z\"] + scale * p[\"effector_gain_z\"] * az\n    ns[\"block.x\"] = state[\"block.x\"] + scale * p[\"block_gain_xy\"] * aw\n    ns[\"block.y\"] = state[\"block.y\"] + scale * p[\"block_gain_xy\"] * av\n    ns[\"block.z\"] = state[\"block.z\"] + scale * p[\"block_gain_z\"] * az\n    ns[\"goal.x\"] = state[\"goal.x\"]\n    ns[\"goal.y\"] = state[\"goal.y\"]\n    ns[\"goal.z\"] = state[\"goal.z\"]\n    return ns",
+      "init_params": {
+        "effector_gain_xy": 0.1,
+        "effector_gain_z": 0.1,
+        "block_gain_xy": 0.05,
+        "block_gain_z": 0.05,
+        "action_scale": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "contact_gating",
+      "mechanism": "Block only moves when effector is within contact distance; otherwise block is stationary.",
+      "code": "# HYPOTHESIS: contact_gating\n# MECHANISM: Block only moves when effector is within contact distance; otherwise block is stationary.\nPARAMS = {\"effector_gain\": 0.1, \"contact_dist\": 0.05, \"block_coupling\": 0.8, \"z_contact_thresh\": 0.03}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    ax, ay, az, aw, av = action[0], action[1], action[2], action[3], action[4]\n    eg = p[\"effector_gain\"]\n    ns[\"effector.x\"] = state[\"effector.x\"] + eg * ax\n    ns[\"effector.y\"] = state[\"effector.y\"] + eg * ay\n    ns[\"effector.z\"] = state[\"effector.z\"] + eg * az\n    dx = abs(state[\"effector.x\"] - state[\"block.x\"])\n    dy = abs(state[\"effector.y\"] - state[\"block.y\"])\n    dz = abs(state[\"effector.z\"] - state[\"block.z\"])\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    in_contact = dist < p[\"contact_dist\"] and dz < p[\"z_contact_thresh\"]\n    if in_contact:\n        ns[\"block.x\"] = state[\"block.x\"] + p[\"block_coupling\"] * eg * ax\n        ns[\"block.y\"] = state[\"block.y\"] + p[\"block_coupling\"] * eg * ay\n        ns[\"block.z\"] = state[\"block.z\"] + p[\"block_coupling\"] * eg * az\n    else:\n        ns[\"block.x\"] = state[\"block.x\"]\n        ns[\"block.y\"] = state[\"block.y\"]\n        ns[\"block.z\"] = state[\"block.z\"]\n    ns[\"goal.x\"] = state[\"goal.x\"]\n    ns[\"goal.y\"] = state[\"goal.y\"]\n    ns[\"goal.z\"] = state[\"goal.z\"]\n    return ns",
+      "init_params": {
+        "effector_gain": 0.1,
+        "contact_dist": 0.05,
+        "block_coupling": 0.8,
+        "z_contact_thresh": 0.03
+      },
+      "repaired": false
+    },
+    {
+      "name": "velocity_momentum",
+      "mechanism": "Actions control velocity; position integrates velocity with momentum decay.",
+      "code": "# HYPOTHESIS: velocity_momentum\n# MECHANISM: Actions control velocity; position integrates velocity with momentum decay.\nPARAMS = {\"vel_gain\": 0.15, \"momentum_decay\": 0.9, \"block_drag\": 0.7, \"contact_vel_transfer\": 0.5}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    ax, ay, az, aw, av = action[0], action[1], action[2], action[3], action[4]\n    vg = p[\"vel_gain\"]\n    md = p[\"momentum_decay\"]\n    eff_vx = vg * ax\n    eff_vy = vg * ay\n    eff_vz = vg * az\n    ns[\"effector.x\"] = state[\"effector.x\"] + eff_vx\n    ns[\"effector.y\"] = state[\"effector.y\"] + eff_vy\n    ns[\"effector.z\"] = state[\"effector.z\"] + eff_vz\n    dx = abs(state[\"effector.x\"] - state[\"block.x\"])\n    dy = abs(state[\"effector.y\"] - state[\"block.y\"])\n    dz = abs(state[\"effector.z\"] - state[\"block.z\"])\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    if dist < 0.05:\n        ns[\"block.x\"] = state[\"block.x\"] + p[\"contact_vel_transfer\"] * eff_vx * p[\"block_drag\"]\n        ns[\"block.y\"] = state[\"block.y\"] + p[\"contact_vel_transfer\"] * eff_vy * p[\"block_drag\"]\n        ns[\"block.z\"] = state[\"block.z\"] + p[\"contact_vel_transfer\"] * eff_vz * p[\"block_drag\"]\n    else:\n        ns[\"block.x\"] = state[\"block.x\"] * md + state[\"block.x\"] * (1 - md)\n        ns[\"block.y\"] = state[\"block.y\"] * md + state[\"block.y\"] * (1 - md)\n        ns[\"block.z\"] = max(0.02, state[\"block.z\"] * md)\n    ns[\"goal.x\"] = state[\"goal.x\"]\n    ns[\"goal.y\"] = state[\"goal.y\"]\n    ns[\"goal.z\"] = state[\"goal.z\"]\n    return ns",
+      "init_params": {
+        "vel_gain": 0.15,
+        "momentum_decay": 0.9,
+        "block_drag": 0.7,
+        "contact_vel_transfer": 0.5
+      },
+      "repaired": false
+    },
+    {
+      "name": "independent_channels",
+      "mechanism": "First 3 action components control effector xyz; last 2 control block xy independently.",
+      "code": "# HYPOTHESIS: independent_channels\n# MECHANISM: First 3 action components control effector xyz; last 2 control block xy independently.\nPARAMS = {\"effector_scale\": 0.12, \"block_scale\": 0.08, \"block_z_friction\": 0.95, \"min_z\": 0.02}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    ax, ay, az, aw, av = action[0], action[1], action[2], action[3], action[4]\n    es = p[\"effector_scale\"]\n    bs = p[\"block_scale\"]\n    ns[\"effector.x\"] = state[\"effector.x\"] + es * ax\n    ns[\"effector.y\"] = state[\"effector.y\"] + es * ay\n    ns[\"effector.z\"] = max(p[\"min_z\"], state[\"effector.z\"] + es * az)\n    ns[\"block.x\"] = state[\"block.x\"] + bs * aw\n    ns[\"block.y\"] = state[\"block.y\"] + bs * av\n    if state[\"block.z\"] > p[\"min_z\"] + 0.01:\n        ns[\"block.z\"] = state[\"block.z\"] * p[\"block_z_friction\"]\n    else:\n        ns[\"block.z\"] = p[\"min_z\"]\n    ns[\"goal.x\"] = state[\"goal.x\"]\n    ns[\"goal.y\"] = state[\"goal.y\"]\n    ns[\"goal.z\"] = state[\"goal.z\"]\n    return ns",
+      "init_params": {
+        "effector_scale": 0.12,
+        "block_scale": 0.08,
+        "block_z_friction": 0.95,
+        "min_z": 0.02
+      },
+      "repaired": false
+    },
+    {
+      "name": "nonlinear_saturation",
+      "mechanism": "Action effects saturate via tanh nonlinearity; coupling strength depends on proximity.",
+      "code": "# HYPOTHESIS: nonlinear_saturation\n# MECHANISM: Action effects saturate via tanh nonlinearity; coupling strength depends on proximity.\nPARAMS = {\"max_speed\": 0.15, \"saturation_k\": 2.0, \"coupling_strength\": 0.7, \"proximity_scale\": 10.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    ax, ay, az, aw, av = action[0], action[1], action[2], action[3], action[4]\n    ms = p[\"max_speed\"]\n    sk = p[\"saturation_k\"]\n    def sat(v):\n        return ms * math.tanh(sk * v)\n    ns[\"effector.x\"] = state[\"effector.x\"] + sat(ax)\n    ns[\"effector.y\"] = state[\"effector.y\"] + sat(ay)\n    ns[\"effector.z\"] = state[\"effector.z\"] + sat(az)\n    dx = abs(state[\"effector.x\"] - state[\"block.x\"])\n    dy = abs(state[\"effector.y\"] - state[\"block.y\"])\n    dz = abs(state[\"effector.z\"] - state[\"block.z\"])\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    coupling = p[\"coupling_strength\"] * math.exp(-p[\"proximity_scale\"] * dist)\n    ns[\"block.x\"] = state[\"block.x\"] + coupling * sat(aw)\n    ns[\"block.y\"] = state[\"block.y\"] + coupling * sat(av)\n    ns[\"block.z\"] = state[\"block.z\"] + coupling * sat(az) * 0.5\n    ns[\"goal.x\"] = state[\"goal.x\"]\n    ns[\"goal.y\"] = state[\"goal.y\"]\n    ns[\"goal.z\"] = state[\"goal.z\"]\n    return ns",
+      "init_params": {
+        "max_speed": 0.15,
+        "saturation_k": 2.0,
+        "coupling_strength": 0.7,
+        "proximity_scale": 10.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "gravity_surface",
+      "mechanism": "Z-axis has gravity pulling down to surface; block slides on surface when effector pushes.",
+      "code": "# HYPOTHESIS: gravity_surface\n# MECHANISM: Z-axis has gravity pulling down to surface; block slides on surface when effector pushes.\nPARAMS = {\"xy_gain\": 0.1, \"z_lift_gain\": 0.08, \"gravity\": 0.02, \"surface_z\": 0.02, \"friction\": 0.3}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    ax, ay, az, aw, av = action[0], action[1], action[2], action[3], action[4]\n    xyg = p[\"xy_gain\"]\n    zlg = p[\"z_lift_gain\"]\n    ns[\"effector.x\"] = state[\"effector.x\"] + xyg * ax\n    ns[\"effector.y\"] = state[\"effector.y\"] + xyg * ay\n    eff_z_new = state[\"effector.z\"] + zlg * az - p[\"gravity\"]\n    ns[\"effector.z\"] = max(p[\"surface_z\"], eff_z_new)\n    on_surface = state[\"block.z\"] <= p[\"surface_z\"] + 0.01\n    dx = abs(state[\"effector.x\"] - state[\"block.x\"])\n    dy = abs(state[\"effector.y\"] - state[\"block.y\"])\n    dz = abs(state[\"effector.z\"] - state[\"block.z\"])\n    pushing = dx < 0.05 and dy < 0.05 and dz < 0.05\n    if pushing and on_surface:\n        ns[\"block.x\"] = state[\"block.x\"] + xyg * ax * p[\"friction\"]\n        ns[\"block.y\"] = state[\"block.y\"] + xyg * ay * p[\"friction\"]\n        ns[\"block.z\"] = p[\"surface_z\"]\n    elif state[\"block.z\"] > p[\"surface_z\"]:\n        ns[\"block.x\"] = state[\"block.x\"]\n        ns[\"block.y\"] = state[\"block.y\"]\n        ns[\"block.z\"] = max(p[\"surface_z\"], state[\"block.z\"] - p[\"gravity\"])\n    else:\n        ns[\"block.x\"] = state[\"block.x\"]\n        ns[\"block.y\"] = state[\"block.y\"]\n        ns[\"block.z\"] = p[\"surface_z\"]\n    ns[\"goal.x\"] = state[\"goal.x\"]\n    ns[\"goal.y\"] = state[\"goal.y\"]\n    ns[\"goal.z\"] = state[\"goal.z\"]\n    return ns",
+      "init_params": {
+        "xy_gain": 0.1,
+        "z_lift_gain": 0.08,
+        "gravity": 0.02,
+        "surface_z": 0.02,
+        "friction": 0.3
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "simple_linear": {
+        "params": {
+          "effector_gain_xy": 0.4037263047741724,
+          "effector_gain_z": 0.40541197676571766,
+          "block_gain_xy": -0.012879157496336356,
+          "block_gain_z": 0.2179639450168578,
+          "action_scale": 0.2423053597683672
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.30584160221811796,
+        "val_one_step_nrmse": 0.5443183287705816,
+        "val_rollout_nrmse": 1.352227569807659,
+        "restarts": 4,
+        "nfev": 64,
+        "elapsed_s": 3.3152060508728027,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3058416021825356,
+            "val_rollout_nrmse": 1.3522276695729047
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.3058416022090069,
+            "val_rollout_nrmse": 1.3522275939697137
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.30584160221811796,
+            "val_rollout_nrmse": 1.352227569807659
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3058416021373817,
+            "val_rollout_nrmse": 1.3522278263857819
+          }
+        ]
+      },
+      "contact_gating": {
+        "params": {
+          "effector_gain": 0.09797585708591433,
+          "contact_dist": 0.08296359462577774,
+          "block_coupling": 0.7918026974660196,
+          "z_contact_thresh": 0.1263235942128837
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.12952103570405823,
+        "val_one_step_nrmse": 0.34490549206343896,
+        "val_rollout_nrmse": 0.9391831476355916,
+        "restarts": 4,
+        "nfev": 83,
+        "elapsed_s": 2.935988426208496,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.10005673450731711,
+            "val_rollout_nrmse": 0.9402717128364575
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.12952103570405823,
+            "val_rollout_nrmse": 0.9391831476355916
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.3661210378875486,
+            "val_rollout_nrmse": 1.4647604142257264
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.13257853104161088,
+            "val_rollout_nrmse": 0.9422557877446811
+          }
+        ]
+      },
+      "velocity_momentum": {
+        "params": {
+          "vel_gain": 0.0979759035778873,
+          "momentum_decay": 0.4561558700488345,
+          "block_drag": -0.49510445608102577,
+          "contact_vel_transfer": -1.7443233106954215
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.10805753350341399,
+        "val_one_step_nrmse": 0.32319081439084274,
+        "val_rollout_nrmse": 0.9414871696602444,
+        "restarts": 4,
+        "nfev": 61,
+        "elapsed_s": 2.9588494300842285,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.10805753349190433,
+            "val_rollout_nrmse": 0.9428421313429713
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.10805753351184964,
+            "val_rollout_nrmse": 0.9424994351429864
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.10805753350341399,
+            "val_rollout_nrmse": 0.9414871696602444
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1080575334801514,
+            "val_rollout_nrmse": 0.9429294518185812
+          }
+        ]
+      },
+      "independent_channels": {
+        "params": {
+          "effector_scale": 0.09796450591187106,
+          "block_scale": -0.003120749710315444,
+          "block_z_friction": 0.9098512808623338,
+          "min_z": 0.024346320537249132
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.3605343004130461,
+        "val_one_step_nrmse": 0.5909010425894274,
+        "val_rollout_nrmse": 1.404464383179149,
+        "restarts": 4,
+        "nfev": 26,
+        "elapsed_s": 1.2839767932891846,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3605343004130461,
+            "val_rollout_nrmse": 1.4044643832564097
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.3605343004130461,
+            "val_rollout_nrmse": 1.404464383179149
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.3605343004130461,
+            "val_rollout_nrmse": 1.404464383224344
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.36053430041304607,
+            "val_rollout_nrmse": 1.4044643832373833
+          }
+        ]
+      },
+      "nonlinear_saturation": {
+        "params": {
+          "max_speed": 18.087455640222636,
+          "saturation_k": 0.005415845070008841,
+          "coupling_strength": 0.2666484420166084,
+          "proximity_scale": 214.0223506468799
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36185659659287744,
+        "val_one_step_nrmse": 0.5986026440509108,
+        "val_rollout_nrmse": 1.4664077766164165,
+        "restarts": 4,
+        "nfev": 503,
+        "elapsed_s": 26.30632448196411,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.361856593431571,
+            "val_rollout_nrmse": 1.4664087063412363
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.36185659847812257,
+            "val_rollout_nrmse": 1.4664104898170545
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.3618566010756059,
+            "val_rollout_nrmse": 1.4664102412415785
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.36185659659287744,
+            "val_rollout_nrmse": 1.4664077766164165
+          }
+        ]
+      },
+      "gravity_surface": {
+        "params": {
+          "xy_gain": 0.09782695405215384,
+          "z_lift_gain": 0.09846500900678394,
+          "gravity": 0.007294028085738768,
+          "surface_z": 0.024122604561549257,
+          "friction": -0.05679018377361956
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36398614469778634,
+        "val_one_step_nrmse": 0.5931743567218031,
+        "val_rollout_nrmse": 1.4319406218687103,
+        "restarts": 4,
+        "nfev": 27,
+        "elapsed_s": 1.5565025806427002,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.36398614469778634,
+            "val_rollout_nrmse": 1.4319406218687103
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.36398614469778634,
+            "val_rollout_nrmse": 1.431940621906046
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.3639861446977863,
+            "val_rollout_nrmse": 1.4319406219126731
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3639332747588849,
+            "val_rollout_nrmse": 1.4326915675374257
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "simple_linear": {
+        "params": {
+          "effector_gain_xy": 0.20705177307560796,
+          "effector_gain_z": 0.21527243554436404,
+          "block_gain_xy": -0.009853798341188613,
+          "block_gain_z": 0.12195121219874237,
+          "action_scale": 0.44860471387596446
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.7948580550521156,
+        "val_one_step_nrmse": 0.5454788383003647,
+        "val_rollout_nrmse": 1.3532872470134807,
+        "restarts": 4,
+        "nfev": 67,
+        "elapsed_s": 11.459510803222656,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.7948580550521156,
+            "val_rollout_nrmse": 1.3532872470134807
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.7948580541427173,
+            "val_rollout_nrmse": 1.3532874781719557
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.7948580545978174,
+            "val_rollout_nrmse": 1.3532873439671855
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.7948580540883832,
+            "val_rollout_nrmse": 1.353287499848938
+          }
+        ]
+      },
+      "contact_gating": {
+        "params": {
+          "effector_gain": 0.0926730474424579,
+          "contact_dist": 0.17933242942290095,
+          "block_coupling": 0.7420265678278133,
+          "z_contact_thresh": 0.08567528971570838
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.9634694798704291,
+        "val_one_step_nrmse": 0.35239035809976144,
+        "val_rollout_nrmse": 0.9327850952712639,
+        "restarts": 4,
+        "nfev": 106,
+        "elapsed_s": 12.324809551239014,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.1329265948285214,
+            "val_rollout_nrmse": 1.0148100700825828
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.9716583564496496,
+            "val_rollout_nrmse": 0.9337926155356526
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.140091755342129,
+            "val_rollout_nrmse": 1.4641468405564064
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.9634694798704291,
+            "val_rollout_nrmse": 0.9327850952712639
+          }
+        ]
+      },
+      "velocity_momentum": {
+        "params": {
+          "vel_gain": 0.0865761982349893,
+          "momentum_decay": 0.7410681792283569,
+          "block_drag": 2.009526754987299,
+          "contact_vel_transfer": 0.432969161340603
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.940491373016164,
+        "val_one_step_nrmse": 0.3344030363977621,
+        "val_rollout_nrmse": 0.9252469514340047,
+        "restarts": 4,
+        "nfev": 120,
+        "elapsed_s": 15.66286587715149,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.940491373016164,
+            "val_rollout_nrmse": 0.9252469514340047
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.0940740896095886,
+            "val_rollout_nrmse": 0.988891804968669
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.09369645830834,
+            "val_rollout_nrmse": 0.9889034867868965
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.1001550907949023,
+            "val_rollout_nrmse": 0.9834130421273252
+          }
+        ]
+      },
+      "independent_channels": {
+        "params": {
+          "effector_scale": 0.09164818747131892,
+          "block_scale": -0.004420584480074875,
+          "block_z_friction": 0.739833287043545,
+          "min_z": 0.05412656188307176
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.8428950272970765,
+        "val_one_step_nrmse": 0.640209336527291,
+        "val_rollout_nrmse": 1.3652171668862843,
+        "restarts": 4,
+        "nfev": 29,
+        "elapsed_s": 6.64237380027771,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.8428950270746722,
+            "val_rollout_nrmse": 1.3652172415530313
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.842945246827369,
+            "val_rollout_nrmse": 1.3652201621120228
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.8428950319793296,
+            "val_rollout_nrmse": 1.3652174296088306
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.8428950272970765,
+            "val_rollout_nrmse": 1.3652171668862843
+          }
+        ]
+      },
+      "nonlinear_saturation": {
+        "params": {
+          "max_speed": 14.317502540055969,
+          "saturation_k": 0.006600454646246243,
+          "coupling_strength": 0.10715937924598073,
+          "proximity_scale": 15.420473935545859
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.132161915437792,
+        "val_one_step_nrmse": 0.5950260514694544,
+        "val_rollout_nrmse": 1.459948669324337,
+        "restarts": 4,
+        "nfev": 735,
+        "elapsed_s": 185.41369795799255,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.132162858185336,
+            "val_rollout_nrmse": 1.4599506749091486
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.1321628060815123,
+            "val_rollout_nrmse": 1.4599506619051157
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.132161915437792,
+            "val_rollout_nrmse": 1.459948669324337
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.1321623853677836,
+            "val_rollout_nrmse": 1.4599502984218358
+          }
+        ]
+      },
+      "gravity_surface": {
+        "params": {
+          "xy_gain": 0.0820074889022224,
+          "z_lift_gain": 0.06817676197598518,
+          "gravity": 0.43921696401313526,
+          "surface_z": 0.09255825952292451,
+          "friction": 0.6925627505634104
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.877006252453354,
+        "val_one_step_nrmse": 0.9594739148769907,
+        "val_rollout_nrmse": 1.315408730997176,
+        "restarts": 4,
+        "nfev": 80,
+        "elapsed_s": 20.63307547569275,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.8893960379929342,
+            "val_rollout_nrmse": 1.3745478704363896
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.8893960235055998,
+            "val_rollout_nrmse": 1.3745426431133976
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.8893960138854027,
+            "val_rollout_nrmse": 1.3745425595392518
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.877006252453354,
+            "val_rollout_nrmse": 1.315408730997176
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "contact_gating",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_linear": 1.352227569807659,
+        "contact_gating": 0.9391831476355916,
+        "velocity_momentum": 0.9414871696602444,
+        "independent_channels": 1.404464383179149,
+        "nonlinear_saturation": 1.4664077766164165,
+        "gravity_surface": 1.4319406218687103
+      }
+    },
+    "active_one_step": {
+      "winner": "contact_gating",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "block.x",
+        "block.y",
+        "block.z",
+        "effector.x",
+        "effector.y",
+        "effector.z"
+      ],
+      "scores": {
+        "simple_linear": 3.5509975324752205,
+        "contact_gating": 3.2832481677361747,
+        "velocity_momentum": 3.5174358779790764,
+        "independent_channels": 3.486637767579352,
+        "nonlinear_saturation": 3.4664023433088245,
+        "gravity_surface": 3.5371462958712803
+      },
+      "probes": [
+        {
+          "disagreement": 3.275633925726677,
+          "actions": [
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ],
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ],
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ]
+          ],
+          "start": {
+            "block.x": 0.525,
+            "block.y": 0.254,
+            "block.z": 0.02,
+            "effector.x": 0.526,
+            "effector.y": 0.254,
+            "effector.z": 0.045,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 2.041883446310475,
+            "contact_gating": 4.245983892340753,
+            "velocity_momentum": 4.70256382762306,
+            "independent_channels": 1.8801104581204222,
+            "nonlinear_saturation": 1.9068374948313465,
+            "gravity_surface": 1.9566401809035456
+          }
+        },
+        {
+          "disagreement": 3.147865157612247,
+          "actions": [
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ]
+          ],
+          "start": {
+            "block.x": 0.338,
+            "block.y": 0.023,
+            "block.z": 0.02,
+            "effector.x": 0.337,
+            "effector.y": 0.021,
+            "effector.z": 0.02,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 5.798454969147004,
+            "contact_gating": 1.4003260560989703,
+            "velocity_momentum": 1.2849124665369558,
+            "independent_channels": 5.71997383055443,
+            "nonlinear_saturation": 5.599623324243474,
+            "gravity_surface": 5.819231318256247
+          }
+        },
+        {
+          "disagreement": 2.951488626728428,
+          "actions": [
+            [
+              0.86203463196231,
+              -0.9189785776231307,
+              0.46401239131312155,
+              0.22874649389799329,
+              -0.2958115557791933
+            ],
+            [
+              0.86203463196231,
+              -0.9189785776231307,
+              0.46401239131312155,
+              0.22874649389799329,
+              -0.2958115557791933
+            ],
+            [
+              0.86203463196231,
+              -0.9189785776231307,
+              0.46401239131312155,
+              0.22874649389799329,
+              -0.2958115557791933
+            ]
+          ],
+          "start": {
+            "block.x": 0.371,
+            "block.y": -0.064,
+            "block.z": 0.02,
+            "effector.x": 0.369,
+            "effector.y": -0.065,
+            "effector.z": 0.019,
+            "goal.x": 0.373,
+            "goal.y": -0.067,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 0.7559793176974619,
+            "contact_gating": 4.703604348299449,
+            "velocity_momentum": 5.152606614803916,
+            "independent_channels": 0.5789646004605906,
+            "nonlinear_saturation": 0.4753022635347388,
+            "gravity_surface": 0.6319712070625301
+          }
+        },
+        {
+          "disagreement": 2.946581852680008,
+          "actions": [
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ],
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ],
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ]
+          ],
+          "start": {
+            "block.x": 0.547,
+            "block.y": -0.123,
+            "block.z": 0.087,
+            "effector.x": 0.548,
+            "effector.y": -0.12,
+            "effector.z": 0.085,
+            "goal.x": 0.546,
+            "goal.y": -0.119,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 4.125547836725315,
+            "contact_gating": 4.111714154279582,
+            "velocity_momentum": 4.398650186040688,
+            "independent_channels": 4.119381947325896,
+            "nonlinear_saturation": 4.283980067614301,
+            "gravity_surface": 4.160751077797742
+          }
+        },
+        {
+          "disagreement": 2.942631576917918,
+          "actions": [
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ]
+          ],
+          "start": {
+            "block.x": 0.467,
+            "block.y": -0.06,
+            "block.z": 0.071,
+            "effector.x": 0.466,
+            "effector.y": -0.056,
+            "effector.z": 0.068,
+            "goal.x": 0.474,
+            "goal.y": -0.061,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 5.033122092495849,
+            "contact_gating": 1.954612387662121,
+            "velocity_momentum": 2.048446294890763,
+            "independent_channels": 5.134758001435422,
+            "nonlinear_saturation": 5.066268566320259,
+            "gravity_surface": 5.117137695336336
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.4377157688140869
+    },
+    "offline_multi_step": {
+      "winner": "velocity_momentum",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_linear": 1.3532872470134807,
+        "contact_gating": 0.9327850952712639,
+        "velocity_momentum": 0.9252469514340047,
+        "independent_channels": 1.3652171668862843,
+        "nonlinear_saturation": 1.459948669324337,
+        "gravity_surface": 1.315408730997176
+      }
+    },
+    "active_multi_step": {
+      "winner": "contact_gating",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "block.x",
+        "block.y",
+        "block.z",
+        "effector.x",
+        "effector.y",
+        "effector.z"
+      ],
+      "scores": {
+        "simple_linear": 4.286201162436094,
+        "contact_gating": 2.4642475665614585,
+        "velocity_momentum": 2.478878997172044,
+        "independent_channels": 4.248294216795941,
+        "nonlinear_saturation": 3.913200651468384,
+        "gravity_surface": 3.0426031119556436
+      },
+      "probes": [
+        {
+          "disagreement": 3.2922889240751987,
+          "actions": [
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ],
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ],
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ]
+          ],
+          "start": {
+            "block.x": 0.525,
+            "block.y": 0.254,
+            "block.z": 0.02,
+            "effector.x": 0.526,
+            "effector.y": 0.254,
+            "effector.z": 0.045,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 2.027422922320332,
+            "contact_gating": 3.6529024163175854,
+            "velocity_momentum": 4.05620272707387,
+            "independent_channels": 1.893948204582664,
+            "nonlinear_saturation": 1.7944410692834083,
+            "gravity_surface": 2.898295185024819
+          }
+        },
+        {
+          "disagreement": 3.173834967531382,
+          "actions": [
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ]
+          ],
+          "start": {
+            "block.x": 0.338,
+            "block.y": 0.023,
+            "block.z": 0.02,
+            "effector.x": 0.337,
+            "effector.y": 0.021,
+            "effector.z": 0.02,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 5.818244046639005,
+            "contact_gating": 1.6827215107750535,
+            "velocity_momentum": 1.4257814829194646,
+            "independent_channels": 5.752578165762968,
+            "nonlinear_saturation": 5.628306292978211,
+            "gravity_surface": 2.2646198791572774
+          }
+        },
+        {
+          "disagreement": 2.967592463074618,
+          "actions": [
+            [
+              0.9923723511595031,
+              0.4444399786539883,
+              -0.3208865808225274,
+              0.8377494324687351,
+              0.31160309679847337
+            ],
+            [
+              0.9923723511595031,
+              0.4444399786539883,
+              -0.3208865808225274,
+              0.8377494324687351,
+              0.31160309679847337
+            ],
+            [
+              0.9923723511595031,
+              0.4444399786539883,
+              -0.3208865808225274,
+              0.8377494324687351,
+              0.31160309679847337
+            ]
+          ],
+          "start": {
+            "block.x": 0.474,
+            "block.y": -0.061,
+            "block.z": 0.02,
+            "effector.x": 0.473,
+            "effector.y": -0.063,
+            "effector.z": 0.024,
+            "goal.x": 0.474,
+            "goal.y": -0.061,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 4.049221815123964,
+            "contact_gating": 2.086007281878763,
+            "velocity_momentum": 2.16041470633157,
+            "independent_channels": 4.020169649799162,
+            "nonlinear_saturation": 3.6213685335940697,
+            "gravity_surface": 1.770280016637409
+          }
+        },
+        {
+          "disagreement": 2.9488750227663876,
+          "actions": [
+            [
+              -0.7062469127495736,
+              0.6287370034209185,
+              0.3515589152492242,
+              -0.9901466233821792,
+              0.355436578846078
+            ],
+            [
+              -0.7062469127495736,
+              0.6287370034209185,
+              0.3515589152492242,
+              -0.9901466233821792,
+              0.355436578846078
+            ],
+            [
+              -0.7062469127495736,
+              0.6287370034209185,
+              0.3515589152492242,
+              -0.9901466233821792,
+              0.355436578846078
+            ]
+          ],
+          "start": {
+            "block.x": 0.51,
+            "block.y": -0.209,
+            "block.z": 0.309,
+            "effector.x": 0.51,
+            "effector.y": -0.21,
+            "effector.z": 0.309,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 6.005714610196523,
+            "contact_gating": 2.45627996584277,
+            "velocity_momentum": 2.213299431291649,
+            "independent_channels": 6.224839253775479,
+            "nonlinear_saturation": 5.45510270398454,
+            "gravity_surface": 6.469296521834458
+          }
+        },
+        {
+          "disagreement": 2.8953625216971877,
+          "actions": [
+            [
+              -0.9168830256522253,
+              0.10546112442073419,
+              -0.6323302251928908,
+              -0.8514845558691573,
+              0.49304269037504594
+            ],
+            [
+              -0.9168830256522253,
+              0.10546112442073419,
+              -0.6323302251928908,
+              -0.8514845558691573,
+              0.49304269037504594
+            ],
+            [
+              -0.9168830256522253,
+              0.10546112442073419,
+              -0.6323302251928908,
+              -0.8514845558691573,
+              0.49304269037504594
+            ]
+          ],
+          "start": {
+            "block.x": 0.353,
+            "block.y": 0.24,
+            "block.z": 0.02,
+            "effector.x": 0.35,
+            "effector.y": 0.244,
+            "effector.z": 0.019,
+            "goal.x": 0.524,
+            "goal.y": 0.027,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "simple_linear": 3.5304024179006475,
+            "contact_gating": 2.443326657993122,
+            "velocity_momentum": 2.5386966382436666,
+            "independent_channels": 3.3499358100594296,
+            "nonlinear_saturation": 3.066784657501688,
+            "gravity_surface": 1.810523957124254
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.2469332218170166
+    }
+  },
+  "args": {
+    "env": "cube",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/cube_qwen35_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "seed": 0,
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 384.03610920906067
+}

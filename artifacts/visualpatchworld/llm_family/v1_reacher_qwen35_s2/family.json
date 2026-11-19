@@ -1,0 +1,1060 @@
+{
+  "env": "reacher",
+  "llm_model": "Qwen/Qwen3.5-397B-A17B",
+  "schema": {
+    "state_keys": [
+      "arm.x",
+      "arm.y",
+      "finger.x",
+      "finger.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "arm.x": {
+        "min": -4.981,
+        "max": 4.435
+      },
+      "arm.y": {
+        "min": -2.899,
+        "max": 2.869
+      },
+      "finger.x": {
+        "min": -0.24,
+        "max": 0.239
+      },
+      "finger.y": {
+        "min": -0.24,
+        "max": 0.24
+      },
+      "target.x": {
+        "min": -0.195,
+        "max": 0.17
+      },
+      "target.y": {
+        "min": -0.194,
+        "max": 0.196
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.812,
+      -0.745
+    ],
+    "action_max": [
+      0.732,
+      0.787
+    ],
+    "num_episodes": 51,
+    "num_transitions": 2040
+  },
+  "scales": {
+    "arm.x": 0.1874797487871841,
+    "arm.y": 0.23021797342125136,
+    "finger.x": 0.02727790853899584,
+    "finger.y": 0.027242596319182195,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "linear_joint_linear_finger",
+      "mechanism": "Action directly changes arm joints linearly; finger position is linear function of arm joints.",
+      "code": "# HYPOTHESIS: linear_joint_linear_finger\n# MECHANISM: Action directly changes arm joints linearly; finger position is linear function of arm joints.\nPARAMS = {\"arm_gain_0\": 0.1, \"arm_gain_1\": 0.1, \"finger_scale_x\": 0.05, \"finger_scale_y\": 0.05, \"finger_offset_x\": 0.0, \"finger_offset_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Arm joints change linearly with action\n    ns[\"arm.x\"] = state[\"arm.x\"] + p[\"arm_gain_0\"] * action[0]\n    ns[\"arm.y\"] = state[\"arm.y\"] + p[\"arm_gain_1\"] * action[1]\n    # Finger is linear function of arm joints\n    ns[\"finger.x\"] = p[\"finger_scale_x\"] * state[\"arm.x\"] + p[\"finger_offset_x\"]\n    ns[\"finger.y\"] = p[\"finger_scale_y\"] * state[\"arm.y\"] + p[\"finger_offset_y\"]\n    # Target never changes\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "init_params": {
+        "arm_gain_0": 0.1,
+        "arm_gain_1": 0.1,
+        "finger_scale_x": 0.05,
+        "finger_scale_y": 0.05,
+        "finger_offset_x": 0.0,
+        "finger_offset_y": 0.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "forward_kinematics_2link",
+      "mechanism": "Action controls joint velocities; finger computed via 2-link forward kinematics (trigonometric).",
+      "code": "# HYPOTHESIS: forward_kinematics_2link\n# MECHANISM: Action controls joint velocities; finger computed via 2-link forward kinematics (trigonometric).\nPARAMS = {\"joint_gain_0\": 0.15, \"joint_gain_1\": 0.15, \"link_length_1\": 0.15, \"link_length_2\": 0.12, \"base_offset_x\": 0.0, \"base_offset_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Joints evolve with velocity proportional to action\n    ns[\"arm.x\"] = state[\"arm.x\"] + p[\"joint_gain_0\"] * action[0]\n    ns[\"arm.y\"] = state[\"arm.y\"] + p[\"joint_gain_1\"] * action[1]\n    # Forward kinematics: finger = base + link1*cos/sin(joint0) + link2*cos/sin(joint0+joint1)\n    j0 = state[\"arm.x\"]\n    j1 = state[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"base_offset_x\"] + p[\"link_length_1\"] * math.cos(j0) + p[\"link_length_2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"base_offset_y\"] + p[\"link_length_1\"] * math.sin(j0) + p[\"link_length_2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "init_params": {
+        "joint_gain_0": 0.15,
+        "joint_gain_1": 0.15,
+        "link_length_1": 0.15,
+        "link_length_2": 0.12,
+        "base_offset_x": 0.0,
+        "base_offset_y": 0.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_joint_dynamics",
+      "mechanism": "Action controls joint acceleration; joints have implicit velocity (momentum) that carries over between steps.",
+      "code": "# HYPOTHESIS: momentum_joint_dynamics\n# MECHANISM: Action controls joint acceleration; joints have implicit velocity (momentum) that carries over between steps.\nPARAMS = {\"accel_gain_0\": 0.02, \"accel_gain_1\": 0.02, \"damping_0\": 0.9, \"damping_1\": 0.9, \"fk_scale_x\": 0.05, \"fk_scale_y\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Use meta to store velocity between calls (simulated momentum)\n    vel_key = meta.get(\"episode_index\", 0)\n    if \"_vel\" not in meta:\n        meta[\"_vel\"] = [0.0, 0.0]\n    # Acceleration from action\n    acc0 = p[\"accel_gain_0\"] * action[0]\n    acc1 = p[\"accel_gain_1\"] * action[1]\n    # Update velocity with damping\n    meta[\"_vel\"][0] = p[\"damping_0\"] * meta[\"_vel\"][0] + acc0\n    meta[\"_vel\"][1] = p[\"damping_1\"] * meta[\"_vel\"][1] + acc1\n    # Update position from velocity\n    ns[\"arm.x\"] = state[\"arm.x\"] + meta[\"_vel\"][0]\n    ns[\"arm.y\"] = state[\"arm.y\"] + meta[\"_vel\"][1]\n    # Simple FK for finger\n    ns[\"finger.x\"] = p[\"fk_scale_x\"] * math.sin(state[\"arm.x\"])\n    ns[\"finger.y\"] = p[\"fk_scale_y\"] * math.cos(state[\"arm.y\"])\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "init_params": {
+        "accel_gain_0": 0.02,
+        "accel_gain_1": 0.02,
+        "damping_0": 0.9,
+        "damping_1": 0.9,
+        "fk_scale_x": 0.05,
+        "fk_scale_y": 0.05
+      },
+      "repaired": false
+    },
+    {
+      "name": "coupled_joint_dynamics",
+      "mechanism": "Joints are coupled; action on one joint affects both joint positions (non-diagonal dynamics matrix).",
+      "code": "# HYPOTHESIS: coupled_joint_dynamics\n# MECHANISM: Joints are coupled; action on one joint affects both joint positions (non-diagonal dynamics matrix).\nPARAMS = {\"couple_00\": 0.1, \"couple_01\": 0.02, \"couple_10\": 0.02, \"couple_11\": 0.1, \"fk_l1\": 0.14, \"fk_l2\": 0.11}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Coupled linear dynamics: delta_joint = M @ action\n    d0 = p[\"couple_00\"] * action[0] + p[\"couple_01\"] * action[1]\n    d1 = p[\"couple_10\"] * action[0] + p[\"couple_11\"] * action[1]\n    ns[\"arm.x\"] = state[\"arm.x\"] + d0\n    ns[\"arm.y\"] = state[\"arm.y\"] + d1\n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "init_params": {
+        "couple_00": 0.1,
+        "couple_01": 0.02,
+        "couple_10": 0.02,
+        "couple_11": 0.1,
+        "fk_l1": 0.14,
+        "fk_l2": 0.11
+      },
+      "repaired": false
+    },
+    {
+      "name": "saturated_joint_limits",
+      "mechanism": "Linear joint dynamics with hard saturation at learned joint limits; finger from forward kinematics.",
+      "code": "# HYPOTHESIS: saturated_joint_limits\n# MECHANISM: Linear joint dynamics with hard saturation at learned joint limits; finger from forward kinematics.\nPARAMS = {\"joint_gain_0\": 0.12, \"joint_gain_1\": 0.12, \"joint_min_0\": -4.0, \"joint_max_0\": 4.0, \"joint_min_1\": -2.5, \"joint_max_1\": 2.5, \"fk_l1\": 0.13, \"fk_l2\": 0.10}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Linear dynamics with saturation\n    raw_x = state[\"arm.x\"] + p[\"joint_gain_0\"] * action[0]\n    raw_y = state[\"arm.y\"] + p[\"joint_gain_1\"] * action[1]\n    ns[\"arm.x\"] = max(p[\"joint_min_0\"], min(p[\"joint_max_0\"], raw_x))\n    ns[\"arm.y\"] = max(p[\"joint_min_1\"], min(p[\"joint_max_1\"], raw_y))\n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "init_params": {
+        "joint_gain_0": 0.12,
+        "joint_gain_1": 0.12,
+        "joint_min_0": -4.0,
+        "joint_max_0": 4.0,
+        "joint_min_1": -2.5,
+        "joint_max_1": 2.5,
+        "fk_l1": 0.13,
+        "fk_l2": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "action_dependent_kinematics",
+      "mechanism": "Joint dynamics are linear, but the finger kinematics change based on current action (gearing/elasticity effect).",
+      "code": "# HYPOTHESIS: action_dependent_kinematics\n# MECHANISM: Joint dynamics are linear, but the finger kinematics change based on current action (gearing/elasticity effect).\nPARAMS = {\"joint_gain_0\": 0.13, \"joint_gain_1\": 0.13, \"fk_base_l1\": 0.14, \"fk_base_l2\": 0.11, \"fk_action_scale_1\": 0.01, \"fk_action_scale_2\": 0.01}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Linear joint dynamics\n    ns[\"arm.x\"] = state[\"arm.x\"] + p[\"joint_gain_0\"] * action[0]\n    ns[\"arm.y\"] = state[\"arm.y\"] + p[\"joint_gain_1\"] * action[1]\n    # Action-dependent link lengths (simulates compliance or variable gearing)\n    eff_l1 = p[\"fk_base_l1\"] + p[\"fk_action_scale_1\"] * abs(action[0])\n    eff_l2 = p[\"fk_base_l2\"] + p[\"fk_action_scale_2\"] * abs(action[1])\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = eff_l1 * math.cos(j0) + eff_l2 * math.cos(j0 + j1)\n    ns[\"finger.y\"] = eff_l1 * math.sin(j0) + eff_l2 * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "init_params": {
+        "joint_gain_0": 0.13,
+        "joint_gain_1": 0.13,
+        "fk_base_l1": 0.14,
+        "fk_base_l2": 0.11,
+        "fk_action_scale_1": 0.01,
+        "fk_action_scale_2": 0.01
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_joint_linear_finger": {
+        "params": {
+          "arm_gain_0": 0.5827794692564942,
+          "arm_gain_1": 0.8797641953521051,
+          "finger_scale_x": 0.01064824522123636,
+          "finger_scale_y": -0.004743190292046552,
+          "finger_offset_x": -0.021103215247307662,
+          "finger_offset_y": -0.0005859941041644636
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 6.92815903934508,
+        "val_one_step_nrmse": 2.999571434754758,
+        "val_rollout_nrmse": 3.037799853806691,
+        "restarts": 4,
+        "nfev": 19,
+        "elapsed_s": 3.2678310871124268,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.92815903934508,
+            "val_rollout_nrmse": 3.037799853806691
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.92815903934508,
+            "val_rollout_nrmse": 3.0377998538422584
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.92815903934508,
+            "val_rollout_nrmse": 3.037799853857831
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.92815903934508,
+            "val_rollout_nrmse": 3.0377998538502635
+          }
+        ]
+      },
+      "forward_kinematics_2link": {
+        "params": {
+          "joint_gain_0": 0.5827794703486704,
+          "joint_gain_1": 0.8797641947798513,
+          "link_length_1": 0.11901750727948975,
+          "link_length_2": 0.11534995158100783,
+          "base_offset_x": 4.6905750620871787e-05,
+          "base_offset_y": 0.0005157695786612286
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.4020827228325868,
+        "val_one_step_nrmse": 0.7224501489203441,
+        "val_rollout_nrmse": 1.0086202269372588,
+        "restarts": 4,
+        "nfev": 17,
+        "elapsed_s": 4.099493980407715,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4020827228325868,
+            "val_rollout_nrmse": 1.0086202277746936
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.40208272283258684,
+            "val_rollout_nrmse": 1.0086202281022931
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.4020827228325868,
+            "val_rollout_nrmse": 1.0086202278054617
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.4020827228325868,
+            "val_rollout_nrmse": 1.0086202269372588
+          }
+        ]
+      },
+      "momentum_joint_dynamics": {
+        "params": {
+          "accel_gain_0": -0.22393273343241832,
+          "accel_gain_1": 1.129307044912239,
+          "damping_0": 1.0553284800761664,
+          "damping_1": 0.34507726493075885,
+          "fk_scale_x": 0.0076334441015903295,
+          "fk_scale_y": 0.006714921854388586
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 7.399196777750283,
+        "val_one_step_nrmse": 359.4247029054778,
+        "val_rollout_nrmse": 3.6139579472726164,
+        "restarts": 4,
+        "nfev": 71,
+        "elapsed_s": 8.35058069229126,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.399196777750283,
+            "val_rollout_nrmse": 3.6139579472726164
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.31291264006202,
+            "val_rollout_nrmse": 7.54870442764643
+          },
+          {
+            "restart": 2,
+            "train_loss": 716026.7434654015,
+            "val_rollout_nrmse": 13.94847490354221
+          },
+          {
+            "restart": 3,
+            "train_loss": 44268.21607332309,
+            "val_rollout_nrmse": 387.4822637638831
+          }
+        ]
+      },
+      "coupled_joint_dynamics": {
+        "params": {
+          "couple_00": 0.5377760678328002,
+          "couple_01": -0.09127059675584175,
+          "couple_10": -0.08281124699433191,
+          "couple_11": 0.8642884315029056,
+          "fk_l1": 0.11988060349781117,
+          "fk_l2": 0.11849476666685167
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.19006788421955206,
+        "val_one_step_nrmse": 0.4912031328395676,
+        "val_rollout_nrmse": 0.9443129370843236,
+        "restarts": 4,
+        "nfev": 23,
+        "elapsed_s": 8.204570055007935,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1900678842194978,
+            "val_rollout_nrmse": 0.9443129536549776
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1900678842194977,
+            "val_rollout_nrmse": 0.9443129555709034
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.19006788421955206,
+            "val_rollout_nrmse": 0.9443129370843236
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.19006788421949775,
+            "val_rollout_nrmse": 0.944312957930852
+          }
+        ]
+      },
+      "saturated_joint_limits": {
+        "params": {
+          "joint_gain_0": 0.5141375258286557,
+          "joint_gain_1": 0.8317221441694915,
+          "joint_min_0": -4.858902978475393,
+          "joint_max_0": 5.07343238606484,
+          "joint_min_1": -3.9802064327420736,
+          "joint_max_1": 2.804197062859198,
+          "fk_l1": 0.11980559148385116,
+          "fk_l2": 0.11842969910068422
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.1927723360889582,
+        "val_one_step_nrmse": 0.6019119840630774,
+        "val_rollout_nrmse": 1.0007874293526502,
+        "restarts": 4,
+        "nfev": 119,
+        "elapsed_s": 35.91125559806824,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.19014514792743828,
+            "val_rollout_nrmse": 1.1376253450426872
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1975663098990996,
+            "val_rollout_nrmse": 1.2282964146160138
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.1927723360889582,
+            "val_rollout_nrmse": 1.0007874293526502
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.19507134960263028,
+            "val_rollout_nrmse": 1.3150629226016433
+          }
+        ]
+      },
+      "action_dependent_kinematics": {
+        "params": {
+          "joint_gain_0": 0.513633734294256,
+          "joint_gain_1": 0.8148749284086122,
+          "fk_base_l1": 0.12015654251189072,
+          "fk_base_l2": 0.1184197786322228,
+          "fk_action_scale_1": -0.001298740808435776,
+          "fk_action_scale_2": -0.00024713409265620826
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.1977390800930066,
+        "val_one_step_nrmse": 0.4977451022964872,
+        "val_rollout_nrmse": 0.9330437134055316,
+        "restarts": 4,
+        "nfev": 24,
+        "elapsed_s": 9.16309666633606,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1977390800930066,
+            "val_rollout_nrmse": 0.9330437134055316
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1977390800929925,
+            "val_rollout_nrmse": 0.933043727312074
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.19773908009299832,
+            "val_rollout_nrmse": 0.9330437149211396
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.19773908009298122,
+            "val_rollout_nrmse": 0.933043786551258
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_joint_linear_finger": {
+        "params": {
+          "arm_gain_0": 0.8169928170875531,
+          "arm_gain_1": 0.9052929833650499,
+          "finger_scale_x": 0.011111733776207337,
+          "finger_scale_y": -0.004634969401855358,
+          "finger_offset_x": -0.02063891403729431,
+          "finger_offset_y": 0.00047218898626404137
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.949360911991601,
+        "val_one_step_nrmse": 3.005566277513861,
+        "val_rollout_nrmse": 3.0254865821959376,
+        "restarts": 4,
+        "nfev": 24,
+        "elapsed_s": 21.313599824905396,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.949360911991661,
+            "val_rollout_nrmse": 3.0254866005268566
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.949360911991631,
+            "val_rollout_nrmse": 3.0254865942170777
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.949360911991678,
+            "val_rollout_nrmse": 3.0254866040703345
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.949360911991601,
+            "val_rollout_nrmse": 3.0254865821959376
+          }
+        ]
+      },
+      "forward_kinematics_2link": {
+        "params": {
+          "joint_gain_0": 0.851203421135124,
+          "joint_gain_1": 0.9072882186082378,
+          "link_length_1": 0.11986746932809265,
+          "link_length_2": 0.11393640570979875,
+          "base_offset_x": 2.850686318140749e-05,
+          "base_offset_y": 0.0007924219202427932
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.5644060207261381,
+        "val_one_step_nrmse": 0.7374913889043304,
+        "val_rollout_nrmse": 0.8369981066268234,
+        "restarts": 4,
+        "nfev": 24,
+        "elapsed_s": 24.240638256072998,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5644060207261191,
+            "val_rollout_nrmse": 0.8369981104373388
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5644060207261381,
+            "val_rollout_nrmse": 0.8369981066268234
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5644060207260774,
+            "val_rollout_nrmse": 0.836998112506968
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5644060207259178,
+            "val_rollout_nrmse": 0.8369981530232563
+          }
+        ]
+      },
+      "momentum_joint_dynamics": {
+        "params": {
+          "accel_gain_0": 0.029650633768986637,
+          "accel_gain_1": -0.07576825806138765,
+          "damping_0": 1.2140345053663557,
+          "damping_1": 0.8752533361419298,
+          "fk_scale_x": 0.0987287532364953,
+          "fk_scale_y": 0.07795845868284754
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 9.74757817564889,
+        "val_one_step_nrmse": 284.1395471178888,
+        "val_rollout_nrmse": 6.643596151172764,
+        "restarts": 4,
+        "nfev": 430,
+        "elapsed_s": 242.84888672828674,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.970256394499529,
+            "val_rollout_nrmse": 328.2048839671945
+          },
+          {
+            "restart": 1,
+            "train_loss": 13.014365100756455,
+            "val_rollout_nrmse": 79.53345740219362
+          },
+          {
+            "restart": 2,
+            "train_loss": 9.74757817564889,
+            "val_rollout_nrmse": 6.643596151172764
+          },
+          {
+            "restart": 3,
+            "train_loss": 11098660452.371813,
+            "val_rollout_nrmse": 294.84024212670437
+          }
+        ]
+      },
+      "coupled_joint_dynamics": {
+        "params": {
+          "couple_00": 0.7884277922822854,
+          "couple_01": -0.01946349403819185,
+          "couple_10": -0.03151703216511079,
+          "couple_11": 0.8889644333954608,
+          "fk_l1": 0.12018674954669388,
+          "fk_l2": 0.11664211435392297
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.4059521131383216,
+        "val_one_step_nrmse": 0.5423423869280773,
+        "val_rollout_nrmse": 0.7157348153426155,
+        "restarts": 4,
+        "nfev": 25,
+        "elapsed_s": 11.533040761947632,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.40595211313830404,
+            "val_rollout_nrmse": 0.7157348300297165
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.40595211313831076,
+            "val_rollout_nrmse": 0.7157348251728229
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.4059521131383216,
+            "val_rollout_nrmse": 0.7157348199341117
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.4059521131383216,
+            "val_rollout_nrmse": 0.7157348153426155
+          }
+        ]
+      },
+      "saturated_joint_limits": {
+        "params": {
+          "joint_gain_0": 0.7804757301005651,
+          "joint_gain_1": 0.938005252754873,
+          "joint_min_0": -4.965251704203051,
+          "joint_max_0": 31.22660251776397,
+          "joint_min_1": -2.7737574741299187,
+          "joint_max_1": 2.7707175947081026,
+          "fk_l1": 0.11959898639281276,
+          "fk_l2": 0.11716831877565288
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.34604851275587467,
+        "val_one_step_nrmse": 0.5431491995827535,
+        "val_rollout_nrmse": 0.702427499264006,
+        "restarts": 4,
+        "nfev": 80,
+        "elapsed_s": 29.110481023788452,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.34604851275587467,
+            "val_rollout_nrmse": 0.702427499264006
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4076594492232057,
+            "val_rollout_nrmse": 0.7161230126141535
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.34604851358277333,
+            "val_rollout_nrmse": 1.1880759653297481
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3866872104199674,
+            "val_rollout_nrmse": 0.809079288621078
+          }
+        ]
+      },
+      "action_dependent_kinematics": {
+        "params": {
+          "joint_gain_0": 0.7798252151505971,
+          "joint_gain_1": 0.8792613638573459,
+          "fk_base_l1": 0.1209875914537389,
+          "fk_base_l2": 0.11668964603827509,
+          "fk_action_scale_1": -0.003769695872313703,
+          "fk_action_scale_2": -0.0006299269857127604
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.4075814128823763,
+        "val_one_step_nrmse": 0.5461751986948715,
+        "val_rollout_nrmse": 0.7163304574418956,
+        "restarts": 4,
+        "nfev": 27,
+        "elapsed_s": 12.365082263946533,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4075814128822563,
+            "val_rollout_nrmse": 0.716330497373483
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4075814128822516,
+            "val_rollout_nrmse": 0.716330497582236
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.40758141288225114,
+            "val_rollout_nrmse": 0.7163304960086974
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.4075814128823763,
+            "val_rollout_nrmse": 0.7163304574418956
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "action_dependent_kinematics",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_joint_linear_finger": 3.037799853806691,
+        "forward_kinematics_2link": 1.0086202269372588,
+        "momentum_joint_dynamics": 3.6139579472726164,
+        "coupled_joint_dynamics": 0.9443129370843236,
+        "saturated_joint_limits": 1.0007874293526502,
+        "action_dependent_kinematics": 0.9330437134055316
+      }
+    },
+    "active_one_step": {
+      "winner": "saturated_joint_limits",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "arm.x",
+        "arm.y",
+        "finger.x",
+        "finger.y"
+      ],
+      "scores": {
+        "linear_joint_linear_finger": 3.388863060459724,
+        "forward_kinematics_2link": 1.4430051639074797,
+        "momentum_joint_dynamics": 64.08520119586255,
+        "coupled_joint_dynamics": 1.306630160398024,
+        "saturated_joint_limits": 1.2489964344192859,
+        "action_dependent_kinematics": 1.2848173794729996
+      },
+      "probes": [
+        {
+          "disagreement": 903.5920422830844,
+          "actions": [
+            [
+              -0.43352308786197696,
+              0.6585841507070475
+            ],
+            [
+              -0.19534116034346494,
+              0.056292810704746565
+            ],
+            [
+              -0.3102421879462749,
+              0.7869357884843643
+            ]
+          ],
+          "start": {
+            "arm.x": 2.799,
+            "arm.y": 0.555,
+            "finger.x": -0.23,
+            "finger.y": 0.015,
+            "target.x": 0.065,
+            "target.y": 0.065
+          },
+          "errors": {
+            "linear_joint_linear_finger": 3.2567484475628,
+            "forward_kinematics_2link": 1.1292764168232656,
+            "momentum_joint_dynamics": 14.014353224970222,
+            "coupled_joint_dynamics": 0.6840070890297262,
+            "saturated_joint_limits": 0.7736383138293975,
+            "action_dependent_kinematics": 0.8174026369396039
+          }
+        },
+        {
+          "disagreement": 863.8437607529494,
+          "actions": [
+            [
+              -0.5491678392026218,
+              -0.5096768165582573
+            ],
+            [
+              -0.14396150437939326,
+              0.1704765784054042
+            ],
+            [
+              0.714989176639943,
+              0.731076051789301
+            ]
+          ],
+          "start": {
+            "arm.x": 2.46,
+            "arm.y": -1.457,
+            "finger.x": -0.029,
+            "finger.y": 0.177,
+            "target.x": -0.012,
+            "target.y": 0.141
+          },
+          "errors": {
+            "linear_joint_linear_finger": 3.168440343270846,
+            "forward_kinematics_2link": 1.8252490259364786,
+            "momentum_joint_dynamics": 106.79696482006756,
+            "coupled_joint_dynamics": 1.765310802605979,
+            "saturated_joint_limits": 1.767656689199669,
+            "action_dependent_kinematics": 1.764385511183063
+          }
+        },
+        {
+          "disagreement": 810.8199204658285,
+          "actions": [
+            [
+              -0.6435647637468773,
+              -0.08649889860934457
+            ],
+            [
+              -0.12732102337614193,
+              0.34185410291019147
+            ],
+            [
+              -0.27928561543943287,
+              0.009502284247239867
+            ]
+          ],
+          "start": {
+            "arm.x": -0.594,
+            "arm.y": 0.032,
+            "finger.x": 0.201,
+            "finger.y": -0.131,
+            "target.x": -0.084,
+            "target.y": -0.067
+          },
+          "errors": {
+            "linear_joint_linear_finger": 4.649827386340786,
+            "forward_kinematics_2link": 1.6012188647924832,
+            "momentum_joint_dynamics": 99.8491810532141,
+            "coupled_joint_dynamics": 1.3158244206841294,
+            "saturated_joint_limits": 1.3934210800657412,
+            "action_dependent_kinematics": 1.3896605697846538
+          }
+        },
+        {
+          "disagreement": 810.4717195098742,
+          "actions": [
+            [
+              -0.30791097236032827,
+              -0.604206211705959
+            ],
+            [
+              0.31496281316965935,
+              -0.5800851757521801
+            ],
+            [
+              0.5316110784947303,
+              -0.11393311972485498
+            ]
+          ],
+          "start": {
+            "arm.x": -1.692,
+            "arm.y": 0.84,
+            "finger.x": 0.064,
+            "finger.y": -0.209,
+            "target.x": -0.175,
+            "target.y": -0.032
+          },
+          "errors": {
+            "linear_joint_linear_finger": 4.113722998214904,
+            "forward_kinematics_2link": 1.6900478577710323,
+            "momentum_joint_dynamics": 56.25015660442977,
+            "coupled_joint_dynamics": 1.8276141805668091,
+            "saturated_joint_limits": 1.475472316393879,
+            "action_dependent_kinematics": 1.52104055098157
+          }
+        },
+        {
+          "disagreement": 799.3743170833679,
+          "actions": [
+            [
+              -0.6778015413718688,
+              -0.02501227152375396
+            ],
+            [
+              0.09662980089750473,
+              0.21476082743661395
+            ],
+            [
+              0.25767621212089353,
+              0.6205962634375414
+            ]
+          ],
+          "start": {
+            "arm.x": -1.808,
+            "arm.y": 2.469,
+            "finger.x": 0.067,
+            "finger.y": -0.043,
+            "target.x": -0.175,
+            "target.y": -0.032
+          },
+          "errors": {
+            "linear_joint_linear_finger": 1.7555761269092818,
+            "forward_kinematics_2link": 0.9692336542141375,
+            "momentum_joint_dynamics": 43.515350276631104,
+            "coupled_joint_dynamics": 0.9403943091034761,
+            "saturated_joint_limits": 0.8347937726077423,
+            "action_dependent_kinematics": 0.9315976284761066
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.7554845809936523
+    },
+    "offline_multi_step": {
+      "winner": "saturated_joint_limits",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_joint_linear_finger": 3.0254865821959376,
+        "forward_kinematics_2link": 0.8369981066268234,
+        "momentum_joint_dynamics": 6.643596151172764,
+        "coupled_joint_dynamics": 0.7157348153426155,
+        "saturated_joint_limits": 0.702427499264006,
+        "action_dependent_kinematics": 0.7163304574418956
+      }
+    },
+    "active_multi_step": {
+      "winner": "coupled_joint_dynamics",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "arm.x",
+        "arm.y",
+        "finger.x",
+        "finger.y"
+      ],
+      "scores": {
+        "linear_joint_linear_finger": 4.167796248040994,
+        "forward_kinematics_2link": 1.034361749000509,
+        "momentum_joint_dynamics": 33821.86181782141,
+        "coupled_joint_dynamics": 0.947893749426413,
+        "saturated_joint_limits": 0.9535817331457925,
+        "action_dependent_kinematics": 0.9557406157370455
+      },
+      "probes": [
+        {
+          "disagreement": 6629.446124605734,
+          "actions": [
+            [
+              -0.16613762036773194,
+              -0.5229565185248748
+            ],
+            [
+              -0.16613762036773194,
+              -0.5229565185248748
+            ],
+            [
+              -0.16613762036773194,
+              -0.5229565185248748
+            ]
+          ],
+          "start": {
+            "arm.x": -0.886,
+            "arm.y": -0.27,
+            "finger.x": 0.124,
+            "finger.y": -0.203,
+            "target.x": -0.084,
+            "target.y": -0.067
+          },
+          "errors": {
+            "linear_joint_linear_finger": 3.7291551554374323,
+            "forward_kinematics_2link": 0.9860865239546978,
+            "momentum_joint_dynamics": 35581.13572476003,
+            "coupled_joint_dynamics": 0.7067768790401119,
+            "saturated_joint_limits": 0.8357525820975085,
+            "action_dependent_kinematics": 0.7652415542051265
+          }
+        },
+        {
+          "disagreement": 5064.943818938386,
+          "actions": [
+            [
+              0.19434075830168251,
+              0.6934652390241963
+            ],
+            [
+              -0.3215907456079851,
+              0.11134999178425331
+            ],
+            [
+              0.06877839639867289,
+              -0.5312552290660274
+            ]
+          ],
+          "start": {
+            "arm.x": -0.278,
+            "arm.y": -0.83,
+            "finger.x": 0.169,
+            "finger.y": -0.14,
+            "target.x": -0.084,
+            "target.y": -0.067
+          },
+          "errors": {
+            "linear_joint_linear_finger": 4.779022916441263,
+            "forward_kinematics_2link": 0.9395687307579531,
+            "momentum_joint_dynamics": 27180.876141982288,
+            "coupled_joint_dynamics": 0.7697522112606432,
+            "saturated_joint_limits": 0.7213730800265001,
+            "action_dependent_kinematics": 0.7564968785615982
+          }
+        },
+        {
+          "disagreement": 4291.677321699919,
+          "actions": [
+            [
+              0.03281229084013748,
+              0.21833239503605462
+            ],
+            [
+              0.03281229084013748,
+              0.21833239503605462
+            ],
+            [
+              0.03281229084013748,
+              0.21833239503605462
+            ]
+          ],
+          "start": {
+            "arm.x": 1.954,
+            "arm.y": -1.079,
+            "finger.x": 0.032,
+            "finger.y": 0.203,
+            "target.x": -0.012,
+            "target.y": 0.141
+          },
+          "errors": {
+            "linear_joint_linear_finger": 4.043360657990511,
+            "forward_kinematics_2link": 0.659671033353151,
+            "momentum_joint_dynamics": 23030.972730874368,
+            "coupled_joint_dynamics": 0.9219901302584156,
+            "saturated_joint_limits": 1.0052312991023171,
+            "action_dependent_kinematics": 0.9621091475219224
+          }
+        },
+        {
+          "disagreement": 3705.9389526936434,
+          "actions": [
+            [
+              0.5266062557081537,
+              0.47103329642077074
+            ],
+            [
+              -0.7305815706266052,
+              0.7512071077236312
+            ],
+            [
+              0.13698555348938612,
+              -0.6130705711113785
+            ]
+          ],
+          "start": {
+            "arm.x": -0.886,
+            "arm.y": -0.27,
+            "finger.x": 0.124,
+            "finger.y": -0.203,
+            "target.x": -0.084,
+            "target.y": -0.067
+          },
+          "errors": {
+            "linear_joint_linear_finger": 4.70502943530504,
+            "forward_kinematics_2link": 1.2457970007111805,
+            "momentum_joint_dynamics": 63667.67005246306,
+            "coupled_joint_dynamics": 1.1366491120277662,
+            "saturated_joint_limits": 1.0318783649185057,
+            "action_dependent_kinematics": 1.102438838276495
+          }
+        },
+        {
+          "disagreement": 3661.54355497551,
+          "actions": [
+            [
+              -0.62847902963498,
+              -0.3238594801070178
+            ],
+            [
+              0.37140528492894265,
+              -0.19700635999521143
+            ],
+            [
+              0.4578103396853863,
+              0.3674031850602809
+            ]
+          ],
+          "start": {
+            "arm.x": 2.386,
+            "arm.y": -0.875,
+            "finger.x": -0.08,
+            "finger.y": 0.202,
+            "target.x": -0.012,
+            "target.y": 0.141
+          },
+          "errors": {
+            "linear_joint_linear_finger": 3.5824130750307206,
+            "forward_kinematics_2link": 1.3406854562255628,
+            "momentum_joint_dynamics": 19648.654439027334,
+            "coupled_joint_dynamics": 1.2043004145451275,
+            "saturated_joint_limits": 1.1736733395841314,
+            "action_dependent_kinematics": 1.192416660120085
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.05795001983642578
+    }
+  },
+  "args": {
+    "env": "reacher",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/v1_reacher_qwen35_s2",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "seed": 2,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 487.4026370048523
+}

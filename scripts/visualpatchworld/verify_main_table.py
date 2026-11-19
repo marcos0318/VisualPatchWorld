@@ -28,8 +28,8 @@ LLMS = {
 ROWS = {
     "WorldCoder": "worldcoder", "GIF-MCTS": "gif_mcts", "PoE-World": "poeworld",
     "POMDP-Coder": "pomdp_coder", "CWM": "cwm_game", "PatchWorld": "tracepatch",
-    "Ours, one-step fit": ("v1", "offline_one_step"),
-    "Ours, multi-step fit": ("v1", "offline_multi_step"),
+    "VPW, one-step fit": ("v1", "offline_one_step"),
+    "VPW, multi-step fit": ("v1", "offline_multi_step"),
     "+ mechanism bank": ("bank_general", "offline_multi_step"),
 }
 CELL = re.compile(r"^(\\textbf\{)?([\d.]+)\}?(?:\\,\$\\pm\$\\,([\d.]+))?(\$\^\\dagger\$)?$")

@@ -1,0 +1,1000 @@
+{
+  "env": "reacher",
+  "llm_model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+  "schema": {
+    "state_keys": [
+      "arm.x",
+      "arm.y",
+      "finger.x",
+      "finger.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "arm.x": {
+        "min": -4.981,
+        "max": 4.435
+      },
+      "arm.y": {
+        "min": -2.899,
+        "max": 2.869
+      },
+      "finger.x": {
+        "min": -0.24,
+        "max": 0.239
+      },
+      "finger.y": {
+        "min": -0.24,
+        "max": 0.24
+      },
+      "target.x": {
+        "min": -0.195,
+        "max": 0.17
+      },
+      "target.y": {
+        "min": -0.194,
+        "max": 0.196
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.812,
+      -0.745
+    ],
+    "action_max": [
+      0.732,
+      0.787
+    ],
+    "num_episodes": 51,
+    "num_transitions": 2040
+  },
+  "scales": {
+    "arm.x": 0.1874797487871841,
+    "arm.y": 0.23021797342125136,
+    "finger.x": 0.02727790853899584,
+    "finger.y": 0.027242596319182195,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "linear_joint_control",
+      "mechanism": "Actions directly change joint positions with linear response and no momentum",
+      "code": "# HYPOTHESIS: linear_joint_control\n# MECHANISM: Actions directly change joint positions with linear response and no momentum\nPARAMS = {\"gain_x\": 1.0, \"gain_y\": 1.0}\n\ndef step(state, action, p, meta):\n    next_state = {}\n    next_state[\"arm.x\"] = state[\"arm.x\"] + action[0] * p[\"gain_x\"]\n    next_state[\"arm.y\"] = state[\"arm.y\"] + action[1] * p[\"gain_y\"]\n    next_state[\"finger.x\"] = state[\"finger.x\"]  # Finger position determined by arm kinematics\n    next_state[\"finger.y\"] = state[\"finger.y\"]\n    next_state[\"target.x\"] = state[\"target.x\"]  # Target is static\n    next_state[\"target.y\"] = state[\"target.y\"]\n    return next_state",
+      "init_params": {
+        "gain_x": 1.0,
+        "gain_y": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_joint_control",
+      "mechanism": "Actions apply forces to joints with momentum-based integration",
+      "code": "# HYPOTHESIS: momentum_joint_control\n# MECHANISM: Actions apply forces to joints with momentum-based integration\nPARAMS = {\"mass_arm_x\": 1.0, \"mass_arm_y\": 1.0, \"damping\": 0.1}\n\ndef step(state, action, p, meta):\n    next_state = {}\n    # Assume previous velocity is zero for simplicity, or derive from previous state if available\n    # Here we approximate using action as force and compute acceleration\n    acc_x = action[0] / p[\"mass_arm_x\"]\n    acc_y = action[1] / p[\"mass_arm_y\"]\n    \n    # Update velocities (assuming dt=1)\n    vel_x = acc_x - state.get(\"arm.vx\", 0) * p[\"damping\"]\n    vel_y = acc_y - state.get(\"arm.vy\", 0) * p[\"damping\"]\n    \n    # Update positions\n    next_state[\"arm.x\"] = state[\"arm.x\"] + vel_x\n    next_state[\"arm.y\"] = state[\"arm.y\"] + vel_y\n    \n    # Finger position follows arm (simplified)\n    next_state[\"finger.x\"] = state[\"finger.x\"] + (next_state[\"arm.x\"] - state[\"arm.x\"])\n    next_state[\"finger.y\"] = state[\"finger.y\"] + (next_state[\"arm.y\"] - state[\"arm.y\"])\n    \n    next_state[\"target.x\"] = state[\"target.x\"]\n    next_state[\"target.y\"] = state[\"target.y\"]\n    return next_state",
+      "init_params": {
+        "mass_arm_x": 1.0,
+        "mass_arm_y": 1.0,
+        "damping": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "coupled_end_effector_control",
+      "mechanism": "Actions control end-effector movement directly through inverse kinematics",
+      "code": "# HYPOTHESIS: coupled_end_effector_control\n# MECHANISM: Actions control end-effector movement directly through inverse kinematics\nPARAMS = {\"effector_gain_x\": 1.0, \"effector_gain_y\": 1.0, \"link_length\": 1.0}\n\ndef step(state, action, p, meta):\n    next_state = {}\n    # Move finger directly according to action\n    next_state[\"finger.x\"] = state[\"finger.x\"] + action[0] * p[\"effector_gain_x\"]\n    next_state[\"finger.y\"] = state[\"finger.y\"] + action[1] * p[\"effector_gain_y\"]\n    \n    # Arm position updates based on finger movement (inverse kinematics)\n    # Simplified assumption: arm moves to maintain finger position\n    dx = next_state[\"finger.x\"] - state[\"finger.x\"]\n    dy = next_state[\"finger.y\"] - state[\"finger.y\"]\n    next_state[\"arm.x\"] = state[\"arm.x\"] + dx / p[\"link_length\"]\n    next_state[\"arm.y\"] = state[\"arm.y\"] + dy / p[\"link_length\"]\n    \n    next_state[\"target.x\"] = state[\"target.x\"]\n    next_state[\"target.y\"] = state[\"target.y\"]\n    return next_state",
+      "init_params": {
+        "effector_gain_x": 1.0,
+        "effector_gain_y": 1.0,
+        "link_length": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "saturated_joint_control",
+      "mechanism": "Joint movements are subject to physical limits causing saturation effects",
+      "code": "# HYPOTHESIS: saturated_joint_control\n# MECHANISM: Joint movements are subject to physical limits causing saturation effects\nPARAMS = {\"max_rate\": 0.5, \"min_x\": -5.0, \"max_x\": 5.0, \"min_y\": -3.0, \"max_y\": 3.0}\n\ndef step(state, action, p, meta):\n    next_state = {}\n    # Apply rate limiting\n    delta_x = max(min(action[0], p[\"max_rate\"]), -p[\"max_rate\"])\n    delta_y = max(min(action[1], p[\"max_rate\"]), -p[\"max_rate\"])\n    \n    new_x = state[\"arm.x\"] + delta_x\n    new_y = state[\"arm.y\"] + delta_y\n    \n    # Apply position limits\n    next_state[\"arm.x\"] = max(min(new_x, p[\"max_x\"]), p[\"min_x\"])\n    next_state[\"arm.y\"] = max(min(new_y, p[\"max_y\"]), p[\"min_y\"])\n    \n    # Finger position derived from arm (placeholder)\n    next_state[\"finger.x\"] = state[\"finger.x\"] + delta_x\n    next_state[\"finger.y\"] = state[\"finger.y\"] + delta_y\n    \n    next_state[\"target.x\"] = state[\"target.x\"]\n    next_state[\"target.y\"] = state[\"target.y\"]\n    return next_state",
+      "init_params": {
+        "max_rate": 0.5,
+        "min_x": -5.0,
+        "max_x": 5.0,
+        "min_y": -3.0,
+        "max_y": 3.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "delayed_response_model",
+      "mechanism": "System has internal states that cause delayed response to actions",
+      "code": "# HYPOTHESIS: delayed_response_model\n# MECHANISM: System has internal states that cause delayed response to actions\nPARAMS = {\"delay_factor\": 0.7, \"response_rate\": 0.3}\n\ndef step(state, action, p, meta):\n    next_state = {}\n    # Introduce delay through internal state memory (approximated here)\n    # This simulates systems where current output depends on past inputs\n    \n    # Compute intended change\n    intent_x = action[0] * p[\"response_rate\"]\n    intent_y = action[1] * p[\"response_rate\"]\n    \n    # Mix with previous state to simulate delay\n    next_state[\"arm.x\"] = state[\"arm.x\"] * p[\"delay_factor\"] + intent_x * (1 - p[\"delay_factor\"])\n    next_state[\"arm.y\"] = state[\"arm.y\"] * p[\"delay_factor\"] + intent_y * (1 - p[\"delay_factor\"])\n    \n    # Finger position follows arm approximately\n    next_state[\"finger.x\"] = state[\"finger.x\"] + (next_state[\"arm.x\"] - state[\"arm.x\"])\n    next_state[\"finger.y\"] = state[\"finger.y\"] + (next_state[\"arm.y\"] - state[\"arm.y\"])\n    \n    next_state[\"target.x\"] = state[\"target.x\"]\n    next_state[\"target.y\"] = state[\"target.y\"]\n    return next_state",
+      "init_params": {
+        "delay_factor": 0.7,
+        "response_rate": 0.3
+      },
+      "repaired": false
+    },
+    {
+      "name": "obstacle_avoidance_dynamics",
+      "mechanism": "Motion is influenced by repulsive forces from boundaries or other objects",
+      "code": "# HYPOTHESIS: obstacle_avoidance_dynamics\n# MECHANISM: Motion is influenced by repulsive forces from boundaries or other objects\nPARAMS = {\"repulsion_strength\": 0.1, \"boundary_margin\": 0.5, \"max_speed\": 0.4}\n\ndef step(state, action, p, meta):\n    next_state = {}\n    \n    # Base movement from action\n    dx = action[0]\n    dy = action[1]\n    \n    # Limit speed\n    speed = math.sqrt(dx*dx + dy*dy)\n    if speed > p[\"max_speed\"]:\n        scale = p[\"max_speed\"] / speed\n        dx *= scale\n        dy *= scale\n    \n    # Add repulsion from boundaries\n    boundary_force_x = 0\n    boundary_force_y = 0\n    \n    # Repel from x boundaries\n    if state[\"arm.x\"] < p[\"boundary_margin\"]:\n        boundary_force_x += p[\"repulsion_strength\"] / (state[\"arm.x\"] - (-5))  # Assuming min x ~ -5\n    elif state[\"arm.x\"] > 5 - p[\"boundary_margin\"]:\n        boundary_force_x -= p[\"repulsion_strength\"] / (5 - state[\"arm.x\"])\n        \n    # Repel from y boundaries  \n    if state[\"arm.y\"] < p[\"boundary_margin\"]:\n        boundary_force_y += p[\"repulsion_strength\"] / (state[\"arm.y\"] - (-3))  # Assuming min y ~ -3\n    elif state[\"arm.y\"] > 3 - p[\"boundary_margin\"]:\n        boundary_force_y -= p[\"repulsion_strength\"] / (3 - state[\"arm.y\"])\n    \n    # Apply forces\n    next_state[\"arm.x\"] = state[\"arm.x\"] + dx + boundary_force_x\n    next_state[\"arm.y\"] = state[\"arm.y\"] + dy + boundary_force_y\n    \n    # Finger follows arm\n    next_state[\"finger.x\"] = state[\"finger.x\"] + dx\n    next_state[\"finger.y\"] = state[\"finger.y\"] + dy\n    \n    next_state[\"target.x\"] = state[\"target.x\"]\n    next_state[\"target.y\"] = state[\"target.y\"]\n    return next_state",
+      "init_params": {
+        "repulsion_strength": 0.1,
+        "boundary_margin": 0.5,
+        "max_speed": 0.4
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_joint_control": {
+        "params": {
+          "gain_x": 0.5827794697840664,
+          "gain_y": 0.8797641954948369
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.40746990763357166,
+        "val_one_step_nrmse": 0.7283102159461088,
+        "val_rollout_nrmse": 1.568670220699436,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 0.28327298164367676,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4074699076335716,
+            "val_rollout_nrmse": 1.5686702209006227
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4074699076335716,
+            "val_rollout_nrmse": 1.5686702207092427
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.4074699076335716,
+            "val_rollout_nrmse": 1.5686702207830714
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.40746990763357166,
+            "val_rollout_nrmse": 1.568670220699436
+          }
+        ]
+      },
+      "momentum_joint_control": {
+        "params": {
+          "mass_arm_x": 65.13503004685465,
+          "mass_arm_y": 135.91657313828506,
+          "damping": 0.1
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.6627658636728748,
+        "val_one_step_nrmse": 0.9055367555782223,
+        "val_rollout_nrmse": 1.9251692350320653,
+        "restarts": 4,
+        "nfev": 81,
+        "elapsed_s": 2.5283751487731934,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.6627658636728748,
+            "val_rollout_nrmse": 1.9251692350320653
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.6627658635753588,
+            "val_rollout_nrmse": 1.9251716035525441
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.662765863587935,
+            "val_rollout_nrmse": 1.925171820602816
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.6627658701187561,
+            "val_rollout_nrmse": 1.9251840584149142
+          }
+        ]
+      },
+      "coupled_end_effector_control": {
+        "params": {
+          "effector_gain_x": -0.0011441118173233986,
+          "effector_gain_y": -0.0017292499382114811,
+          "link_length": -0.001964601850331416
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.4074083962460173,
+        "val_one_step_nrmse": 0.7289492682157042,
+        "val_rollout_nrmse": 1.5699859356708634,
+        "restarts": 4,
+        "nfev": 80,
+        "elapsed_s": 2.249037027359009,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4074083962460173,
+            "val_rollout_nrmse": 1.5699859356708634
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.40740839624604885,
+            "val_rollout_nrmse": 1.569985960526291
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.40740839624600694,
+            "val_rollout_nrmse": 1.5699859365190694
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.4074083962460634,
+            "val_rollout_nrmse": 1.56998597282638
+          }
+        ]
+      },
+      "saturated_joint_control": {
+        "params": {
+          "max_rate": 0.002495996897462008,
+          "min_x": -5.158815634521856,
+          "max_x": 5.884720229925195,
+          "min_y": -3.2277415254484265,
+          "max_y": 2.670386476723854
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.6628700329009086,
+        "val_one_step_nrmse": 0.9055781657464927,
+        "val_rollout_nrmse": 1.930305183581711,
+        "restarts": 4,
+        "nfev": 94,
+        "elapsed_s": 3.1926512718200684,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.6641436671028549,
+            "val_rollout_nrmse": 1.945143093597374
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.6628700329335554,
+            "val_rollout_nrmse": 1.930370863775029
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.6628700329009086,
+            "val_rollout_nrmse": 1.930305183581711
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.6641436668640482,
+            "val_rollout_nrmse": 2.0008122251598244
+          }
+        ]
+      },
+      "delayed_response_model": {
+        "params": {
+          "delay_factor": 0.9999755219319614,
+          "response_rate": 468.7082768923016
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.6632360545041814,
+        "val_one_step_nrmse": 0.9039250083497224,
+        "val_rollout_nrmse": 1.9236095153816999,
+        "restarts": 4,
+        "nfev": 261,
+        "elapsed_s": 6.413258075714111,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.6632360545041814,
+            "val_rollout_nrmse": 1.9236095153816999
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.6632360516668769,
+            "val_rollout_nrmse": 1.9236157256770885
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.6632360515373772,
+            "val_rollout_nrmse": 1.923614779781918
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.6632360417397751,
+            "val_rollout_nrmse": 1.9236150458227397
+          }
+        ]
+      },
+      "obstacle_avoidance_dynamics": {
+        "params": {
+          "repulsion_strength": 0.008135189649706115,
+          "boundary_margin": -1.0354876673941105,
+          "max_speed": 0.003906813279587768
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.6628949676385318,
+        "val_one_step_nrmse": 0.906750207951552,
+        "val_rollout_nrmse": 1.9293280417576457,
+        "restarts": 4,
+        "nfev": 74,
+        "elapsed_s": 1.7359471321105957,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.6619384602324555,
+            "val_rollout_nrmse": 1.934069533625883
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.6628949676385318,
+            "val_rollout_nrmse": 1.9293280417576457
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.6619652554026964,
+            "val_rollout_nrmse": 1.9327625290659822
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.6619573889447591,
+            "val_rollout_nrmse": 1.9334541285046585
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_joint_control": {
+        "params": {
+          "gain_x": 0.8154779627754619,
+          "gain_y": 0.9040287518026883
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.4961556128695377,
+        "val_one_step_nrmse": 0.7390527334602748,
+        "val_rollout_nrmse": 1.5375796537951403,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 1.0657894611358643,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.4961556128695377,
+            "val_rollout_nrmse": 1.5375796538134139
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.4961556128695375,
+            "val_rollout_nrmse": 1.5375796538266824
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.4961556128695377,
+            "val_rollout_nrmse": 1.5375796537951403
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.496155612869538,
+            "val_rollout_nrmse": 1.5375796537965147
+          }
+        ]
+      },
+      "momentum_joint_control": {
+        "params": {
+          "mass_arm_x": 40.5567631475549,
+          "mass_arm_y": 183.71287836632482,
+          "damping": 0.0744699209183332
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.5460751551030425,
+        "val_one_step_nrmse": 0.9080004641083861,
+        "val_rollout_nrmse": 1.9265129370972143,
+        "restarts": 4,
+        "nfev": 74,
+        "elapsed_s": 8.356737852096558,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.5460751545584603,
+            "val_rollout_nrmse": 1.9265150385624095
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.546075154555989,
+            "val_rollout_nrmse": 1.9265152263076968
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.5460751551030425,
+            "val_rollout_nrmse": 1.9265129370972143
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.546075154674957,
+            "val_rollout_nrmse": 1.9265162464718444
+          }
+        ]
+      },
+      "coupled_end_effector_control": {
+        "params": {
+          "effector_gain_x": -0.0002800777837641956,
+          "effector_gain_y": -0.00031059923237063017,
+          "link_length": -0.0003435084157832229
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.496148208256331,
+        "val_one_step_nrmse": 0.7391419249411796,
+        "val_rollout_nrmse": 1.5378049417532493,
+        "restarts": 4,
+        "nfev": 92,
+        "elapsed_s": 10.595083713531494,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.496148208256331,
+            "val_rollout_nrmse": 1.5378049417532493
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.4961482082711712,
+            "val_rollout_nrmse": 1.537805118042099
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.4961482082617101,
+            "val_rollout_nrmse": 1.537804978147139
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.4961482082583588,
+            "val_rollout_nrmse": 1.5378049538288432
+          }
+        ]
+      },
+      "saturated_joint_control": {
+        "params": {
+          "max_rate": 0.0027168378278453606,
+          "min_x": -9.975685431634135,
+          "max_x": 5.105358056873152,
+          "min_y": -6.65751717167174,
+          "max_y": 4.73512664737123
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.5624148529328665,
+        "val_one_step_nrmse": 0.9349643489823806,
+        "val_rollout_nrmse": 1.9371533965705872,
+        "restarts": 4,
+        "nfev": 83,
+        "elapsed_s": 12.727369546890259,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.544935445214184,
+            "val_rollout_nrmse": 2.23180475908738
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.568711642660351,
+            "val_rollout_nrmse": 1.9379273914501653
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.54699155172232,
+            "val_rollout_nrmse": 2.2317652969959894
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.5624148529328665,
+            "val_rollout_nrmse": 1.9371533965705872
+          }
+        ]
+      },
+      "delayed_response_model": {
+        "params": {
+          "delay_factor": 1.0000346478560396,
+          "response_rate": -424.6552155291463
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.553997693061437,
+        "val_one_step_nrmse": 0.903144563755386,
+        "val_rollout_nrmse": 1.9212429775101845,
+        "restarts": 4,
+        "nfev": 146,
+        "elapsed_s": 15.298943042755127,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.5539976930559587,
+            "val_rollout_nrmse": 1.9212429798925585
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.553997693061437,
+            "val_rollout_nrmse": 1.9212429775101845
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.5539976930573984,
+            "val_rollout_nrmse": 1.9212429837671139
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.553997693055653,
+            "val_rollout_nrmse": 1.9212429831046867
+          }
+        ]
+      },
+      "obstacle_avoidance_dynamics": {
+        "params": {
+          "repulsion_strength": 0.010565944882977336,
+          "boundary_margin": 4.342388830290273,
+          "max_speed": 0.0045108574973343205
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.552598103961694,
+        "val_one_step_nrmse": 0.9490593012733382,
+        "val_rollout_nrmse": 1.93205872631561,
+        "restarts": 4,
+        "nfev": 99,
+        "elapsed_s": 10.627720355987549,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.552598103961694,
+            "val_rollout_nrmse": 1.93205872631561
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.5460260485279878,
+            "val_rollout_nrmse": 1.935182758448348
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.5431876963190465,
+            "val_rollout_nrmse": 1.9363943516930853
+          },
+          {
+            "restart": 3,
+            "train_loss": 84.62651258647547,
+            "val_rollout_nrmse": 9.302133218419021
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "linear_joint_control",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_joint_control": 1.568670220699436,
+        "momentum_joint_control": 1.9251692350320653,
+        "coupled_end_effector_control": 1.5699859356708634,
+        "saturated_joint_control": 1.930305183581711,
+        "delayed_response_model": 1.9236095153816999,
+        "obstacle_avoidance_dynamics": 1.9293280417576457
+      }
+    },
+    "active_one_step": {
+      "winner": "linear_joint_control",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "arm.x",
+        "arm.y",
+        "finger.x",
+        "finger.y"
+      ],
+      "scores": {
+        "linear_joint_control": 3.872320818052701,
+        "momentum_joint_control": 5.01848881468233,
+        "coupled_end_effector_control": 3.879173847509893,
+        "saturated_joint_control": 5.085811250807334,
+        "delayed_response_model": 5.041312975516537,
+        "obstacle_avoidance_dynamics": 5.083745194089064
+      },
+      "probes": [
+        {
+          "disagreement": 2.1751124247416636,
+          "actions": [
+            [
+              -0.7487368790425155,
+              -0.7196796623702935
+            ],
+            [
+              -0.7487368790425155,
+              -0.7196796623702935
+            ],
+            [
+              -0.7487368790425155,
+              -0.7196796623702935
+            ]
+          ],
+          "start": {
+            "arm.x": -1.692,
+            "arm.y": 0.84,
+            "finger.x": 0.064,
+            "finger.y": -0.209,
+            "target.x": -0.175,
+            "target.y": -0.032
+          },
+          "errors": {
+            "linear_joint_control": 6.057420503052534,
+            "momentum_joint_control": 7.364176030063528,
+            "coupled_end_effector_control": 6.044784802846583,
+            "saturated_joint_control": 7.492212760974741,
+            "delayed_response_model": 7.4884700644776,
+            "obstacle_avoidance_dynamics": 7.496006603748977
+          }
+        },
+        {
+          "disagreement": 2.036210754686582,
+          "actions": [
+            [
+              0.7191612051075231,
+              0.6631990635124599
+            ],
+            [
+              0.7191612051075231,
+              0.6631990635124599
+            ],
+            [
+              0.7191612051075231,
+              0.6631990635124599
+            ]
+          ],
+          "start": {
+            "arm.x": -1.656,
+            "arm.y": 2.259,
+            "finger.x": 0.089,
+            "finger.y": -0.051,
+            "target.x": -0.175,
+            "target.y": -0.032
+          },
+          "errors": {
+            "linear_joint_control": 3.1419424100392632,
+            "momentum_joint_control": 4.839363872059124,
+            "coupled_end_effector_control": 3.1487636333804825,
+            "saturated_joint_control": 4.786401786125511,
+            "delayed_response_model": 4.783162152930464,
+            "obstacle_avoidance_dynamics": 4.775611064018303
+          }
+        },
+        {
+          "disagreement": 1.9503192608806803,
+          "actions": [
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ]
+          ],
+          "start": {
+            "arm.x": 5.484,
+            "arm.y": 2.122,
+            "finger.x": 0.113,
+            "finger.y": 0.03,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_joint_control": 2.936633947439795,
+            "momentum_joint_control": 4.480622133708339,
+            "coupled_end_effector_control": 2.917736316887904,
+            "saturated_joint_control": 4.360804783746477,
+            "delayed_response_model": 4.437845422287772,
+            "obstacle_avoidance_dynamics": 4.363075338063174
+          }
+        },
+        {
+          "disagreement": 1.930539311480331,
+          "actions": [
+            [
+              -0.7682744277514052,
+              -0.554598020402668
+            ],
+            [
+              -0.7682744277514052,
+              -0.554598020402668
+            ],
+            [
+              -0.7682744277514052,
+              -0.554598020402668
+            ]
+          ],
+          "start": {
+            "arm.x": 0.053,
+            "arm.y": -0.788,
+            "finger.x": 0.209,
+            "finger.y": -0.074,
+            "target.x": -0.084,
+            "target.y": -0.067
+          },
+          "errors": {
+            "linear_joint_control": 4.7961546474989225,
+            "momentum_joint_control": 5.800724411266454,
+            "coupled_end_effector_control": 4.831082590078938,
+            "saturated_joint_control": 6.09386850907642,
+            "delayed_response_model": 5.888141429496783,
+            "obstacle_avoidance_dynamics": 6.073214741417418
+          }
+        },
+        {
+          "disagreement": 1.8083284349557045,
+          "actions": [
+            [
+              -0.36292741743863405,
+              0.7362580447141095
+            ],
+            [
+              -0.36292741743863405,
+              0.7362580447141095
+            ],
+            [
+              -0.36292741743863405,
+              0.7362580447141095
+            ]
+          ],
+          "start": {
+            "arm.x": -1.85,
+            "arm.y": 2.218,
+            "finger.x": 0.079,
+            "finger.y": -0.072,
+            "target.x": -0.175,
+            "target.y": -0.032
+          },
+          "errors": {
+            "linear_joint_control": 2.429452582232992,
+            "momentum_joint_control": 2.6075576263142044,
+            "coupled_end_effector_control": 2.453501894355558,
+            "saturated_joint_control": 2.6957684141135183,
+            "delayed_response_model": 2.6089458083900676,
+            "obstacle_avoidance_dynamics": 2.7108182231974487
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.17946600914001465
+    },
+    "offline_multi_step": {
+      "winner": "linear_joint_control",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_joint_control": 1.5375796537951403,
+        "momentum_joint_control": 1.9265129370972143,
+        "coupled_end_effector_control": 1.5378049417532493,
+        "saturated_joint_control": 1.9371533965705872,
+        "delayed_response_model": 1.9212429775101845,
+        "obstacle_avoidance_dynamics": 1.93205872631561
+      }
+    },
+    "active_multi_step": {
+      "winner": "coupled_end_effector_control",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "arm.x",
+        "arm.y",
+        "finger.x",
+        "finger.y"
+      ],
+      "scores": {
+        "linear_joint_control": 3.8392638111882915,
+        "momentum_joint_control": 5.450163642757694,
+        "coupled_end_effector_control": 3.839186817741358,
+        "saturated_joint_control": 5.711917881359385,
+        "delayed_response_model": 5.52677316992059,
+        "obstacle_avoidance_dynamics": 6.28359257864558
+      },
+      "probes": [
+        {
+          "disagreement": 3.4758526075257055,
+          "actions": [
+            [
+              0.645038469513866,
+              -0.4396749420790272
+            ],
+            [
+              0.645038469513866,
+              -0.4396749420790272
+            ],
+            [
+              0.645038469513866,
+              -0.4396749420790272
+            ]
+          ],
+          "start": {
+            "arm.x": 4.994,
+            "arm.y": 1.741,
+            "finger.x": 0.141,
+            "finger.y": -0.063,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_joint_control": 2.9842736021510667,
+            "momentum_joint_control": 4.943475629732429,
+            "coupled_end_effector_control": 2.981246119445709,
+            "saturated_joint_control": 5.049282149861782,
+            "delayed_response_model": 5.069457839432332,
+            "obstacle_avoidance_dynamics": 8.803038914490996
+          }
+        },
+        {
+          "disagreement": 2.6445249009727996,
+          "actions": [
+            [
+              -0.7487368790425155,
+              -0.7196796623702935
+            ],
+            [
+              -0.7487368790425155,
+              -0.7196796623702935
+            ],
+            [
+              -0.7487368790425155,
+              -0.7196796623702935
+            ]
+          ],
+          "start": {
+            "arm.x": -1.692,
+            "arm.y": 0.84,
+            "finger.x": 0.064,
+            "finger.y": -0.209,
+            "target.x": -0.175,
+            "target.y": -0.032
+          },
+          "errors": {
+            "linear_joint_control": 6.00069695018702,
+            "momentum_joint_control": 7.198644283697459,
+            "coupled_end_effector_control": 5.999675165940497,
+            "saturated_joint_control": 7.492018696440305,
+            "delayed_response_model": 7.488407421386481,
+            "obstacle_avoidance_dynamics": 7.502362267701793
+          }
+        },
+        {
+          "disagreement": 2.5858172887762696,
+          "actions": [
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ]
+          ],
+          "start": {
+            "arm.x": 5.484,
+            "arm.y": 2.122,
+            "finger.x": 0.113,
+            "finger.y": 0.03,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_joint_control": 2.7116210405064565,
+            "momentum_joint_control": 4.589695557918866,
+            "coupled_end_effector_control": 2.7065310965368017,
+            "saturated_joint_control": 5.1463622510707845,
+            "delayed_response_model": 4.482992374042877,
+            "obstacle_avoidance_dynamics": 4.272821178378208
+          }
+        },
+        {
+          "disagreement": 2.4896110186824907,
+          "actions": [
+            [
+              0.7191612051075231,
+              0.6631990635124599
+            ],
+            [
+              0.7191612051075231,
+              0.6631990635124599
+            ],
+            [
+              0.7191612051075231,
+              0.6631990635124599
+            ]
+          ],
+          "start": {
+            "arm.x": -1.656,
+            "arm.y": 2.259,
+            "finger.x": 0.089,
+            "finger.y": -0.051,
+            "target.x": -0.175,
+            "target.y": -0.032
+          },
+          "errors": {
+            "linear_joint_control": 2.780501701719684,
+            "momentum_joint_control": 4.931464706228467,
+            "coupled_end_effector_control": 2.780819635054986,
+            "saturated_joint_control": 4.785588846175237,
+            "delayed_response_model": 4.78406826362483,
+            "obstacle_avoidance_dynamics": 4.768590666892289
+          }
+        },
+        {
+          "disagreement": 2.4515665429141102,
+          "actions": [
+            [
+              -0.7682744277514052,
+              -0.554598020402668
+            ],
+            [
+              -0.7682744277514052,
+              -0.554598020402668
+            ],
+            [
+              -0.7682744277514052,
+              -0.554598020402668
+            ]
+          ],
+          "start": {
+            "arm.x": 0.053,
+            "arm.y": -0.788,
+            "finger.x": 0.209,
+            "finger.y": -0.074,
+            "target.x": -0.084,
+            "target.y": -0.067
+          },
+          "errors": {
+            "linear_joint_control": 4.719225761377233,
+            "momentum_joint_control": 5.5875380362112494,
+            "coupled_end_effector_control": 4.727662071728797,
+            "saturated_joint_control": 6.0863374632488165,
+            "delayed_response_model": 5.808939951116432,
+            "obstacle_avoidance_dynamics": 6.071149865764617
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.04207968711853027
+    }
+  },
+  "args": {
+    "env": "reacher",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/v1_reacher_coder_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 100.7768828868866
+}

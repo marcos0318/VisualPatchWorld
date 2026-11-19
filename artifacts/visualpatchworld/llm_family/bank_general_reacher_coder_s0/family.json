@@ -1,0 +1,1003 @@
+{
+  "env": "reacher",
+  "llm_model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+  "schema": {
+    "state_keys": [
+      "arm.x",
+      "arm.y",
+      "finger.x",
+      "finger.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "arm.x": {
+        "min": -4.981,
+        "max": 4.435
+      },
+      "arm.y": {
+        "min": -2.899,
+        "max": 2.869
+      },
+      "finger.x": {
+        "min": -0.24,
+        "max": 0.239
+      },
+      "finger.y": {
+        "min": -0.24,
+        "max": 0.24
+      },
+      "target.x": {
+        "min": -0.195,
+        "max": 0.17
+      },
+      "target.y": {
+        "min": -0.194,
+        "max": 0.196
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.812,
+      -0.745
+    ],
+    "action_max": [
+      0.732,
+      0.787
+    ],
+    "num_episodes": 51,
+    "num_transitions": 2040
+  },
+  "scales": {
+    "arm.x": 0.1874797487871841,
+    "arm.y": 0.23021797342125136,
+    "finger.x": 0.02727790853899584,
+    "finger.y": 0.027242596319182195,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "direct_linear_control",
+      "mechanism": "Actions directly change arm position with linear mapping; finger follows arm deterministically.",
+      "code": "# HYPOTHESIS: direct_linear_control\n# MECHANISM: Actions directly change arm position with linear mapping; finger follows arm deterministically.\nPARAMS = {\"kp_arm\": 1.0, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    arm_x = state[\"arm.x\"] + action[0] * p[\"dt\"]\n    arm_y = state[\"arm.y\"] + action[1] * p[\"dt\"]\n    # Assume finger is a fixed offset from arm (e.g., unit length)\n    finger_x = arm_x + 1.0\n    finger_y = arm_y\n    return {\n        \"arm.x\": arm_x,\n        \"arm.y\": arm_y,\n        \"finger.x\": finger_x,\n        \"finger.y\": finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"]\n    }",
+      "init_params": {
+        "kp_arm": 1.0,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "second_order_arm_with_kinematics",
+      "mechanism": "Arm behaves as a second-order system under action force; finger position derived via forward kinematics.",
+      "code": "# HYPOTHESIS: second_order_arm_with_kinematics\n# MECHANISM: Arm behaves as a second-order system under action force; finger position derived via forward kinematics.\nPARAMS = {\"mass\": 1.0, \"dt\": 0.1, \"link_length\": 1.0}\n\ndef step(state, action, p, p_meta):\n    import math\n    # Update arm using second order inertia (force = action)\n    ax = action[0] / p[\"mass\"]\n    ay = action[1] / p[\"mass\"]\n    vx = (state[\"arm.x\"] - state.get(\"prev_arm_x\", state[\"arm.x\"])) / p[\"dt\"] + ax * p[\"dt\"]\n    vy = (state[\"arm.y\"] - state.get(\"prev_arm_y\", state[\"arm.y\"])) / p[\"dt\"] + ay * p[\"dt\"]\n    arm_x = state[\"arm.x\"] + vx * p[\"dt\"]\n    arm_y = state[\"arm.y\"] + vy * p[\"dt\"]\n\n    # Forward kinematics: finger at unit distance from arm\n    angle = math.atan2(arm_y, arm_x)\n    finger_x = arm_x + p[\"link_length\"] * math.cos(angle)\n    finger_y = arm_y + p[\"link_length\"] * math.sin(angle)\n\n    return {\n        \"arm.x\": arm_x,\n        \"arm.y\": arm_y,\n        \"finger.x\": finger_x,\n        \"finger.y\": finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"]\n    }",
+      "init_params": {
+        "mass": 1.0,
+        "dt": 0.1,
+        "link_length": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "proportional_end_effector_control",
+      "mechanism": "Action drives finger position directly via proportional control towards a commanded target.",
+      "code": "# HYPOTHESIS: proportional_end_effector_control\n# MECHANISM: Action drives finger position directly via proportional control towards a commanded target.\nPARAMS = {\"kp_finger\": 2.0, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    # Desired finger position based on action\n    des_fx = state[\"finger.x\"] + action[0]\n    des_fy = state[\"finger.y\"] + action[1]\n\n    # Move finger proportionally toward desired\n    new_fx = state[\"finger.x\"] + p[\"kp_finger\"] * (des_fx - state[\"finger.x\"]) * p[\"dt\"]\n    new_fy = state[\"finger.y\"] + p[\"kp_finger\"] * (des_fy - state[\"finger.y\"]) * p[\"dt\"]\n\n    # Arm updated heuristically or kept constant\n    arm_x = state[\"arm.x\"]\n    arm_y = state[\"arm.y\"]\n\n    return {\n        \"arm.x\": arm_x,\n        \"arm.y\": arm_y,\n        \"finger.x\": new_fx,\n        \"finger.y\": new_fy,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"]\n    }",
+      "init_params": {
+        "kp_finger": 2.0,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "joint_space_dynamics_with_jacobian",
+      "mechanism": "Actions affect joint velocities which are mapped through Jacobian to move end effector.",
+      "code": "# HYPOTHESIS: joint_space_dynamics_with_jacobian\n# MECHANISM: Actions affect joint velocities which are mapped through Jacobian to move end effector.\nPARAMS = {\"kp\": 1.5, \"link1\": 1.0, \"link2\": 1.0, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    # Treat action as joint torques or accelerations\n    theta1 = state[\"arm.x\"]\n    theta2 = state[\"arm.y\"]\n    \n    dtheta1 = action[0] * p[\"dt\"]\n    dtheta2 = action[1] * p[\"dt\"]\n\n    theta1_new = theta1 + dtheta1\n    theta2_new = theta2 + dtheta2\n\n    # Forward kinematics for two-link arm\n    l1, l2 = p[\"link1\"], p[\"link2\"]\n    finger_x = l1 * math.cos(theta1_new) + l2 * math.cos(theta1_new + theta2_new)\n    finger_y = l1 * math.sin(theta1_new) + l2 * math.sin(theta1_new + theta2_new)\n\n    return {\n        \"arm.x\": theta1_new,\n        \"arm.y\": theta2_new,\n        \"finger.x\": finger_x,\n        \"finger.y\": finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"]\n    }",
+      "init_params": {
+        "kp": 1.5,
+        "link1": 1.0,
+        "link2": 1.0,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "damped_pendulum_arm",
+      "mechanism": "Arm behaves like a damped pendulum where actions apply torque; finger position determined by angle.",
+      "code": "# HYPOTHESIS: damped_pendulum_arm\n# MECHANISM: Arm behaves like a damped pendulum where actions apply torque; finger position determined by angle.\nPARAMS = {\"inertia\": 1.0, \"damping\": 0.5, \"length\": 1.0, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    # State interpretation: arm.x and arm.y are angular position and velocity?\n    angle = state[\"arm.x\"]\n    ang_vel = state[\"arm.y\"]\n\n    torque = action[0]  # Only use first action component for simplicity\n\n    ang_acc = (torque - p[\"damping\"] * ang_vel) / p[\"inertia\"]\n    ang_vel_new = ang_vel + ang_acc * p[\"dt\"]\n    angle_new = angle + ang_vel_new * p[\"dt\"]\n\n    finger_x = p[\"length\"] * math.cos(angle_new)\n    finger_y = p[\"length\"] * math.sin(angle_new)\n\n    return {\n        \"arm.x\": angle_new,\n        \"arm.y\": ang_vel_new,\n        \"finger.x\": finger_x,\n        \"finger.y\": finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"]\n    }",
+      "init_params": {
+        "inertia": 1.0,
+        "damping": 0.5,
+        "length": 1.0,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "independent_finger_target_attraction",
+      "mechanism": "Finger moves independently with attraction towards target modulated by action.",
+      "code": "# HYPOTHESIS: independent_finger_target_attraction\n# MECHANISM: Finger moves independently with attraction towards target modulated by action.\nPARAMS = {\"attraction_gain\": 1.0, \"action_scale\": 0.5, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    tx = state[\"target.x\"]\n    ty = state[\"target.y\"]\n    fx = state[\"finger.x\"]\n    fy = state[\"finger.y\"]\n\n    # Attraction vector scaled by action\n    ax = (tx - fx) * p[\"attraction_gain\"] + action[0] * p[\"action_scale\"]\n    ay = (ty - fy) * p[\"attraction_gain\"] + action[1] * p[\"action_scale\"]\n\n    new_fx = fx + ax * p[\"dt\"]\n    new_fy = fy + ay * p[\"dt\"]\n\n    # Arm remains unchanged or inferred\n    arm_x = state[\"arm.x\"]\n    arm_y = state[\"arm.y\"]\n\n    return {\n        \"arm.x\": arm_x,\n        \"arm.y\": arm_y,\n        \"finger.x\": new_fx,\n        \"finger.y\": new_fy,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"]\n    }",
+      "init_params": {
+        "attraction_gain": 1.0,
+        "action_scale": 0.5,
+        "dt": 0.1
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "direct_linear_control": {
+        "params": {
+          "kp_arm": 0.8954342455892088,
+          "dt": 0.10122706525336206
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1685.4270752621615,
+        "val_one_step_nrmse": 51.51634902435593,
+        "val_rollout_nrmse": 50.30563515254054,
+        "restarts": 4,
+        "nfev": 47,
+        "elapsed_s": 0.6355404853820801,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1685.427054902952,
+            "val_rollout_nrmse": 50.30641711811053
+          },
+          {
+            "restart": 1,
+            "train_loss": 1685.4270551730995,
+            "val_rollout_nrmse": 50.30655112628783
+          },
+          {
+            "restart": 2,
+            "train_loss": 1685.4270752621615,
+            "val_rollout_nrmse": 50.30563515254054
+          },
+          {
+            "restart": 3,
+            "train_loss": 1685.4270558969026,
+            "val_rollout_nrmse": 50.30626771217809
+          }
+        ]
+      },
+      "second_order_arm_with_kinematics": {
+        "params": {
+          "mass": -1.4997427448496734,
+          "dt": 0.0008483571338196516,
+          "link_length": -2.5841334373096756
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 250.63272002789267,
+        "val_one_step_nrmse": 20.276356977959782,
+        "val_rollout_nrmse": 19.90598137244737,
+        "restarts": 4,
+        "nfev": 63,
+        "elapsed_s": 2.1576569080352783,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 250.61250032485518,
+            "val_rollout_nrmse": 19.909613977173052
+          },
+          {
+            "restart": 1,
+            "train_loss": 250.61249539926968,
+            "val_rollout_nrmse": 19.909579322707213
+          },
+          {
+            "restart": 2,
+            "train_loss": 250.61249180950415,
+            "val_rollout_nrmse": 19.90950590976251
+          },
+          {
+            "restart": 3,
+            "train_loss": 250.63272002789267,
+            "val_rollout_nrmse": 19.90598137244737
+          }
+        ]
+      },
+      "proportional_end_effector_control": {
+        "params": {
+          "kp_finger": 0.07154600855639545,
+          "dt": -0.009050258740891375
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.6671066210295581,
+        "val_one_step_nrmse": 0.9099357036555056,
+        "val_rollout_nrmse": 1.9365683271572576,
+        "restarts": 4,
+        "nfev": 60,
+        "elapsed_s": 1.0502374172210693,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.6671066210226921,
+            "val_rollout_nrmse": 1.9365683641277491
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.6671066210295581,
+            "val_rollout_nrmse": 1.9365683271572576
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.6671066209655934,
+            "val_rollout_nrmse": 1.936568737634338
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.6671066209203612,
+            "val_rollout_nrmse": 1.9365693467122962
+          }
+        ]
+      },
+      "joint_space_dynamics_with_jacobian": {
+        "params": {
+          "kp": 0.8225567672902492,
+          "link1": 0.11962643329025593,
+          "link2": 0.1182945983071263,
+          "dt": 0.6154972556788124
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.22132730716042578,
+        "val_one_step_nrmse": 0.5200234969422198,
+        "val_rollout_nrmse": 0.8768618343590396,
+        "restarts": 4,
+        "nfev": 111,
+        "elapsed_s": 3.3997626304626465,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.22132730712806692,
+            "val_rollout_nrmse": 0.8768682283220292
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.22132730712844942,
+            "val_rollout_nrmse": 0.876868327804986
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.22132730716042578,
+            "val_rollout_nrmse": 0.8768618343590396
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.2213273071418009,
+            "val_rollout_nrmse": 0.87686408601052
+          }
+        ]
+      },
+      "damped_pendulum_arm": {
+        "params": {
+          "inertia": 0.9001798076401735,
+          "damping": 0.048461270948128486,
+          "length": 0.15386963908121115,
+          "dt": 0.21722948501056075
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 2.786936227838356,
+        "val_one_step_nrmse": 1.6232589023619568,
+        "val_rollout_nrmse": 2.958418387557093,
+        "restarts": 4,
+        "nfev": 48,
+        "elapsed_s": 2.141829490661621,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.7869362299122464,
+            "val_rollout_nrmse": 2.9585382542447225
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.7869362311214965,
+            "val_rollout_nrmse": 2.9585505867643267
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.786936227838356,
+            "val_rollout_nrmse": 2.958418387557093
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.786936229559622,
+            "val_rollout_nrmse": 2.958534220957186
+          }
+        ]
+      },
+      "independent_finger_target_attraction": {
+        "params": {
+          "attraction_gain": 0.13553445892683819,
+          "action_scale": -0.007099089005871234,
+          "dt": 0.10176413771456791
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.6648154874936162,
+        "val_one_step_nrmse": 0.9064741831749957,
+        "val_rollout_nrmse": 1.9094660930090652,
+        "restarts": 4,
+        "nfev": 62,
+        "elapsed_s": 1.4308552742004395,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.664815487851957,
+            "val_rollout_nrmse": 1.90947140927671
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.6648154874936162,
+            "val_rollout_nrmse": 1.9094660930090652
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.6648154875706248,
+            "val_rollout_nrmse": 1.909467701441171
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.6648154875016687,
+            "val_rollout_nrmse": 1.909466290891326
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "direct_linear_control": {
+        "params": {
+          "kp_arm": 0.8954342455892088,
+          "dt": 0.13562118804043746
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1682.4553136866175,
+        "val_one_step_nrmse": 51.52504179758905,
+        "val_rollout_nrmse": 50.340490031452646,
+        "restarts": 4,
+        "nfev": 58,
+        "elapsed_s": 3.368751287460327,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1682.455309870643,
+            "val_rollout_nrmse": 50.34071661590567
+          },
+          {
+            "restart": 1,
+            "train_loss": 1682.4553106761248,
+            "val_rollout_nrmse": 50.34081181073478
+          },
+          {
+            "restart": 2,
+            "train_loss": 1682.4553136866175,
+            "val_rollout_nrmse": 50.340490031452646
+          },
+          {
+            "restart": 3,
+            "train_loss": 1682.455341776385,
+            "val_rollout_nrmse": 50.34134782717885
+          }
+        ]
+      },
+      "second_order_arm_with_kinematics": {
+        "params": {
+          "mass": -3.3208848497534196,
+          "dt": -0.0003924025934171758,
+          "link_length": -2.584021003661248
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 243.7925912419168,
+        "val_one_step_nrmse": 20.276436733631396,
+        "val_rollout_nrmse": 19.905954575375237,
+        "restarts": 4,
+        "nfev": 79,
+        "elapsed_s": 9.933979511260986,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 243.7925912419168,
+            "val_rollout_nrmse": 19.905954575375237
+          },
+          {
+            "restart": 1,
+            "train_loss": 243.63374190623674,
+            "val_rollout_nrmse": 19.91343165512607
+          },
+          {
+            "restart": 2,
+            "train_loss": 243.63374602378445,
+            "val_rollout_nrmse": 19.913458507984178
+          },
+          {
+            "restart": 3,
+            "train_loss": 243.6337414315874,
+            "val_rollout_nrmse": 19.91342765202051
+          }
+        ]
+      },
+      "proportional_end_effector_control": {
+        "params": {
+          "kp_finger": 4.737219293261032,
+          "dt": 1.9112137695381677e-05
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.5726566472477552,
+        "val_one_step_nrmse": 0.9097344880394839,
+        "val_rollout_nrmse": 1.936137758198554,
+        "restarts": 4,
+        "nfev": 64,
+        "elapsed_s": 4.8611109256744385,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.5726566472477552,
+            "val_rollout_nrmse": 1.936137758198554
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.572656647603591,
+            "val_rollout_nrmse": 1.9361387055875408
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.5726566472822743,
+            "val_rollout_nrmse": 1.9361379540109944
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.5726566478281923,
+            "val_rollout_nrmse": 1.9361390216593355
+          }
+        ]
+      },
+      "joint_space_dynamics_with_jacobian": {
+        "params": {
+          "kp": 1.5,
+          "link1": 0.11999319719612186,
+          "link2": 0.11658775941706924,
+          "dt": 0.8159927444232777
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.41526457713868975,
+        "val_one_step_nrmse": 0.5632549644829496,
+        "val_rollout_nrmse": 0.7187948574435234,
+        "restarts": 4,
+        "nfev": 99,
+        "elapsed_s": 10.653352737426758,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.41526457713868975,
+            "val_rollout_nrmse": 0.7187948574435234
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4152645776518835,
+            "val_rollout_nrmse": 0.7187985883963581
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.41526457712747067,
+            "val_rollout_nrmse": 0.7187949718531458
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.41526457710008674,
+            "val_rollout_nrmse": 0.7187960790111741
+          }
+        ]
+      },
+      "damped_pendulum_arm": {
+        "params": {
+          "inertia": 0.219360011167521,
+          "damping": 0.06088679827516514,
+          "length": 0.13995488639079537,
+          "dt": 0.0529463731029246
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 4.3411647286215755,
+        "val_one_step_nrmse": 1.7971190707010045,
+        "val_rollout_nrmse": 2.2471720616999646,
+        "restarts": 4,
+        "nfev": 102,
+        "elapsed_s": 18.164918661117554,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 4.371185314113424,
+            "val_rollout_nrmse": 2.2670462374366545
+          },
+          {
+            "restart": 1,
+            "train_loss": 4.3411647286215755,
+            "val_rollout_nrmse": 2.2471720616999646
+          },
+          {
+            "restart": 2,
+            "train_loss": 4.371185305463036,
+            "val_rollout_nrmse": 2.2670462326514897
+          },
+          {
+            "restart": 3,
+            "train_loss": 4.341164725547015,
+            "val_rollout_nrmse": 2.2471744349499114
+          }
+        ]
+      },
+      "independent_finger_target_attraction": {
+        "params": {
+          "attraction_gain": 0.8254041272114863,
+          "action_scale": -0.01234557585132458,
+          "dt": 0.024020213911576865
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.524021413136954,
+        "val_one_step_nrmse": 0.905524427321766,
+        "val_rollout_nrmse": 1.900947819567775,
+        "restarts": 4,
+        "nfev": 56,
+        "elapsed_s": 5.340866804122925,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.524021413456563,
+            "val_rollout_nrmse": 1.9009493832262512
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.524021413874283,
+            "val_rollout_nrmse": 1.900950384488158
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.5240214133032675,
+            "val_rollout_nrmse": 1.9009488540410722
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.524021413136954,
+            "val_rollout_nrmse": 1.900947819567775
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "joint_space_dynamics_with_jacobian",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "direct_linear_control": 50.30563515254054,
+        "second_order_arm_with_kinematics": 19.90598137244737,
+        "proportional_end_effector_control": 1.9365683271572576,
+        "joint_space_dynamics_with_jacobian": 0.8768618343590396,
+        "damped_pendulum_arm": 2.958418387557093,
+        "independent_finger_target_attraction": 1.9094660930090652
+      }
+    },
+    "active_one_step": {
+      "winner": "joint_space_dynamics_with_jacobian",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "arm.x",
+        "arm.y",
+        "finger.x",
+        "finger.y"
+      ],
+      "scores": {
+        "direct_linear_control": 127.51684415146678,
+        "second_order_arm_with_kinematics": 61.50184062076223,
+        "proportional_end_effector_control": 3.3244691657557737,
+        "joint_space_dynamics_with_jacobian": 1.214954049524644,
+        "damped_pendulum_arm": 3.096314644402864,
+        "independent_finger_target_attraction": 3.307044852395535
+      },
+      "probes": [
+        {
+          "disagreement": 57.21563880993474,
+          "actions": [
+            [
+              0.698442262169185,
+              0.15868088338769615
+            ],
+            [
+              -0.3184115535795653,
+              -0.45773817950503354
+            ],
+            [
+              0.22638112276764621,
+              -0.4460954655641747
+            ]
+          ],
+          "start": {
+            "arm.x": 5.846,
+            "arm.y": 2.167,
+            "finger.x": 0.09,
+            "finger.y": 0.068,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 130.571689744976,
+            "second_order_arm_with_kinematics": 64.96036840788082,
+            "proportional_end_effector_control": 2.1433239819145484,
+            "joint_space_dynamics_with_jacobian": 0.8584735105873514,
+            "damped_pendulum_arm": 2.5757771595879677,
+            "independent_finger_target_attraction": 2.1242097138539515
+          }
+        },
+        {
+          "disagreement": 55.85524325439998,
+          "actions": [
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ],
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ],
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ]
+          ],
+          "start": {
+            "arm.x": 5.702,
+            "arm.y": 1.993,
+            "finger.x": 0.119,
+            "finger.y": 0.053,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 128.61359623810876,
+            "second_order_arm_with_kinematics": 61.67520894381449,
+            "proportional_end_effector_control": 4.425087735454764,
+            "joint_space_dynamics_with_jacobian": 1.4027753819504483,
+            "damped_pendulum_arm": 3.322800226328457,
+            "independent_finger_target_attraction": 4.381056875878086
+          }
+        },
+        {
+          "disagreement": 54.99910163433807,
+          "actions": [
+            [
+              -0.6891723897947938,
+              -0.5827781923076766
+            ],
+            [
+              0.5086621914447038,
+              -0.19832456246354213
+            ],
+            [
+              0.06556527250653899,
+              0.026366298383590614
+            ]
+          ],
+          "start": {
+            "arm.x": 5.669,
+            "arm.y": 2.19,
+            "finger.x": 0.098,
+            "finger.y": 0.051,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 124.91577583198094,
+            "second_order_arm_with_kinematics": 61.405639112166774,
+            "proportional_end_effector_control": 2.990838696988702,
+            "joint_space_dynamics_with_jacobian": 1.4672542928544043,
+            "damped_pendulum_arm": 4.179043684777557,
+            "independent_finger_target_attraction": 3.040219114610968
+          }
+        },
+        {
+          "disagreement": 54.95205677974391,
+          "actions": [
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ]
+          ],
+          "start": {
+            "arm.x": 5.484,
+            "arm.y": 2.122,
+            "finger.x": 0.113,
+            "finger.y": 0.03,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 128.0121342659616,
+            "second_order_arm_with_kinematics": 60.39986949561906,
+            "proportional_end_effector_control": 4.317248164737483,
+            "joint_space_dynamics_with_jacobian": 1.5729765623874958,
+            "damped_pendulum_arm": 3.094338066077706,
+            "independent_finger_target_attraction": 4.290171179657243
+          }
+        },
+        {
+          "disagreement": 54.1322769711979,
+          "actions": [
+            [
+              0.5504050061084833,
+              0.0969387965051699
+            ],
+            [
+              0.2782122665172191,
+              -0.05347552189798266
+            ],
+            [
+              0.42542855458862006,
+              0.5324677693025294
+            ]
+          ],
+          "start": {
+            "arm.x": 5.507,
+            "arm.y": 2.082,
+            "finger.x": 0.117,
+            "finger.y": 0.032,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 125.47102467630663,
+            "second_order_arm_with_kinematics": 59.068117144329996,
+            "proportional_end_effector_control": 2.7458472496833704,
+            "joint_space_dynamics_with_jacobian": 0.7732904998435196,
+            "damped_pendulum_arm": 2.309614085242632,
+            "independent_finger_target_attraction": 2.6995673779774285
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.11026239395141602
+    },
+    "offline_multi_step": {
+      "winner": "joint_space_dynamics_with_jacobian",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "direct_linear_control": 50.340490031452646,
+        "second_order_arm_with_kinematics": 19.905954575375237,
+        "proportional_end_effector_control": 1.936137758198554,
+        "joint_space_dynamics_with_jacobian": 0.7187948574435234,
+        "damped_pendulum_arm": 2.2471720616999646,
+        "independent_finger_target_attraction": 1.900947819567775
+      }
+    },
+    "active_multi_step": {
+      "winner": "joint_space_dynamics_with_jacobian",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "arm.x",
+        "arm.y",
+        "finger.x",
+        "finger.y"
+      ],
+      "scores": {
+        "direct_linear_control": 127.97044083175403,
+        "second_order_arm_with_kinematics": 61.503904339751955,
+        "proportional_end_effector_control": 3.329267539728047,
+        "joint_space_dynamics_with_jacobian": 0.8708217084531811,
+        "damped_pendulum_arm": 3.732508708139156,
+        "independent_finger_target_attraction": 3.302773522510725
+      },
+      "probes": [
+        {
+          "disagreement": 57.304141431173214,
+          "actions": [
+            [
+              0.698442262169185,
+              0.15868088338769615
+            ],
+            [
+              -0.3184115535795653,
+              -0.45773817950503354
+            ],
+            [
+              0.22638112276764621,
+              -0.4460954655641747
+            ]
+          ],
+          "start": {
+            "arm.x": 5.846,
+            "arm.y": 2.167,
+            "finger.x": 0.09,
+            "finger.y": 0.068,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 130.86015938930518,
+            "second_order_arm_with_kinematics": 64.96243154415336,
+            "proportional_end_effector_control": 2.147043134420321,
+            "joint_space_dynamics_with_jacobian": 0.544702189953195,
+            "damped_pendulum_arm": 3.260890038083318,
+            "independent_finger_target_attraction": 2.1185274094676037
+          }
+        },
+        {
+          "disagreement": 56.40316984675771,
+          "actions": [
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ],
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ],
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ]
+          ],
+          "start": {
+            "arm.x": 5.702,
+            "arm.y": 1.993,
+            "finger.x": 0.119,
+            "finger.y": 0.053,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 129.32813182499598,
+            "second_order_arm_with_kinematics": 61.677273115809335,
+            "proportional_end_effector_control": 4.435462199746727,
+            "joint_space_dynamics_with_jacobian": 0.5209680894069533,
+            "damped_pendulum_arm": 5.389521513463698,
+            "independent_finger_target_attraction": 4.368515832416637
+          }
+        },
+        {
+          "disagreement": 55.41418363253932,
+          "actions": [
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ]
+          ],
+          "start": {
+            "arm.x": 5.484,
+            "arm.y": 2.122,
+            "finger.x": 0.113,
+            "finger.y": 0.03,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 129.0402941713258,
+            "second_order_arm_with_kinematics": 60.4019397093122,
+            "proportional_end_effector_control": 4.326238062104582,
+            "joint_space_dynamics_with_jacobian": 1.843237223763588,
+            "damped_pendulum_arm": 4.191388929513938,
+            "independent_finger_target_attraction": 4.284489823235718
+          }
+        },
+        {
+          "disagreement": 54.88603771800032,
+          "actions": [
+            [
+              -0.6891723897947938,
+              -0.5827781923076766
+            ],
+            [
+              0.5086621914447038,
+              -0.19832456246354213
+            ],
+            [
+              0.06556527250653899,
+              0.026366298383590614
+            ]
+          ],
+          "start": {
+            "arm.x": 5.669,
+            "arm.y": 2.19,
+            "finger.x": 0.098,
+            "finger.y": 0.051,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 124.57806968671348,
+            "second_order_arm_with_kinematics": 61.40769372581716,
+            "proportional_end_effector_control": 2.9870200997195098,
+            "joint_space_dynamics_with_jacobian": 1.05039949160462,
+            "damped_pendulum_arm": 2.2557341617239084,
+            "independent_finger_target_attraction": 3.0593623733510946
+          }
+        },
+        {
+          "disagreement": 54.50855500747303,
+          "actions": [
+            [
+              0.5504050061084833,
+              0.0969387965051699
+            ],
+            [
+              0.2782122665172191,
+              -0.05347552189798266
+            ],
+            [
+              0.42542855458862006,
+              0.5324677693025294
+            ]
+          ],
+          "start": {
+            "arm.x": 5.507,
+            "arm.y": 2.082,
+            "finger.x": 0.117,
+            "finger.y": 0.032,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "direct_linear_control": 126.04554908642977,
+            "second_order_arm_with_kinematics": 59.07018360366776,
+            "proportional_end_effector_control": 2.750574202649094,
+            "joint_space_dynamics_with_jacobian": 0.39480154753754854,
+            "damped_pendulum_arm": 3.5650088979109187,
+            "independent_finger_target_attraction": 2.6829721740825736
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.0445094108581543
+    }
+  },
+  "args": {
+    "env": "reacher",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/bank_general_reacher_coder_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/coder_general.json",
+    "experience_runs": [],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 100.42447257041931
+}

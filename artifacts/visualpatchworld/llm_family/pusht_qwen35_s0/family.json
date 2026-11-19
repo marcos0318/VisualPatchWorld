@@ -1,0 +1,1042 @@
+{
+  "env": "pusht",
+  "llm_model": "Qwen/Qwen3.5-397B-A17B",
+  "schema": {
+    "state_keys": [
+      "agent.vx",
+      "agent.vy",
+      "agent.x",
+      "agent.y",
+      "block.angle",
+      "block.x",
+      "block.y"
+    ],
+    "state_ranges": {
+      "agent.vx": {
+        "min": -239.038,
+        "max": 197.288
+      },
+      "agent.vy": {
+        "min": -164.106,
+        "max": 212.259
+      },
+      "agent.x": {
+        "min": 44.226,
+        "max": 431.137
+      },
+      "agent.y": {
+        "min": 166.867,
+        "max": 468.784
+      },
+      "block.angle": {
+        "min": 0.743,
+        "max": 2.948
+      },
+      "block.x": {
+        "min": 188.561,
+        "max": 253.842
+      },
+      "block.y": {
+        "min": 257.991,
+        "max": 341.005
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.643,
+      -0.44
+    ],
+    "action_max": [
+      0.53,
+      0.571
+    ],
+    "num_episodes": 40,
+    "num_transitions": 4320
+  },
+  "scales": {
+    "agent.vx": 29.0491526697332,
+    "agent.vy": 33.10328911582162,
+    "agent.x": 8.784955836446613,
+    "agent.y": 7.583339167070911,
+    "block.angle": 0.03517513204333592,
+    "block.x": 1.5088737783332182,
+    "block.y": 1.686962387941111
+  },
+  "candidates": [
+    {
+      "name": "linear_kinematic_baseline",
+      "mechanism": "Agent follows simple linear kinematics with action directly setting velocity change; block is static.",
+      "code": "# HYPOTHESIS: linear_kinematic_baseline\n# MECHANISM: Agent follows simple linear kinematics with action directly setting velocity change; block is static.\nPARAMS = {\"action_gain\": 350.0, \"friction\": 0.02, \"dt\": 0.08}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    vx_old, vy_old = s[\"agent.vx\"], s[\"agent.vy\"]\n    dvx = p[\"action_gain\"] * ax - p[\"friction\"] * vx_old\n    dvy = p[\"action_gain\"] * ay - p[\"friction\"] * vy_old\n    s[\"agent.vx\"] = vx_old + dvx\n    s[\"agent.vy\"] = vy_old + dvy\n    s[\"agent.x\"] = s[\"agent.x\"] + s[\"agent.vx\"] * p[\"dt\"]\n    s[\"agent.y\"] = s[\"agent.y\"] + s[\"agent.vy\"] * p[\"dt\"]\n    s[\"block.angle\"] = state[\"block.angle\"]\n    s[\"block.x\"] = state[\"block.x\"]\n    s[\"block.y\"] = state[\"block.y\"]\n    return s",
+      "init_params": {
+        "action_gain": 350.0,
+        "friction": 0.02,
+        "dt": 0.08
+      },
+      "repaired": false
+    },
+    {
+      "name": "acceleration_with_drag",
+      "mechanism": "Action produces acceleration; velocity experiences quadratic drag; block remains static.",
+      "code": "# HYPOTHESIS: acceleration_with_drag\n# MECHANISM: Action produces acceleration; velocity experiences quadratic drag; block remains static.\nPARAMS = {\"action_accel\": 4000.0, \"drag_linear\": 0.1, \"drag_quad\": 0.001, \"dt\": 0.08}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    vx, vy = s[\"agent.vx\"], s[\"agent.vy\"]\n    speed = math.sqrt(vx*vx + vy*vy + 1e-9)\n    dvx = p[\"action_accel\"] * ax - p[\"drag_linear\"] * vx - p[\"drag_quad\"] * vx * speed\n    dvy = p[\"action_accel\"] * ay - p[\"drag_linear\"] * vy - p[\"drag_quad\"] * vy * speed\n    s[\"agent.vx\"] = vx + dvx * p[\"dt\"]\n    s[\"agent.vy\"] = vy + dvy * p[\"dt\"]\n    s[\"agent.x\"] = s[\"agent.x\"] + s[\"agent.vx\"] * p[\"dt\"]\n    s[\"agent.y\"] = s[\"agent.y\"] + s[\"agent.vy\"] * p[\"dt\"]\n    s[\"block.angle\"] = state[\"block.angle\"]\n    s[\"block.x\"] = state[\"block.x\"]\n    s[\"block.y\"] = state[\"block.y\"]\n    return s",
+      "init_params": {
+        "action_accel": 4000.0,
+        "drag_linear": 0.1,
+        "drag_quad": 0.001,
+        "dt": 0.08
+      },
+      "repaired": false
+    },
+    {
+      "name": "contact_driven_block",
+      "mechanism": "Block moves only when agent is within contact distance; otherwise block is static.",
+      "code": "# HYPOTHESIS: contact_driven_block\n# MECHANISM: Block moves only when agent is within contact distance; otherwise block is static.\nPARAMS = {\"action_gain\": 350.0, \"friction\": 0.02, \"contact_dist\": 50.0, \"block_response\": 0.1, \"dt\": 0.08}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    vx_old, vy_old = s[\"agent.vx\"], s[\"agent.vy\"]\n    dvx = p[\"action_gain\"] * ax - p[\"friction\"] * vx_old\n    dvy = p[\"action_gain\"] * ay - p[\"friction\"] * vy_old\n    s[\"agent.vx\"] = vx_old + dvx\n    s[\"agent.vy\"] = vy_old + dvy\n    s[\"agent.x\"] = s[\"agent.x\"] + s[\"agent.vx\"] * p[\"dt\"]\n    s[\"agent.y\"] = s[\"agent.y\"] + s[\"agent.vy\"] * p[\"dt\"]\n    dist = math.sqrt((s[\"agent.x\"] - state[\"block.x\"])**2 + (s[\"agent.y\"] - state[\"block.y\"])**2)\n    if dist < p[\"contact_dist\"]:\n        s[\"block.x\"] = state[\"block.x\"] + p[\"block_response\"] * (s[\"agent.x\"] - state[\"block.x\"])\n        s[\"block.y\"] = state[\"block.y\"] + p[\"block_response\"] * (s[\"agent.y\"] - state[\"block.y\"])\n        s[\"block.angle\"] = state[\"block.angle\"] + p[\"block_response\"] * 0.01\n    else:\n        s[\"block.x\"] = state[\"block.x\"]\n        s[\"block.y\"] = state[\"block.y\"]\n        s[\"block.angle\"] = state[\"block.angle\"]\n    return s",
+      "init_params": {
+        "action_gain": 350.0,
+        "friction": 0.02,
+        "contact_dist": 50.0,
+        "block_response": 0.1,
+        "dt": 0.08
+      },
+      "repaired": false
+    },
+    {
+      "name": "velocity_saturation",
+      "mechanism": "Action affects velocity but velocity is clamped to maximum speed; block is static.",
+      "code": "# HYPOTHESIS: velocity_saturation\n# MECHANISM: Action affects velocity but velocity is clamped to maximum speed; block is static.\nPARAMS = {\"action_gain\": 350.0, \"friction\": 0.02, \"max_speed\": 200.0, \"dt\": 0.08}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    vx_old, vy_old = s[\"agent.vx\"], s[\"agent.vy\"]\n    dvx = p[\"action_gain\"] * ax - p[\"friction\"] * vx_old\n    dvy = p[\"action_gain\"] * ay - p[\"friction\"] * vy_old\n    vx_new = vx_old + dvx\n    vy_new = vy_old + dvy\n    speed = math.sqrt(vx_new*vx_new + vy_new*vy_new)\n    if speed > p[\"max_speed\"]:\n        scale = p[\"max_speed\"] / (speed + 1e-9)\n        vx_new *= scale\n        vy_new *= scale\n    s[\"agent.vx\"] = vx_new\n    s[\"agent.vy\"] = vy_new\n    s[\"agent.x\"] = s[\"agent.x\"] + s[\"agent.vx\"] * p[\"dt\"]\n    s[\"agent.y\"] = s[\"agent.y\"] + s[\"agent.vy\"] * p[\"dt\"]\n    s[\"block.angle\"] = state[\"block.angle\"]\n    s[\"block.x\"] = state[\"block.x\"]\n    s[\"block.y\"] = state[\"block.y\"]\n    return s",
+      "init_params": {
+        "action_gain": 350.0,
+        "friction": 0.02,
+        "max_speed": 200.0,
+        "dt": 0.08
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_coupling",
+      "mechanism": "Agent and block exchange momentum when close; action affects agent momentum directly.",
+      "code": "# HYPOTHESIS: momentum_coupling\n# MECHANISM: Agent and block exchange momentum when close; action affects agent momentum directly.\nPARAMS = {\"action_force\": 300.0, \"friction\": 0.02, \"coupling_strength\": 0.05, \"coupling_dist\": 60.0, \"dt\": 0.08}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    vx, vy = s[\"agent.vx\"], s[\"agent.vy\"]\n    dvx = p[\"action_force\"] * ax - p[\"friction\"] * vx\n    dvy = p[\"action_force\"] * ay - p[\"friction\"] * vy\n    dist = math.sqrt((s[\"agent.x\"] - state[\"block.x\"])**2 + (s[\"agent.y\"] - state[\"block.y\"])**2)\n    if dist < p[\"coupling_dist\"] and dist > 1e-6:\n        nx = (s[\"agent.x\"] - state[\"block.x\"]) / dist\n        ny = (s[\"agent.y\"] - state[\"block.y\"]) / dist\n        dvx -= p[\"coupling_strength\"] * vx * nx\n        dvy -= p[\"coupling_strength\"] * vy * ny\n    s[\"agent.vx\"] = vx + dvx\n    s[\"agent.vy\"] = vy + dvy\n    s[\"agent.x\"] = s[\"agent.x\"] + s[\"agent.vx\"] * p[\"dt\"]\n    s[\"agent.y\"] = s[\"agent.y\"] + s[\"agent.vy\"] * p[\"dt\"]\n    s[\"block.x\"] = state[\"block.x\"]\n    s[\"block.y\"] = state[\"block.y\"]\n    s[\"block.angle\"] = state[\"block.angle\"]\n    return s",
+      "init_params": {
+        "action_force": 300.0,
+        "friction": 0.02,
+        "coupling_strength": 0.05,
+        "coupling_dist": 60.0,
+        "dt": 0.08
+      },
+      "repaired": false
+    },
+    {
+      "name": "action_nonlinearity",
+      "mechanism": "Action effect is nonlinear (sigmoidal saturation); velocity decay is exponential; block static.",
+      "code": "# HYPOTHESIS: action_nonlinearity\n# MECHANISM: Action effect is nonlinear (sigmoidal saturation); velocity decay is exponential; block static.\nPARAMS = {\"action_scale\": 400.0, \"action_knee\": 0.3, \"decay_rate\": 0.05, \"dt\": 0.08}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    def saturate(a, k, scale):\n        return scale * math.tanh(a / (k + 1e-9))\n    vx, vy = s[\"agent.vx\"], s[\"agent.vy\"]\n    dvx = saturate(ax, p[\"action_knee\"], p[\"action_scale\"]) - p[\"decay_rate\"] * vx\n    dvy = saturate(ay, p[\"action_knee\"], p[\"action_scale\"]) - p[\"decay_rate\"] * vy\n    s[\"agent.vx\"] = vx + dvx\n    s[\"agent.vy\"] = vy + dvy\n    s[\"agent.x\"] = s[\"agent.x\"] + s[\"agent.vx\"] * p[\"dt\"]\n    s[\"agent.y\"] = s[\"agent.y\"] + s[\"agent.vy\"] * p[\"dt\"]\n    s[\"block.angle\"] = state[\"block.angle\"]\n    s[\"block.x\"] = state[\"block.x\"]\n    s[\"block.y\"] = state[\"block.y\"]\n    return s",
+      "init_params": {
+        "action_scale": 400.0,
+        "action_knee": 0.3,
+        "decay_rate": 0.05,
+        "dt": 0.08
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_kinematic_baseline": {
+        "params": {
+          "action_gain": 359.6587028535673,
+          "friction": 0.9646546960113042,
+          "dt": 0.10719308892506511
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212681055417812,
+        "val_one_step_nrmse": 0.7189234289843484,
+        "val_rollout_nrmse": 2.3083447259045107,
+        "restarts": 4,
+        "nfev": 24,
+        "elapsed_s": 2.519871473312378,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212681055417212,
+            "val_rollout_nrmse": 2.3083447331715137
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681055417812,
+            "val_rollout_nrmse": 2.3083447259045107
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212681055418187,
+            "val_rollout_nrmse": 2.3083447365034093
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212681055427276,
+            "val_rollout_nrmse": 2.3083447264013692
+          }
+        ]
+      },
+      "acceleration_with_drag": {
+        "params": {
+          "action_accel": 3355.134474602009,
+          "drag_linear": 8.993841872786628,
+          "drag_quad": 3.508680720842647e-05,
+          "dt": 0.10719243563045669
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212680329334246,
+        "val_one_step_nrmse": 0.7189235390437229,
+        "val_rollout_nrmse": 2.3083433850413453,
+        "restarts": 4,
+        "nfev": 42,
+        "elapsed_s": 5.409458637237549,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212680329316051,
+            "val_rollout_nrmse": 2.3083434002963688
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212680329286022,
+            "val_rollout_nrmse": 2.308343445239092
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212680329334246,
+            "val_rollout_nrmse": 2.3083433850413453
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212680329286493,
+            "val_rollout_nrmse": 2.308343420431209
+          }
+        ]
+      },
+      "contact_driven_block": {
+        "params": {
+          "action_gain": 359.6748771201427,
+          "friction": 0.9646943340787381,
+          "contact_dist": 15.603301615767746,
+          "block_response": 0.13080060695499066,
+          "dt": 0.1071927556750979
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212681061304937,
+        "val_one_step_nrmse": 0.7428119090951932,
+        "val_rollout_nrmse": 2.3396617896720286,
+        "restarts": 4,
+        "nfev": 66,
+        "elapsed_s": 6.374546051025391,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.49646243397597123,
+            "val_rollout_nrmse": 2.696102796025836
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4889958020913291,
+            "val_rollout_nrmse": 2.3618187471140537
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212681061304937,
+            "val_rollout_nrmse": 2.3396617896720286
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.49646243397597,
+            "val_rollout_nrmse": 2.7005111203090277
+          }
+        ]
+      },
+      "velocity_saturation": {
+        "params": {
+          "action_gain": 359.65862723179265,
+          "friction": 0.9646547385294693,
+          "max_speed": 242.82616223537823,
+          "dt": 0.10719303757919
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212681055419132,
+        "val_one_step_nrmse": 0.7192749675813706,
+        "val_rollout_nrmse": 2.3085179498751858,
+        "restarts": 4,
+        "nfev": 40,
+        "elapsed_s": 5.6332457065582275,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212681055419132,
+            "val_rollout_nrmse": 2.3085179498751858
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681055419132,
+            "val_rollout_nrmse": 2.3085179498841257
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212681055419133,
+            "val_rollout_nrmse": 2.308517949883245
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212681055419132,
+            "val_rollout_nrmse": 2.308517949886813
+          }
+        ]
+      },
+      "momentum_coupling": {
+        "params": {
+          "action_force": 359.66894641702885,
+          "friction": 0.96468258378108,
+          "coupling_strength": -0.0037596879891410853,
+          "coupling_dist": 53.82369504418383,
+          "dt": 0.10719275544828645
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212680804935436,
+        "val_one_step_nrmse": 0.7189254246447581,
+        "val_rollout_nrmse": 2.308347955279345,
+        "restarts": 4,
+        "nfev": 77,
+        "elapsed_s": 6.173197984695435,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212680016515059,
+            "val_rollout_nrmse": 2.308349633018991
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212679226160148,
+            "val_rollout_nrmse": 2.3083513120676433
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212680804935436,
+            "val_rollout_nrmse": 2.308347955279345
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212674010573699,
+            "val_rollout_nrmse": 2.308358166589142
+          }
+        ]
+      },
+      "action_nonlinearity": {
+        "params": {
+          "action_scale": 19875.853952056954,
+          "action_knee": 55.26216852583292,
+          "decay_rate": 0.9646587338184609,
+          "dt": 0.10719301761186342
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5212681105612917,
+        "val_one_step_nrmse": 0.7189234315399874,
+        "val_rollout_nrmse": 2.3083447013616616,
+        "restarts": 4,
+        "nfev": 60,
+        "elapsed_s": 6.390398979187012,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5212681083175564,
+            "val_rollout_nrmse": 2.308344725532588
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5212681080125446,
+            "val_rollout_nrmse": 2.308344728802166
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5212681105612917,
+            "val_rollout_nrmse": 2.3083447013616616
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5212681104906328,
+            "val_rollout_nrmse": 2.3083447176702423
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_kinematic_baseline": {
+        "params": {
+          "action_gain": 328.2084206991008,
+          "friction": 0.8760395018103136,
+          "dt": 0.10825586959089882
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.04904702211972,
+        "val_one_step_nrmse": 0.7201310547280536,
+        "val_rollout_nrmse": 2.3078710088800762,
+        "restarts": 4,
+        "nfev": 31,
+        "elapsed_s": 10.644458532333374,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.04904702211972,
+            "val_rollout_nrmse": 2.3078710088800762
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.0490470222034345,
+            "val_rollout_nrmse": 2.307871020463771
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.04904702215307,
+            "val_rollout_nrmse": 2.3078710148728954
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049047022242545,
+            "val_rollout_nrmse": 2.3078710232625856
+          }
+        ]
+      },
+      "acceleration_with_drag": {
+        "params": {
+          "action_accel": 3034.2241115763036,
+          "drag_linear": 8.015158707153493,
+          "drag_quad": 0.000578601803434711,
+          "dt": 0.10822302806360551
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049001019730251,
+        "val_one_step_nrmse": 0.7201458429364253,
+        "val_rollout_nrmse": 2.307880953483918,
+        "restarts": 4,
+        "nfev": 137,
+        "elapsed_s": 59.59272265434265,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.0490010198102615,
+            "val_rollout_nrmse": 2.3078809580848465
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049001019740203,
+            "val_rollout_nrmse": 2.3078809543384216
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.049001019742267,
+            "val_rollout_nrmse": 2.307880954896393
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049001019730251,
+            "val_rollout_nrmse": 2.307880953483918
+          }
+        ]
+      },
+      "contact_driven_block": {
+        "params": {
+          "action_gain": 328.2200514476039,
+          "friction": 0.876063788868867,
+          "contact_dist": -271.22891432762293,
+          "block_response": -0.10831517466309724,
+          "dt": 0.10825471335201316
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049047022562326,
+        "val_one_step_nrmse": 0.7201303511718324,
+        "val_rollout_nrmse": 2.3078709654606127,
+        "restarts": 4,
+        "nfev": 88,
+        "elapsed_s": 31.22554349899292,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.0490470287516525,
+            "val_rollout_nrmse": 2.30787116359607
+          },
+          {
+            "restart": 1,
+            "train_loss": 4.7032643692265745,
+            "val_rollout_nrmse": 2.3701144935335727
+          },
+          {
+            "restart": 2,
+            "train_loss": 4.8802613510655615,
+            "val_rollout_nrmse": 3.322172374925197
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049047022562326,
+            "val_rollout_nrmse": 2.3078709654606127
+          }
+        ]
+      },
+      "velocity_saturation": {
+        "params": {
+          "action_gain": 328.2138090143356,
+          "friction": 0.8760511061870555,
+          "max_speed": 245.8236569656266,
+          "dt": 0.108255418992963
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.0490470221836325,
+        "val_one_step_nrmse": 0.7203598786021077,
+        "val_rollout_nrmse": 2.307959414251497,
+        "restarts": 4,
+        "nfev": 81,
+        "elapsed_s": 23.119776487350464,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.049047022120105,
+            "val_rollout_nrmse": 2.307959422335328
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049047022122913,
+            "val_rollout_nrmse": 2.3079594216292696
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.0490470221836325,
+            "val_rollout_nrmse": 2.307959414251497
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049047022118945,
+            "val_rollout_nrmse": 2.3079594224181395
+          }
+        ]
+      },
+      "momentum_coupling": {
+        "params": {
+          "action_force": 328.21403254487495,
+          "friction": 0.8760525997122361,
+          "coupling_strength": -652.1195408701005,
+          "coupling_dist": -255.8381698109663,
+          "dt": 0.1082557620368819
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049047022210785,
+        "val_one_step_nrmse": 0.7201306894724956,
+        "val_rollout_nrmse": 2.3078709844177756,
+        "restarts": 4,
+        "nfev": 79,
+        "elapsed_s": 25.959357500076294,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.04904520147244,
+            "val_rollout_nrmse": 2.30787129614959
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049047022210785,
+            "val_rollout_nrmse": 2.3078709844177756
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.048979798756944,
+            "val_rollout_nrmse": 2.3080882936377423
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.048995990139939,
+            "val_rollout_nrmse": 2.3079239695813833
+          }
+        ]
+      },
+      "action_nonlinearity": {
+        "params": {
+          "action_scale": 17856.818399720712,
+          "action_knee": 54.40742989169132,
+          "decay_rate": 0.8760419404680643,
+          "dt": 0.10825575901354993
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.049047037709665,
+        "val_one_step_nrmse": 0.720131120460795,
+        "val_rollout_nrmse": 2.307871015613448,
+        "restarts": 4,
+        "nfev": 57,
+        "elapsed_s": 25.432889938354492,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.049047037247448,
+            "val_rollout_nrmse": 2.3078710208952136
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.049047039587954,
+            "val_rollout_nrmse": 2.3078710320508926
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.0490470305918915,
+            "val_rollout_nrmse": 2.307871020273423
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.049047037709665,
+            "val_rollout_nrmse": 2.307871015613448
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "acceleration_with_drag",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_kinematic_baseline": 2.3083447259045107,
+        "acceleration_with_drag": 2.3083433850413453,
+        "contact_driven_block": 2.3396617896720286,
+        "velocity_saturation": 2.3085179498751858,
+        "momentum_coupling": 2.308347955279345,
+        "action_nonlinearity": 2.3083447013616616
+      }
+    },
+    "active_one_step": {
+      "winner": "acceleration_with_drag",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "linear_kinematic_baseline": 4.863804972630787,
+        "acceleration_with_drag": 4.863791570134664,
+        "contact_driven_block": 5.02062802342595,
+        "velocity_saturation": 4.8640330704410975,
+        "momentum_coupling": 4.863846553267499,
+        "action_nonlinearity": 4.86380506856887
+      },
+      "probes": [
+        {
+          "disagreement": 0.22986520750517594,
+          "actions": [
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ],
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ],
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ]
+          ],
+          "start": {
+            "agent.x": 284.486,
+            "agent.y": 189.844,
+            "agent.vx": -41.492,
+            "agent.vy": 68.629,
+            "block.x": 277.94,
+            "block.y": 204.093,
+            "block.angle": 0.75
+          },
+          "errors": {
+            "linear_kinematic_baseline": 1.6585716792182348,
+            "acceleration_with_drag": 1.6585628179524197,
+            "contact_driven_block": 2.3336683332866954,
+            "velocity_saturation": 1.658571690848007,
+            "momentum_coupling": 1.6586533655108349,
+            "action_nonlinearity": 1.6585715955830809
+          }
+        },
+        {
+          "disagreement": 0.2106068474641661,
+          "actions": [
+            [
+              0.4100002643928842,
+              0.5312321996755045
+            ],
+            [
+              0.06533910852990299,
+              0.08082713093857113
+            ],
+            [
+              0.3337780373230108,
+              0.21952480431160032
+            ]
+          ],
+          "start": {
+            "agent.x": 278.879,
+            "agent.y": 171.202,
+            "agent.vx": -52.53,
+            "agent.vy": 32.485,
+            "block.x": 285.786,
+            "block.y": 200.102,
+            "block.angle": 0.812
+          },
+          "errors": {
+            "linear_kinematic_baseline": 1.3517993101165775,
+            "acceleration_with_drag": 1.3517539648466412,
+            "contact_driven_block": 1.9588912080877139,
+            "velocity_saturation": 1.3517992141695987,
+            "momentum_coupling": 1.3519540265436685,
+            "action_nonlinearity": 1.351799023668758
+          }
+        },
+        {
+          "disagreement": 0.20131135801880182,
+          "actions": [
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ]
+          ],
+          "start": {
+            "agent.x": 245.215,
+            "agent.y": 224.349,
+            "agent.vx": -17.355,
+            "agent.vy": 39.688,
+            "block.x": 226.273,
+            "block.y": 223.832,
+            "block.angle": 0.935
+          },
+          "errors": {
+            "linear_kinematic_baseline": 13.058483925155988,
+            "acceleration_with_drag": 13.058476337157016,
+            "contact_driven_block": 12.74926455736197,
+            "velocity_saturation": 13.059173636176698,
+            "momentum_coupling": 13.058460298930482,
+            "action_nonlinearity": 13.058483193937057
+          }
+        },
+        {
+          "disagreement": 0.16462810360102828,
+          "actions": [
+            [
+              -0.19038042390117543,
+              0.17789737141095013
+            ],
+            [
+              -0.19038042390117543,
+              0.17789737141095013
+            ],
+            [
+              -0.19038042390117543,
+              0.17789737141095013
+            ]
+          ],
+          "start": {
+            "agent.x": 291.575,
+            "agent.y": 165.817,
+            "agent.vx": -29.993,
+            "agent.vy": 14.725,
+            "block.x": 282.378,
+            "block.y": 184.272,
+            "block.angle": 1.223
+          },
+          "errors": {
+            "linear_kinematic_baseline": 4.892565345650552,
+            "acceleration_with_drag": 4.89256632804374,
+            "contact_driven_block": 4.694859038759007,
+            "velocity_saturation": 4.892565339818761,
+            "momentum_coupling": 4.892553515388783,
+            "action_nonlinearity": 4.892565409883287
+          }
+        },
+        {
+          "disagreement": 0.16220113192255184,
+          "actions": [
+            [
+              -0.638518112687589,
+              0.23328293846508102
+            ],
+            [
+              0.2571436810111404,
+              -0.10975054419861496
+            ],
+            [
+              0.361758593477286,
+              -0.43980790837497574
+            ]
+          ],
+          "start": {
+            "agent.x": 418.984,
+            "agent.y": 225.629,
+            "agent.vx": -47.132,
+            "agent.vy": -94.711,
+            "block.x": 382.664,
+            "block.y": 243.61,
+            "block.angle": 2.311
+          },
+          "errors": {
+            "linear_kinematic_baseline": 3.357604603012579,
+            "acceleration_with_drag": 3.357598402673503,
+            "contact_driven_block": 3.3664569796343673,
+            "velocity_saturation": 3.3580554711924218,
+            "momentum_coupling": 3.3576115599637255,
+            "action_nonlinearity": 3.3576061197721665
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.04192924499511719
+    },
+    "offline_multi_step": {
+      "winner": "contact_driven_block",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_kinematic_baseline": 2.3078710088800762,
+        "acceleration_with_drag": 2.307880953483918,
+        "contact_driven_block": 2.3078709654606127,
+        "velocity_saturation": 2.307959414251497,
+        "momentum_coupling": 2.3078709844177756,
+        "action_nonlinearity": 2.307871015613448
+      }
+    },
+    "active_multi_step": {
+      "winner": "acceleration_with_drag",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "linear_kinematic_baseline": 3.5930700501373436,
+        "acceleration_with_drag": 3.5914945591280607,
+        "contact_driven_block": 3.593051475344498,
+        "velocity_saturation": 3.6086790134390574,
+        "momentum_coupling": 3.5930629723063006,
+        "action_nonlinearity": 3.5930750161580236
+      },
+      "probes": [
+        {
+          "disagreement": 0.10703762432660512,
+          "actions": [
+            [
+              -0.5949380564228437,
+              -0.4232905604806571
+            ],
+            [
+              -0.5949380564228437,
+              -0.4232905604806571
+            ],
+            [
+              -0.5949380564228437,
+              -0.4232905604806571
+            ]
+          ],
+          "start": {
+            "agent.x": 347.54,
+            "agent.y": 142.513,
+            "agent.vx": -29.198,
+            "agent.vy": -11.917,
+            "block.x": 342.948,
+            "block.y": 194.049,
+            "block.angle": 1.366
+          },
+          "errors": {
+            "linear_kinematic_baseline": 3.241300423407867,
+            "acceleration_with_drag": 3.2408879021094634,
+            "contact_driven_block": 3.2412979260951733,
+            "velocity_saturation": 3.2506911385119803,
+            "momentum_coupling": 3.2412996003949375,
+            "action_nonlinearity": 3.241300761461961
+          }
+        },
+        {
+          "disagreement": 0.08127313735391918,
+          "actions": [
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ],
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ],
+            [
+              0.5202461746056508,
+              0.489301079119515
+            ]
+          ],
+          "start": {
+            "agent.x": 246.85,
+            "agent.y": 230.401,
+            "agent.vx": -14.948,
+            "agent.vy": 11.707,
+            "block.x": 230.273,
+            "block.y": 234.412,
+            "block.angle": 0.827
+          },
+          "errors": {
+            "linear_kinematic_baseline": 0.30839078087844496,
+            "acceleration_with_drag": 0.3042708534048042,
+            "contact_driven_block": 0.30836181197418505,
+            "velocity_saturation": 0.3431576878401889,
+            "momentum_coupling": 0.30838159162596507,
+            "action_nonlinearity": 0.30838505567891994
+          }
+        },
+        {
+          "disagreement": 0.059842080034071106,
+          "actions": [
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ]
+          ],
+          "start": {
+            "agent.x": 245.215,
+            "agent.y": 224.349,
+            "agent.vx": -17.355,
+            "agent.vy": 39.688,
+            "block.x": 226.273,
+            "block.y": 223.832,
+            "block.angle": 0.935
+          },
+          "errors": {
+            "linear_kinematic_baseline": 13.025699013188998,
+            "acceleration_with_drag": 13.025619655910422,
+            "contact_driven_block": 13.02569836957904,
+            "velocity_saturation": 13.026184983126145,
+            "momentum_coupling": 13.02569878008558,
+            "action_nonlinearity": 13.025699244408061
+          }
+        },
+        {
+          "disagreement": 0.04057550288694851,
+          "actions": [
+            [
+              -0.6097810257463719,
+              -0.31434960745894086
+            ],
+            [
+              -0.6097810257463719,
+              -0.31434960745894086
+            ],
+            [
+              -0.6097810257463719,
+              -0.31434960745894086
+            ]
+          ],
+          "start": {
+            "agent.x": 278.952,
+            "agent.y": 82.314,
+            "agent.vx": 8.304,
+            "agent.vy": -50.74,
+            "block.x": 386.973,
+            "block.y": 282.255,
+            "block.angle": 2.731
+          },
+          "errors": {
+            "linear_kinematic_baseline": 0.2711820848550504,
+            "acceleration_with_drag": 0.26767333319641634,
+            "contact_driven_block": 0.27114895993144816,
+            "velocity_saturation": 0.27349785194977744,
+            "momentum_coupling": 0.27117005642762815,
+            "action_nonlinearity": 0.27118952138722463
+          }
+        },
+        {
+          "disagreement": 0.04007015545110669,
+          "actions": [
+            [
+              -0.3242736102397447,
+              0.13197803287424142
+            ],
+            [
+              0.11477568871252619,
+              -0.23812629200730706
+            ],
+            [
+              -0.6026406644496772,
+              0.5578907103391169
+            ]
+          ],
+          "start": {
+            "agent.x": 448.127,
+            "agent.y": 272.759,
+            "agent.vx": 2.675,
+            "agent.vy": -58.484,
+            "block.x": 386.973,
+            "block.y": 282.255,
+            "block.angle": 2.731
+          },
+          "errors": {
+            "linear_kinematic_baseline": 1.118777948356361,
+            "acceleration_with_drag": 1.1190210510191945,
+            "contact_driven_block": 1.1187503091426445,
+            "velocity_saturation": 1.1498634057671964,
+            "momentum_coupling": 1.118764832997393,
+            "action_nonlinearity": 1.1188004978539492
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.05794858932495117
+    }
+  },
+  "args": {
+    "env": "pusht",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_train.jsonl",
+    "val_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_val.jsonl",
+    "max_train_episodes": 40,
+    "max_val_episodes": 10,
+    "output_dir": "artifacts/visualpatchworld/llm_family/pusht_qwen35_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "seed": 0,
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 306.2695083618164
+}

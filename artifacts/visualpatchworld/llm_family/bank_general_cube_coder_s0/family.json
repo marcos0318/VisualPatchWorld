@@ -1,0 +1,1202 @@
+{
+  "env": "cube",
+  "llm_model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+  "schema": {
+    "state_keys": [
+      "block.x",
+      "block.y",
+      "block.z",
+      "effector.x",
+      "effector.y",
+      "effector.z",
+      "goal.x",
+      "goal.y",
+      "goal.z"
+    ],
+    "state_ranges": {
+      "block.x": {
+        "min": 0.251,
+        "max": 0.557
+      },
+      "block.y": {
+        "min": -0.339,
+        "max": 0.294
+      },
+      "block.z": {
+        "min": 0.019,
+        "max": 0.335
+      },
+      "effector.x": {
+        "min": 0.248,
+        "max": 0.567
+      },
+      "effector.y": {
+        "min": -0.339,
+        "max": 0.294
+      },
+      "effector.z": {
+        "min": 0.015,
+        "max": 0.335
+      },
+      "goal.x": {
+        "min": 0.304,
+        "max": 0.536
+      },
+      "goal.y": {
+        "min": -0.285,
+        "max": 0.283
+      },
+      "goal.z": {
+        "min": 0.02,
+        "max": 0.02
+      }
+    },
+    "action_dim": 5,
+    "action_min": [
+      -1.0,
+      -1.0,
+      -1.0,
+      -1.0,
+      -0.321
+    ],
+    "action_max": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.567
+    ],
+    "num_episodes": 51,
+    "num_transitions": 2040
+  },
+  "scales": {
+    "block.x": 0.015027326695920107,
+    "block.y": 0.02119843666027467,
+    "block.z": 0.04406113733540159,
+    "effector.x": 0.025943293893212635,
+    "effector.y": 0.03839158734668915,
+    "effector.z": 0.06011630803798929,
+    "goal.x": 1.0,
+    "goal.y": 1.0,
+    "goal.z": 1.0
+  },
+  "candidates": [
+    {
+      "name": "point_mass_no_contact",
+      "mechanism": "Effector moves as 3D point mass under action force; block passive.",
+      "code": "# HYPOTHESIS: point_mass_no_contact\n# MECHANISM: Effector moves as 3D point mass under action force; block passive.\nPARAMS = {\n    \"effector_mass\": 1.0,\n    \"dt\": 0.1,\n    \"action_scale\": 1.0\n}\n\ndef step(state, action, p, meta):\n    import math\n    # Effector updates using second order inertia\n    eff_force = [\n        action[0] * p[\"action_scale\"],\n        action[1] * p[\"action_scale\"],\n        action[2] * p[\"action_scale\"]\n    ]\n    \n    eff_vx = (state[\"effector.x\"] - state.get(\"prev_effector_x\", state[\"effector.x\"])) / p[\"dt\"]\n    eff_vy = (state[\"effector.y\"] - state.get(\"prev_effector_y\", state[\"effector.y\"])) / p[\"dt\"]\n    eff_vz = (state[\"effector.z\"] - state.get(\"prev_effector_z\", state[\"effector.z\"])) / p[\"dt\"]\n    \n    eff_ax = eff_force[0] / p[\"effector_mass\"]\n    eff_ay = eff_force[1] / p[\"effector_mass\"]\n    eff_az = eff_force[2] / p[\"effector_mass\"]\n    \n    new_eff_vx = eff_vx + eff_ax * p[\"dt\"]\n    new_eff_vy = eff_vy + eff_ay * p[\"dt\"]\n    new_eff_vz = eff_vz + eff_az * p[\"dt\"]\n    \n    new_eff_x = state[\"effector.x\"] + new_eff_vx * p[\"dt\"]\n    new_eff_y = state[\"effector.y\"] + new_eff_vy * p[\"dt\"]\n    new_eff_z = state[\"effector.z\"] + new_eff_vz * p[\"dt\"]\n    \n    # Block remains unchanged\n    new_state = state.copy()\n    new_state[\"effector.x\"] = new_eff_x\n    new_state[\"effector.y\"] = new_eff_y\n    new_state[\"effector.z\"] = new_eff_z\n    new_state[\"block.x\"] = state[\"block.x\"]\n    new_state[\"block.y\"] = state[\"block.y\"]\n    new_state[\"block.z\"] = state[\"block.z\"]\n    new_state[\"goal.x\"] = state[\"goal.x\"]\n    new_state[\"goal.y\"] = state[\"goal.y\"]\n    new_state[\"goal.z\"] = state[\"goal.z\"]\n    \n    return new_state",
+      "init_params": {
+        "effector_mass": 1.0,
+        "dt": 0.1,
+        "action_scale": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "gripper_with_grasp_and_gravity",
+      "mechanism": "Gripper can grasp block when close; both subject to gravity and ground contact.",
+      "code": "# HYPOTHESIS: gripper_with_grasp_and_gravity\n# MECHANISM: Gripper can grasp block when close; both subject to gravity and ground contact.\nPARAMS = {\n    \"grip_threshold\": 0.05,\n    \"gravity\": -9.8,\n    \"ground_level\": 0.02,\n    \"dt\": 0.1,\n    \"gripper_speed\": 1.0,\n    \"release_distance\": 0.1\n}\n\ndef step(state, action, p, meta):\n    import math\n    \n    # Compute distance between effector and block\n    dx = state[\"effector.x\"] - state[\"block.x\"]\n    dy = state[\"effector.y\"] - state[\"block.y\"]\n    dz = state[\"effector.z\"] - state[\"block.z\"]\n    distance = math.sqrt(dx*dx + dy*dy + dz*dz)\n    \n    # Determine if gripping\n    is_gripped = getattr(step, 'is_gripped', False)\n    \n    # Update gripper position based on action\n    grip_action = action[4]\n    if grip_action > 0.5:\n        if distance < p[\"grip_threshold\"]:\n            step.is_gripped = True\n    elif grip_action < -0.5:\n        step.is_gripped = False\n        \n    # If already gripped, check release condition\n    if getattr(step, 'is_gipped', False) and distance > p[\"release_distance\"]:\n        step.is_gripped = False\n            \n    # Move gripper\n    new_ex = state[\"effector.x\"] + action[0] * p[\"gripper_speed\"] * p[\"dt\"]\n    new_ey = state[\"effector.y\"] + action[1] * p[\"gripper_speed\"] * p[\"dt\"]\n    new_ez = state[\"effector.z\"] + action[2] * p[\"gripper_speed\"] * p[\"dt\"]\n    \n    # Apply gravity to block if not gripped\n    new_bx, new_by, new_bz = state[\"block.x\"], state[\"block.y\"], state[\"block.z\"]\n    if not getattr(step, 'is_gripped', False):\n        new_bz += p[\"gravity\"] * p[\"dt\"] * p[\"dt\"] / 2\n        if new_bz < p[\"ground_level\"]:\n            new_bz = p[\"ground_level\"]\n    else:\n        # Move block with gripper\n        new_bx = new_ex\n        new_by = new_ey\n        new_bz = new_ez\n\n    # Ensure block doesn't fall through floor even when not gripped\n    if new_bz < p[\"ground_level\"]:\n        new_bz = p[\"ground_level\"]\n\n    new_state = state.copy()\n    new_state[\"effector.x\"] = new_ex\n    new_state[\"effector.y\"] = new_ey\n    new_state[\"effector.z\"] = new_ez\n    new_state[\"block.x\"] = new_bx\n    new_state[\"block.y\"] = new_by\n    new_state[\"block.z\"] = new_bz\n    return new_state",
+      "init_params": {
+        "grip_threshold": 0.05,
+        "gravity": -9.8,
+        "ground_level": 0.02,
+        "dt": 0.1,
+        "gripper_speed": 1.0,
+        "release_distance": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_based_dynamics",
+      "mechanism": "Both effector and block have momentum; interactions via impulses or continuous forces.",
+      "code": "# HYPOTHESIS: momentum_based_dynamics\n# MECHANISM: Both effector and block have momentum; interactions via impulses or continuous forces.\nPARAMS = {\n    \"effector_mass\": 1.0,\n    \"block_mass\": 0.5,\n    \"dt\": 0.1,\n    \"force_scale\": 5.0,\n    \"restitution\": 0.3,\n    \"damping\": 0.1\n}\n\ndef step(state, action, p, meta):\n    import math\n    \n    # Estimate previous velocities from positions (assuming constant velocity)\n    prev_ex = state.get(\"prev_ex\", state[\"effector.x\"])\n    prev_ey = state.get(\"prev_ey\", state[\"effector.y\"])\n    prev_ez = state.get(\"prev_ez\", state[\"effector.z\"])\n    \n    prev_bx = state.get(\"prev_bx\", state[\"block.x\"])\n    prev_by = state.get(\"prev_by\", state[\"block.y\"])\n    prev_bz = state.get(\"prev_bz\", state[\"block.z\"])\n    \n    # Current velocities\n    evx = (state[\"effector.x\"] - prev_ex) / p[\"dt\"]\n    evy = (state[\"effector.y\"] - prev_ey) / p[\"dt\"]\n    evz = (state[\"effector.z\"] - prev_ez) / p[\"dt\"]\n    \n    bvx = (state[\"block.x\"] - prev_bx) / p[\"dt\"]\n    bvy = (state[\"block.y\"] - prev_by) / p[\"dt\"]\n    bvz = (state[\"block.z\"] - prev_bz) / p[\"dt\"]\n    \n    # Action forces on effector\n    fx = action[0] * p[\"force_scale\"]\n    fy = action[1] * p[\"force_scale\"]\n    fz = action[2] * p[\"force_scale\"]\n    \n    # Update effector velocity with force and damping\n    evx = (evx + fx * p[\"dt\"] / p[\"effector_mass\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"effector_mass\"])\n    evy = (evy + fy * p[\"dt\"] / p[\"effector_mass\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"effector_mass\"])\n    evz = (evz + fz * p[\"dt\"] / p[\"effector_mass\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"effector_mass\"])\n    \n    # Simple collision detection (overlap in x,y,z within sum of radii)\n    dx = state[\"effector.x\"] - state[\"block.x\"]\n    dy = state[\"effector.y\"] - state[\"block.y\"]\n    dz = state[\"effector.z\"] - state[\"block.z\"]\n    dist_sq = dx*dx + dy*dy + dz*dz\n    \n    # Assume radius of 0.02 for both objects\n    if dist_sq < (0.04)**2:\n        # Inelastic collision impulse exchange\n        total_mass = p[\"effector_mass\"] + p[\"block_mass\"]\n        # Relative velocity\n        rvx = evx - bvx\n        rvy = evy - bvy\n        rvz = evz - bvz\n        \n        # Impulse factor\n        impulse_factor = (1 + p[\"restitution\"]) * p[\"block_mass\"] / total_mass\n        \n        # Update velocities after collision\n        evx -= impulse_factor * rvx\n        evy -= impulse_factor * rvy\n        evz -= impulse_factor * rvz\n        \n        bvx += impulse_factor * (p[\"effector_mass\"]/p[\"block_mass\"]) * rvx\n        bvy += impulse_factor * (p[\"effector_mass\"]/p[\"block_mass\"]) * rvy\n        bvz += impulse_factor * (p[\"effector_mass\"]/p[\"block_mass\"]) * rvz\n    \n    # Integrate positions\n    new_ex = state[\"effector.x\"] + evx * p[\"dt\"]\n    new_ey = state[\"effector.y\"] + evy * p[\"dt\"]\n    new_ez = state[\"effector.z\"] + evz * p[\"dt\"]\n    \n    new_bx = state[\"block.x\"] + bvx * p[\"dt\"]\n    new_by = state[\"block.y\"] + bvy * p[\"dt\"]\n    new_bz = state[\"block.z\"] + bvz * p[\"dt\"]\n    \n    # Floor constraint\n    if new_bz < 0.02:\n        new_bz = 0.02\n        if bvz < 0:\n            bvz = -bvz * p[\"restitution\"]\n    \n    new_state = state.copy()\n    new_state[\"effector.x\"] = new_ex\n    new_state[\"effector.y\"] = new_ey\n    new_state[\"effector.z\"] = new_ez\n    new_state[\"block.x\"] = new_bx\n    new_state[\"block.y\"] = new_by\n    new_state[\"block.z\"] = new_bz\n    new_state[\"prev_ex\"] = state[\"effector.x\"]\n    new_state[\"prev_ey\"] = state[\"effector.y\"]\n    new_state[\"prev_ez\"] = state[\"effector.z\"]\n    new_state[\"prev_bx\"] = state[\"block.x\"]\n    new_state[\"prev_by\"] = state[\"block.y\"]\n    new_state[\"prev_bz\"] = state[\"block.z\"]\n    return new_state",
+      "init_params": {
+        "effector_mass": 1.0,
+        "block_mass": 0.5,
+        "dt": 0.1,
+        "force_scale": 5.0,
+        "restitution": 0.3,
+        "damping": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "proportional_control_with_obstacles",
+      "mechanism": "Effector follows actions via proportional control; block reacts only to contacts.",
+      "code": "# HYPOTHESIS: proportional_control_with_obstacles\n# MECHANISM: Effector follows actions via proportional control; block reacts only to contacts.\nPARAMS = {\n    \"kp\": 5.0,\n    \"contact_threshold\": 0.05,\n    \"friction_coeff\": 0.2,\n    \"ground_z\": 0.02,\n    \"dt\": 0.1\n}\n\ndef step(state, action, p, meta):\n    import math\n    \n    # Effector moves towards action target (proportional control)\n    target_ex = state[\"effector.x\"] + action[0] * p[\"kp\"] * p[\"dt\"]\n    target_ey = state[\"effector.y\"] + action[1] * p[\"kp\"] * p[\"dt\"]\n    target_ez = state[\"effector.z\"] + action[2] * p[\"kp\"] * p[\"dt\"]\n    \n    new_ex = target_ex\n    new_ey = target_ey\n    new_ez = target_ez\n    \n    # Check for contact with block\n    dx = new_ex - state[\"block.x\"]\n    dy = new_ey - state[\"block.y\"]\n    dz = new_ez - state[\"block.z\"]\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    \n    new_bx, new_by, new_bz = state[\"block.x\"], state[\"block.y\"], state[\"block.z\"]\n    \n    if dist < p[\"contact_threshold\"]:\n        # Push block away from effector\n        if dist < 1e-6:\n            dir_x, dir_y, dir_z = 1.0, 0.0, 0.0\n        else:\n            dir_x, dir_y, dir_z = dx/dist, dy/dist, dz/dist\n        \n        push_strength = (p[\"contact_threshold\"] - dist) * 10.0\n        new_bx += dir_x * push_strength * p[\"dt\"]\n        new_by += dir_y * push_strength * p[\"dt\"]\n        new_bz += dir_z * push_strength * p[\"dt\"]\n        \n        # Add some friction so it slows down\n        new_bx *= (1 - p[\"friction_coeff\"] * p[\"dt\"])\n        new_by *= (1 - p[\"friction_coeff\"] * p[\"dt\"])\n        new_bz *= (1 - p[\"friction_coeff\"] * p[\"dt\"])\n    \n    # Gravity effect on block\n    new_bz += -9.8 * p[\"dt\"] * p[\"dt\"] / 2\n    \n    # Ground constraint\n    if new_bz < p[\"ground_z\"]:\n        new_bz = p[\"ground_z\"]\n    \n    new_state = state.copy()\n    new_state[\"effector.x\"] = new_ex\n    new_state[\"effector.y\"] = new_ey\n    new_state[\"effector.z\"] = new_ez\n    new_state[\"block.x\"] = new_bx\n    new_state[\"block.y\"] = new_by\n    new_state[\"block.z\"] = new_bz\n    return new_state",
+      "init_params": {
+        "kp": 5.0,
+        "contact_threshold": 0.05,
+        "friction_coeff": 0.2,
+        "ground_z": 0.02,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "discrete_mode_switching",
+      "mechanism": "System has distinct modes (moving, grasping, releasing) determined by action thresholds.",
+      "code": "# HYPOTHESIS: discrete_mode_switching\n# MECHANISM: System has distinct modes (moving, grasping, releasing) determined by action thresholds.\nPARAMS = {\n    \"move_threshold\": 0.1,\n    \"grip_threshold\": 0.5,\n    \"release_threshold\": -0.5,\n    \"move_speed\": 0.5,\n    \"ground_level\": 0.02,\n    \"gravity\": -9.8,\n    \"dt\": 0.1\n}\n\ndef step(state, action, p, meta):\n    # Mode stored in function attribute\n    mode = getattr(step, 'mode', 'free')\n    \n    # Determine next mode based on action\n    grip_cmd = action[4]\n    if grip_cmd > p[\"grip_threshold\"]:\n        step.mode = 'grasping'\n    elif grip_cmd < p[\"release_threshold\"]:\n        step.mode = 'releasing'\n    else:\n        step.mode = 'free'\n    \n    new_ex = state[\"effector.x\"] + action[0] * p[\"move_speed\"] * p[\"dt\"]\n    new_ey = state[\"effector.y\"] + action[1] * p[\"move_speed\"] * p[\"dt\"]\n    new_ez = state[\"effector.z\"] + action[2] * p[\"move_speed\"] * p[\"dt\"]\n    \n    new_bx, new_by, new_bz = state[\"block.x\"], state[\"block.y\"], state[\"block.z\"]\n    \n    if step.mode == 'grasping':\n        # Move block with effector\n        new_bx = new_ex\n        new_by = new_ey\n        new_bz = new_ez\n    elif step.mode == 'free':\n        # Apply gravity to block\n        new_bz += p[\"gravity\"] * p[\"dt\"] * p[\"dt\"] / 2\n        if new_bz < p[\"ground_level\"]:\n            new_bz = p[\"ground_level\"]\n            \n    new_state = state.copy()\n    new_state[\"effector.x\"] = new_ex\n    new_state[\"effector.y\"] = new_ey\n    new_state[\"effector.z\"] = new_ez\n    new_state[\"block.x\"] = new_bx\n    new_state[\"block.y\"] = new_by\n    new_state[\"block.z\"] = new_bz\n    return new_state",
+      "init_params": {
+        "move_threshold": 0.1,
+        "grip_threshold": 0.5,
+        "release_threshold": -0.5,
+        "move_speed": 0.5,
+        "ground_level": 0.02,
+        "gravity": -9.8,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "spring_attached_objects",
+      "mechanism": "Block attached to effector via spring; both move under forces and constraints.",
+      "code": "# HYPOTHESIS: spring_attached_objects\n# MECHANISM: Block attached to effector via spring; both move under forces and constraints.\nPARAMS = {\n    \"spring_k\": 10.0,\n    \"spring_rest_length\": 0.0,\n    \"effector_mass\": 1.0,\n    \"block_mass\": 0.5,\n    \"gravity\": -9.8,\n    \"ground_level\": 0.02,\n    \"dt\": 0.1,\n    \"damping\": 0.2\n}\n\ndef step(state, action, p, meta):\n    import math\n    \n    # Estimate velocities from previous states\n    prev_ex = state.get(\"prev_ex\", state[\"effector.x\"])\n    prev_ey = state.get(\"prev_ey\", state[\"effector.y\"])\n    prev_ez = state.get(\"prev_ez\", state[\"effector.z\"])\n    \n    prev_bx = state.get(\"prev_bx\", state[\"block.x\"])\n    prev_by = state.get(\"prev_by\", state[\"block.y\"])\n    prev_bz = state.get(\"prev_bz\", state[\"block.z\"])\n    \n    evx = (state[\"effector.x\"] - prev_ex) / p[\"dt\"]\n    evy = (state[\"effector.y\"] - prev_ey) / p[\"dt\"]\n    evz = (state[\"effector.z\"] - prev_ez) / p[\"dt\"]\n    \n    bvx = (state[\"block.x\"] - prev_bx) / p[\"dt\"]\n    bvy = (state[\"block.y\"] - prev_by) / p[\"dt\"]\n    bvz = (state[\"block.z\"] - prev_bz) / p[\"dt\"]\n    \n    # Forces on effector: action + spring force from block\n    # Action force\n    fe_x = action[0] * 5.0\n    fe_y = action[1] * 5.0\n    fe_z = action[2] * 5.0\n    \n    # Spring force from block\n    dx = state[\"effector.x\"] - state[\"block.x\"]\n    dy = state[\"effector.y\"] - state[\"block.y\"]\n    dz = state[\"effector.z\"] - state[\"block.z\"]\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    if dist > 1e-6:\n        unit_dx = dx / dist\n        unit_dy = dy / dist\n        unit_dz = dz / dist\n        fs_mag = -p[\"spring_k\"] * (dist - p[\"spring_rest_length\"])\n        fs_x = fs_mag * unit_dx\n        fs_y = fs_mag * unit_dy\n        fs_z = fs_mag * unit_dz\n    else:\n        fs_x, fs_y, fs_z = 0.0, 0.0, 0.0\n    \n    # Total force on effector\n    total_fe_x = fe_x + fs_x\n    total_fe_y = fe_y + fs_y\n    total_fe_z = fe_z + fs_z\n    \n    # Acceleration and update velocity\n    aex = total_fe_x / p[\"effector_mass\"]\n    aey = total_fe_y / p[\"effector_mass\"]\n    aez = total_fe_z / p[\"effector_mass\"]\n    \n    evx = (evx + aex * p[\"dt\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"effector_mass\"])\n    evy = (evy + aey * p[\"dt\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"effector_mass\"])\n    evz = (evz + aez * p[\"dt\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"effector_mass\"])\n    \n    # Forces on block: spring force from effector + gravity\n    fb_x = -fs_x\n    fb_y = -fs_y\n    fb_z = -fs_z + p[\"block_mass\"] * p[\"gravity\"]\n    \n    # Acceleration and update velocity\n    abx = fb_x / p[\"block_mass\"]\n    aby = fb_y / p[\"block_mass\"]\n    abz = fb_z / p[\"block_mass\"]\n    \n    bvx = (bvx + abx * p[\"dt\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"block_mass\"])\n    bvy = (bvy + aby * p[\"dt\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"block_mass\"])\n    bvz = (bvz + abz * p[\"dt\"]) * math.exp(-p[\"damping\"] * p[\"dt\"] / p[\"block_mass\"])\n    \n    # Integrate positions\n    new_ex = state[\"effector.x\"] + evx * p[\"dt\"]\n    new_ey = state[\"effector.y\"] + evy * p[\"dt\"]\n    new_ez = state[\"effector.z\"] + evz * p[\"dt\"]\n    \n    new_bx = state[\"block.x\"] + bvx * p[\"dt\"]\n    new_by = state[\"block.y\"] + bvy * p[\"dt\"]\n    new_bz = state[\"block.z\"] + bvz * p[\"dt\"]\n    \n    # Ground constraint for block\n    if new_bz < p[\"ground_level\"]:\n        new_bz = p[\"ground_level\"]\n        if bvz < 0:\n            bvz = -bvz * 0.3  # bounce\n    \n    new_state = state.copy()\n    new_state[\"effector.x\"] = new_ex\n    new_state[\"effector.y\"] = new_ey\n    new_state[\"effector.z\"] = new_ez\n    new_state[\"block.x\"] = new_bx\n    new_state[\"block.y\"] = new_by\n    new_state[\"block.z\"] = new_bz\n    new_state[\"prev_ex\"] = state[\"effector.x\"]\n    new_state[\"prev_ey\"] = state[\"effector.y\"]\n    new_state[\"prev_ez\"] = state[\"effector.z\"]\n    new_state[\"prev_bx\"] = state[\"block.x\"]\n    new_state[\"prev_by\"] = state[\"block.y\"]\n    new_state[\"prev_bz\"] = state[\"block.z\"]\n    return new_state",
+      "init_params": {
+        "spring_k": 10.0,
+        "spring_rest_length": 0.0,
+        "effector_mass": 1.0,
+        "block_mass": 0.5,
+        "gravity": -9.8,
+        "ground_level": 0.02,
+        "dt": 0.1,
+        "damping": 0.2
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "point_mass_no_contact": {
+        "params": {
+          "effector_mass": 1.9454845006620052,
+          "dt": 0.33226701666776953,
+          "action_scale": 1.7264926312773554
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36612103785650324,
+        "val_one_step_nrmse": 0.5957483988057655,
+        "val_rollout_nrmse": 1.4647591450269304,
+        "restarts": 4,
+        "nfev": 61,
+        "elapsed_s": 1.8846089839935303,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3661210377579113,
+            "val_rollout_nrmse": 1.4647597013905962
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.3661210381822111,
+            "val_rollout_nrmse": 1.4647609619615785
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.36612103785650324,
+            "val_rollout_nrmse": 1.4647591450269304
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3661210390866056,
+            "val_rollout_nrmse": 1.4647619055192604
+          }
+        ]
+      },
+      "gripper_with_grasp_and_gravity": {
+        "params": {
+          "grip_threshold": 0.05679798526881795,
+          "gravity": -8.680228883428406,
+          "ground_level": -0.0021263282122220596,
+          "dt": 0.3331033640784062,
+          "gripper_speed": 0.2729186828150114,
+          "release_distance": 0.12052317174516673
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 1.2483995182385763,
+        "val_one_step_nrmse": 1.106247949171269,
+        "val_rollout_nrmse": 1.2176191115595345,
+        "restarts": 4,
+        "nfev": 67,
+        "elapsed_s": 2.8723931312561035,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.234076384976095,
+            "val_rollout_nrmse": 1.2611899036230834
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.2483995177554703,
+            "val_rollout_nrmse": 1.2176233752661805
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.2483995182385763,
+            "val_rollout_nrmse": 1.2176191115595345
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.248399517919477,
+            "val_rollout_nrmse": 1.2176214627961535
+          }
+        ]
+      },
+      "momentum_based_dynamics": {
+        "params": {
+          "effector_mass": 1.6358560705865282,
+          "block_mass": 0.21585181802931225,
+          "dt": 0.22780162232403178,
+          "force_scale": 3.186954223059543,
+          "restitution": -0.05243382494641353,
+          "damping": -0.14639754908606983
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.1016786827301051,
+        "val_one_step_nrmse": 0.31496664294775856,
+        "val_rollout_nrmse": 0.9297523167884025,
+        "restarts": 4,
+        "nfev": 68,
+        "elapsed_s": 6.24379563331604,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.10167868253186184,
+            "val_rollout_nrmse": 0.9297576267791698
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1016786825397541,
+            "val_rollout_nrmse": 0.929756858935128
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.10167868255554739,
+            "val_rollout_nrmse": 0.9297601578064472
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1016786827301051,
+            "val_rollout_nrmse": 0.9297523167884025
+          }
+        ]
+      },
+      "proportional_control_with_obstacles": {
+        "params": {
+          "kp": 2.5611011217078756,
+          "contact_threshold": 0.0058423426641423986,
+          "friction_coeff": 0.08818105843895514,
+          "ground_z": 0.024248108925967893,
+          "dt": 0.038254064965857294
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.3652119292053587,
+        "val_one_step_nrmse": 0.5945501061901269,
+        "val_rollout_nrmse": 1.4382068050382617,
+        "restarts": 4,
+        "nfev": 81,
+        "elapsed_s": 4.281300067901611,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3652119292053587,
+            "val_rollout_nrmse": 1.4382068050382617
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.3652440855642842,
+            "val_rollout_nrmse": 1.4382904588749628
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.36524408554063287,
+            "val_rollout_nrmse": 1.4382895299997114
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.36524408549116893,
+            "val_rollout_nrmse": 1.4382854278036599
+          }
+        ]
+      },
+      "discrete_mode_switching": {
+        "params": {
+          "move_threshold": 0.19028203746587521,
+          "grip_threshold": 0.28018558354529877,
+          "release_threshold": -0.34572679993083005,
+          "move_speed": 0.315001645895855,
+          "ground_level": 0.02006950122649284,
+          "gravity": -16.581767190783268,
+          "dt": 0.30696750530870476
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.08358022350278407,
+        "val_one_step_nrmse": 0.2860059284540973,
+        "val_rollout_nrmse": 0.6638179529550251,
+        "restarts": 4,
+        "nfev": 67,
+        "elapsed_s": 4.16648530960083,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3476101294656132,
+            "val_rollout_nrmse": 1.1836550113834268
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.13570855159676332,
+            "val_rollout_nrmse": 0.6841461738985843
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.08358022350278407,
+            "val_rollout_nrmse": 0.6638179529550251
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.33845640407544875,
+            "val_rollout_nrmse": 1.1399841667006938
+          }
+        ]
+      },
+      "spring_attached_objects": {
+        "params": {
+          "spring_k": 2.0734343031906755,
+          "spring_rest_length": 0.08639660771218455,
+          "effector_mass": 0.044040322847436364,
+          "block_mass": 0.09889265094559889,
+          "gravity": -7.547946556388195,
+          "ground_level": 0.024180166540976437,
+          "dt": 0.0331863891143652,
+          "damping": 0.33673649292478536
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36372815172300343,
+        "val_one_step_nrmse": 0.592042841743057,
+        "val_rollout_nrmse": 1.420149254184311,
+        "restarts": 4,
+        "nfev": 137,
+        "elapsed_s": 15.732049465179443,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3637281515421269,
+            "val_rollout_nrmse": 1.4201523369827613
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.36372815172300343,
+            "val_rollout_nrmse": 1.420149254184311
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.3637281515481609,
+            "val_rollout_nrmse": 1.4201600974957818
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3637281522082477,
+            "val_rollout_nrmse": 1.4201519942705687
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "point_mass_no_contact": {
+        "params": {
+          "effector_mass": 2.383236269303172,
+          "dt": 0.4244623442233425,
+          "action_scale": 1.2505365945750349
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.140091755618002,
+        "val_one_step_nrmse": 0.5962268397780415,
+        "val_rollout_nrmse": 1.4641468264045951,
+        "restarts": 4,
+        "nfev": 59,
+        "elapsed_s": 8.358720779418945,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.140091755198388,
+            "val_rollout_nrmse": 1.4641468925302623
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.140091755618002,
+            "val_rollout_nrmse": 1.4641468264045951
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.1400917554792005,
+            "val_rollout_nrmse": 1.464146832873387
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.140091755255682,
+            "val_rollout_nrmse": 1.4641468975237248
+          }
+        ]
+      },
+      "gripper_with_grasp_and_gravity": {
+        "params": {
+          "grip_threshold": 0.05679798526881795,
+          "gravity": -8.680228887236884,
+          "ground_level": 0.019947368421052603,
+          "dt": 0.2865443193628798,
+          "gripper_speed": 0.28648115529697543,
+          "release_distance": 0.12052317174516673
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.5327293869673084,
+        "val_one_step_nrmse": 1.1109895316438092,
+        "val_rollout_nrmse": 1.2048116445433557,
+        "restarts": 4,
+        "nfev": 63,
+        "elapsed_s": 12.771421670913696,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.5327293870196572,
+            "val_rollout_nrmse": 1.204811666905126
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.5327299720838747,
+            "val_rollout_nrmse": 1.2048118314997165
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.5327293869673084,
+            "val_rollout_nrmse": 1.2048116445433557
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.5327299719676934,
+            "val_rollout_nrmse": 1.2048118053532717
+          }
+        ]
+      },
+      "momentum_based_dynamics": {
+        "params": {
+          "effector_mass": 1.4987255155547954,
+          "block_mass": 0.4784901581151334,
+          "dt": 0.22793601704909297,
+          "force_scale": 3.1855957648846585,
+          "restitution": -0.0775001425828419,
+          "damping": 0.28366132837090396
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.9064429653509306,
+        "val_one_step_nrmse": 0.32361370314150323,
+        "val_rollout_nrmse": 0.9086713521460409,
+        "restarts": 4,
+        "nfev": 126,
+        "elapsed_s": 35.05653643608093,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.9077319582005349,
+            "val_rollout_nrmse": 0.9106655340799223
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.024820305274338,
+            "val_rollout_nrmse": 0.9533878251385874
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.0418303717439443,
+            "val_rollout_nrmse": 0.9606086976930863
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.9064429653509306,
+            "val_rollout_nrmse": 0.9086713521460409
+          }
+        ]
+      },
+      "proportional_control_with_obstacles": {
+        "params": {
+          "kp": 1.309331939444236,
+          "contact_threshold": 0.20027039500960278,
+          "friction_coeff": 0.411966607152291,
+          "ground_z": 0.00542422133558908,
+          "dt": 0.04740526304857901
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.4011813594736093,
+        "val_one_step_nrmse": 0.6521711212498773,
+        "val_rollout_nrmse": 1.1732566165829512,
+        "restarts": 4,
+        "nfev": 140,
+        "elapsed_s": 35.81522798538208,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.8377722854371419,
+            "val_rollout_nrmse": 1.3594647364951997
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.4011813594736093,
+            "val_rollout_nrmse": 1.1732566165829512
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.8392856988824127,
+            "val_rollout_nrmse": 1.3586635210855675
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.8377024027991788,
+            "val_rollout_nrmse": 1.3586274968688603
+          }
+        ]
+      },
+      "discrete_mode_switching": {
+        "params": {
+          "move_threshold": 0.19028203746587521,
+          "grip_threshold": 0.28018558354529877,
+          "release_threshold": -0.34572679993083005,
+          "move_speed": 0.436020338776912,
+          "ground_level": 0.020083153981609123,
+          "gravity": -16.581822051864414,
+          "dt": 0.2158150457506802
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.45411967969322864,
+        "val_one_step_nrmse": 0.28726357614368553,
+        "val_rollout_nrmse": 0.6610996291161719,
+        "restarts": 4,
+        "nfev": 77,
+        "elapsed_s": 18.290488481521606,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.6765322090964823,
+            "val_rollout_nrmse": 1.129884490861712
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5206204151055058,
+            "val_rollout_nrmse": 0.6829290986967301
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.45411967969322864,
+            "val_rollout_nrmse": 0.6610996291161719
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.57335171710359,
+            "val_rollout_nrmse": 1.081147551997221
+          }
+        ]
+      },
+      "spring_attached_objects": {
+        "params": {
+          "spring_k": 7.836101084596771,
+          "spring_rest_length": -0.023081164039283338,
+          "effector_mass": 0.6759738425092093,
+          "block_mass": 0.10306629054642079,
+          "gravity": -6.892633398226523,
+          "ground_level": 0.04432659057541606,
+          "dt": 0.13436360155022548,
+          "damping": 0.9174193259451565
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.3109167393957026,
+        "val_one_step_nrmse": 0.8119113225700689,
+        "val_rollout_nrmse": 1.093318567810195,
+        "restarts": 4,
+        "nfev": 135,
+        "elapsed_s": 67.40291714668274,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.3109153185595326,
+            "val_rollout_nrmse": 1.0934427474553303
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.3109153302636296,
+            "val_rollout_nrmse": 1.0934608606915652
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.310915381711053,
+            "val_rollout_nrmse": 1.093476787737512
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.3109167393957026,
+            "val_rollout_nrmse": 1.093318567810195
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "discrete_mode_switching",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "point_mass_no_contact": 1.4647591450269304,
+        "gripper_with_grasp_and_gravity": 1.2176191115595345,
+        "momentum_based_dynamics": 0.9297523167884025,
+        "proportional_control_with_obstacles": 1.4382068050382617,
+        "discrete_mode_switching": 0.6638179529550251,
+        "spring_attached_objects": 1.420149254184311
+      }
+    },
+    "active_one_step": {
+      "winner": "momentum_based_dynamics",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "block.x",
+        "block.y",
+        "block.z",
+        "effector.x",
+        "effector.y",
+        "effector.z"
+      ],
+      "scores": {
+        "point_mass_no_contact": 3.6911854080317155,
+        "gripper_with_grasp_and_gravity": 3.5139752029860913,
+        "momentum_based_dynamics": 1.6368997886936298,
+        "proportional_control_with_obstacles": 3.6967965674064636,
+        "discrete_mode_switching": 3.7452129395289853,
+        "spring_attached_objects": 3.6817256710170327
+      },
+      "probes": [
+        {
+          "disagreement": 3.942261914206055,
+          "actions": [
+            [
+              -0.8742090030900573,
+              0.4517617275515535,
+              -0.8244642264810265,
+              -0.20981658328406483,
+              0.4546880964352101
+            ],
+            [
+              -0.8742090030900573,
+              0.4517617275515535,
+              -0.8244642264810265,
+              -0.20981658328406483,
+              0.4546880964352101
+            ],
+            [
+              -0.8742090030900573,
+              0.4517617275515535,
+              -0.8244642264810265,
+              -0.20981658328406483,
+              0.4546880964352101
+            ]
+          ],
+          "start": {
+            "block.x": 0.53,
+            "block.y": -0.178,
+            "block.z": 0.02,
+            "effector.x": 0.491,
+            "effector.y": -0.047,
+            "effector.z": 0.243,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 0.35211497348279297,
+            "gripper_with_grasp_and_gravity": 7.078697155255967,
+            "momentum_based_dynamics": 0.5123816935190325,
+            "proportional_control_with_obstacles": 0.3542613301815205,
+            "discrete_mode_switching": 7.377904757286116,
+            "spring_attached_objects": 0.3112321895410906
+          }
+        },
+        {
+          "disagreement": 3.599428213408322,
+          "actions": [
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ]
+          ],
+          "start": {
+            "block.x": 0.467,
+            "block.y": -0.06,
+            "block.z": 0.071,
+            "effector.x": 0.466,
+            "effector.y": -0.056,
+            "effector.z": 0.068,
+            "goal.x": 0.474,
+            "goal.y": -0.061,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 5.091350478697761,
+            "gripper_with_grasp_and_gravity": 2.0832157251528773,
+            "momentum_based_dynamics": 2.0013613686708336,
+            "proportional_control_with_obstacles": 5.119722853799003,
+            "discrete_mode_switching": 2.3568195380882453,
+            "spring_attached_objects": 5.063867206003099
+          }
+        },
+        {
+          "disagreement": 3.4941106128620234,
+          "actions": [
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ]
+          ],
+          "start": {
+            "block.x": 0.338,
+            "block.y": 0.023,
+            "block.z": 0.02,
+            "effector.x": 0.337,
+            "effector.y": 0.021,
+            "effector.z": 0.02,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 5.715777462178038,
+            "gripper_with_grasp_and_gravity": 0.8181968394958756,
+            "momentum_based_dynamics": 3.4978620320287654,
+            "proportional_control_with_obstacles": 5.715781751880823,
+            "discrete_mode_switching": 1.4284809982054583,
+            "spring_attached_objects": 5.656597345928761
+          }
+        },
+        {
+          "disagreement": 3.4766988994279537,
+          "actions": [
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ],
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ],
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ]
+          ],
+          "start": {
+            "block.x": 0.534,
+            "block.y": -0.165,
+            "block.z": 0.02,
+            "effector.x": 0.531,
+            "effector.y": -0.171,
+            "effector.z": 0.016,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 6.5835779589061625,
+            "gripper_with_grasp_and_gravity": 1.3772483899587527,
+            "momentum_based_dynamics": 1.5835275412164678,
+            "proportional_control_with_obstacles": 6.579985571244215,
+            "discrete_mode_switching": 1.093481318960889,
+            "spring_attached_objects": 6.5525750572395784
+          }
+        },
+        {
+          "disagreement": 3.431456918377648,
+          "actions": [
+            [
+              -0.6345752421468751,
+              0.7601962426081394,
+              0.624670796222508,
+              0.33577881114270247,
+              0.5300713050188213
+            ],
+            [
+              -0.6345752421468751,
+              0.7601962426081394,
+              0.624670796222508,
+              0.33577881114270247,
+              0.5300713050188213
+            ],
+            [
+              -0.6345752421468751,
+              0.7601962426081394,
+              0.624670796222508,
+              0.33577881114270247,
+              0.5300713050188213
+            ]
+          ],
+          "start": {
+            "block.x": 0.542,
+            "block.y": -0.122,
+            "block.z": 0.02,
+            "effector.x": 0.486,
+            "effector.y": -0.135,
+            "effector.z": 0.198,
+            "goal.x": 0.546,
+            "goal.y": -0.119,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 0.7131061668938219,
+            "gripper_with_grasp_and_gravity": 6.212517905066982,
+            "momentum_based_dynamics": 0.5893663080330492,
+            "proportional_control_with_obstacles": 0.7142313299267569,
+            "discrete_mode_switching": 6.469378085104218,
+            "spring_attached_objects": 0.8243565563726348
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.5317213535308838
+    },
+    "offline_multi_step": {
+      "winner": "discrete_mode_switching",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "point_mass_no_contact": 1.4641468264045951,
+        "gripper_with_grasp_and_gravity": 1.2048116445433557,
+        "momentum_based_dynamics": 0.9086713521460409,
+        "proportional_control_with_obstacles": 1.1732566165829512,
+        "discrete_mode_switching": 0.6610996291161719,
+        "spring_attached_objects": 1.093318567810195
+      }
+    },
+    "active_multi_step": {
+      "winner": "momentum_based_dynamics",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "block.x",
+        "block.y",
+        "block.z",
+        "effector.x",
+        "effector.y",
+        "effector.z"
+      ],
+      "scores": {
+        "point_mass_no_contact": 0.4975987958237186,
+        "gripper_with_grasp_and_gravity": 6.324656435841758,
+        "momentum_based_dynamics": 0.4832361342554975,
+        "proportional_control_with_obstacles": 1.2143245627313453,
+        "discrete_mode_switching": 5.007421725437207,
+        "spring_attached_objects": 3.0446477131260625
+      },
+      "probes": [
+        {
+          "disagreement": 4.232998439507951,
+          "actions": [
+            [
+              -0.8742090030900573,
+              0.4517617275515535,
+              -0.8244642264810265,
+              -0.20981658328406483,
+              0.4546880964352101
+            ],
+            [
+              -0.8742090030900573,
+              0.4517617275515535,
+              -0.8244642264810265,
+              -0.20981658328406483,
+              0.4546880964352101
+            ],
+            [
+              -0.8742090030900573,
+              0.4517617275515535,
+              -0.8244642264810265,
+              -0.20981658328406483,
+              0.4546880964352101
+            ]
+          ],
+          "start": {
+            "block.x": 0.53,
+            "block.y": -0.178,
+            "block.z": 0.02,
+            "effector.x": 0.491,
+            "effector.y": -0.047,
+            "effector.z": 0.243,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 0.25752555868750343,
+            "gripper_with_grasp_and_gravity": 6.639204758279001,
+            "momentum_based_dynamics": 0.5952801677785152,
+            "proportional_control_with_obstacles": 0.928806574577941,
+            "discrete_mode_switching": 7.242681411841035,
+            "spring_attached_objects": 3.2687993386401275
+          }
+        },
+        {
+          "disagreement": 3.6521385870504135,
+          "actions": [
+            [
+              -0.6345752421468751,
+              0.7601962426081394,
+              0.624670796222508,
+              0.33577881114270247,
+              0.5300713050188213
+            ],
+            [
+              -0.6345752421468751,
+              0.7601962426081394,
+              0.624670796222508,
+              0.33577881114270247,
+              0.5300713050188213
+            ],
+            [
+              -0.6345752421468751,
+              0.7601962426081394,
+              0.624670796222508,
+              0.33577881114270247,
+              0.5300713050188213
+            ]
+          ],
+          "start": {
+            "block.x": 0.542,
+            "block.y": -0.122,
+            "block.z": 0.02,
+            "effector.x": 0.486,
+            "effector.y": -0.135,
+            "effector.z": 0.198,
+            "goal.x": 0.546,
+            "goal.y": -0.119,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 0.8001529651996848,
+            "gripper_with_grasp_and_gravity": 5.8366476820042426,
+            "momentum_based_dynamics": 0.5333519855936542,
+            "proportional_control_with_obstacles": 1.7019362021542488,
+            "discrete_mode_switching": 6.353207674951735,
+            "spring_attached_objects": 2.6409808150465643
+          }
+        },
+        {
+          "disagreement": 3.6113182687183865,
+          "actions": [
+            [
+              0.3420941482848474,
+              -0.35824349778199305,
+              0.8309109201933473,
+              -0.690944005453098,
+              -0.16826115553336152
+            ],
+            [
+              0.6872678980836948,
+              -0.10173268005433589,
+              0.11956591861320942,
+              0.5355790605704951,
+              0.10125972778001124
+            ],
+            [
+              0.7809146780607998,
+              -0.5521958321060099,
+              -0.020909659515854884,
+              -0.6601879894718612,
+              -0.10971904785888723
+            ]
+          ],
+          "start": {
+            "block.x": 0.353,
+            "block.y": 0.24,
+            "block.z": 0.02,
+            "effector.x": 0.425,
+            "effector.y": 0.0,
+            "effector.z": 0.275,
+            "goal.x": 0.524,
+            "goal.y": 0.027,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 0.19519470738869116,
+            "gripper_with_grasp_and_gravity": 7.825980482677756,
+            "momentum_based_dynamics": 0.3701765472044161,
+            "proportional_control_with_obstacles": 0.644912726866061,
+            "discrete_mode_switching": 0.19124968906757323,
+            "spring_attached_objects": 3.9104079372934186
+          }
+        },
+        {
+          "disagreement": 3.590766240977175,
+          "actions": [
+            [
+              -0.3439183065148457,
+              0.867070846731163,
+              0.7207084128354342,
+              -0.22383894148889794,
+              0.21167322234874003
+            ],
+            [
+              0.9696656080612454,
+              0.41259766575041246,
+              -0.6045188581141243,
+              0.1972603390294725,
+              0.4704309552325067
+            ],
+            [
+              0.0646546979494127,
+              -0.06524900418144686,
+              0.4907879810937703,
+              -0.09191154410160873,
+              0.24123148530636956
+            ]
+          ],
+          "start": {
+            "block.x": 0.36,
+            "block.y": -0.248,
+            "block.z": 0.02,
+            "effector.x": 0.406,
+            "effector.y": -0.082,
+            "effector.z": 0.227,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 0.32223388211909515,
+            "gripper_with_grasp_and_gravity": 5.936132171066862,
+            "momentum_based_dynamics": 0.26306079379703645,
+            "proportional_control_with_obstacles": 0.7493009817707912,
+            "discrete_mode_switching": 5.211692703242563,
+            "spring_attached_objects": 3.188679298804435
+          }
+        },
+        {
+          "disagreement": 3.4148246657764885,
+          "actions": [
+            [
+              -0.8988616095462212,
+              0.6468660088628089,
+              0.944618742088525,
+              -0.748885048178098,
+              0.4425297846324669
+            ],
+            [
+              -0.8988616095462212,
+              0.6468660088628089,
+              0.944618742088525,
+              -0.748885048178098,
+              0.4425297846324669
+            ],
+            [
+              -0.8988616095462212,
+              0.6468660088628089,
+              0.944618742088525,
+              -0.748885048178098,
+              0.4425297846324669
+            ]
+          ],
+          "start": {
+            "block.x": 0.53,
+            "block.y": -0.178,
+            "block.z": 0.02,
+            "effector.x": 0.536,
+            "effector.y": -0.179,
+            "effector.z": 0.099,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "point_mass_no_contact": 0.9128868657236183,
+            "gripper_with_grasp_and_gravity": 5.385317085180926,
+            "momentum_based_dynamics": 0.6543111769038658,
+            "proportional_control_with_obstacles": 2.0466663282876842,
+            "discrete_mode_switching": 6.0382771480831305,
+            "spring_attached_objects": 2.2143711758457685
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.1505882740020752
+    }
+  },
+  "args": {
+    "env": "cube",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/bank_general_cube_coder_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/coder_general.json",
+    "experience_runs": [],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 252.68728375434875
+}

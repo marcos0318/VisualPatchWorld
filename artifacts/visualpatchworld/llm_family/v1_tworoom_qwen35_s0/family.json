@@ -1,0 +1,973 @@
+{
+  "env": "tworoom",
+  "llm_model": "Qwen/Qwen3.5-397B-A17B",
+  "schema": {
+    "state_keys": [
+      "agent.x",
+      "agent.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "agent.x": {
+        "min": 14.06,
+        "max": 199.404
+      },
+      "agent.y": {
+        "min": 21.0,
+        "max": 208.141
+      },
+      "target.x": {
+        "min": 22.652,
+        "max": 205.757
+      },
+      "target.y": {
+        "min": 19.804,
+        "max": 207.074
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -1.0,
+      -1.0
+    ],
+    "action_max": [
+      1.0,
+      1.0
+    ],
+    "num_episodes": 51,
+    "num_transitions": 892
+  },
+  "scales": {
+    "agent.x": 10.597528584591904,
+    "agent.y": 11.175281778471136,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "simple_linear_velocity",
+      "mechanism": "Agent moves with velocity directly proportional to action (first-order kinematics, no momentum).",
+      "code": "# HYPOTHESIS: simple_linear_velocity\n# MECHANISM: Agent moves with velocity directly proportional to action (first-order kinematics, no momentum).\nPARAMS = {\"scale_x\": 25.0, \"scale_y\": 25.0}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    ax = action[0] if len(action) > 0 else 0.0\n    ay = action[1] if len(action) > 1 else 0.0\n    new_state[\"agent.x\"] = state[\"agent.x\"] + p[\"scale_x\"] * ax\n    new_state[\"agent.y\"] = state[\"agent.y\"] + p[\"scale_y\"] * ay\n    new_state[\"target.x\"] = state[\"target.x\"]\n    new_state[\"target.y\"] = state[\"target.y\"]\n    return new_state",
+      "init_params": {
+        "scale_x": 25.0,
+        "scale_y": 25.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_with_damping",
+      "mechanism": "Agent has velocity state that accumulates from action with exponential decay (second-order dynamics).",
+      "code": "# HYPOTHESIS: momentum_with_damping\n# MECHANISM: Agent has velocity state that accumulates from action with exponential decay (second-order dynamics).\nPARAMS = {\"accel_scale\": 20.0, \"damping\": 0.85, \"vel_x\": 0.0, \"vel_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    ax = action[0] if len(action) > 0 else 0.0\n    ay = action[1] if len(action) > 1 else 0.0\n    vx = p.get(\"vel_x\", 0.0) * p[\"damping\"] + p[\"accel_scale\"] * ax\n    vy = p.get(\"vel_y\", 0.0) * p[\"damping\"] + p[\"accel_scale\"] * ay\n    new_state[\"agent.x\"] = state[\"agent.x\"] + vx\n    new_state[\"agent.y\"] = state[\"agent.y\"] + vy\n    new_state[\"target.x\"] = state[\"target.x\"]\n    new_state[\"target.y\"] = state[\"target.y\"]\n    return new_state",
+      "init_params": {
+        "accel_scale": 20.0,
+        "damping": 0.85,
+        "vel_x": 0.0,
+        "vel_y": 0.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "saturating_nonlinear_response",
+      "mechanism": "Action-to-velocity mapping has sigmoidal saturation at high action magnitudes.",
+      "code": "# HYPOTHESIS: saturating_nonlinear_response\n# MECHANISM: Action-to-velocity mapping has sigmoidal saturation at high action magnitudes.\nPARAMS = {\"max_speed\": 15.0, \"steepness\": 3.0, \"threshold\": 0.3}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    ax = action[0] if len(action) > 0 else 0.0\n    ay = action[1] if len(action) > 1 else 0.0\n    def saturate(a):\n        mag = math.sqrt(ax*ax + ay*ay)\n        if mag < 1e-6:\n            return 0.0\n        scale = p[\"max_speed\"] * math.tanh(p[\"steepness\"] * mag) / mag\n        return a * scale\n    new_state[\"agent.x\"] = state[\"agent.x\"] + saturate(ax)\n    new_state[\"agent.y\"] = state[\"agent.y\"] + saturate(ay)\n    new_state[\"target.x\"] = state[\"target.x\"]\n    new_state[\"target.y\"] = state[\"target.y\"]\n    return new_state",
+      "init_params": {
+        "max_speed": 15.0,
+        "steepness": 3.0,
+        "threshold": 0.3
+      },
+      "repaired": false
+    },
+    {
+      "name": "obstacle_collision_blocking",
+      "mechanism": "Movement is blocked when agent crosses door boundary coordinates (hard constraint from metadata).",
+      "code": "# HYPOTHESIS: obstacle_collision_blocking\n# MECHANISM: Movement is blocked when agent crosses door boundary coordinates (hard constraint from metadata).\nPARAMS = {\"scale_x\": 25.0, \"scale_y\": 25.0, \"door_x\": 112.0, \"door_y\": 49.0, \"door_radius\": 15.0}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    ax = action[0] if len(action) > 0 else 0.0\n    ay = action[1] if len(action) > 1 else 0.0\n    nx = state[\"agent.x\"] + p[\"scale_x\"] * ax\n    ny = state[\"agent.y\"] + p[\"scale_y\"] * ay\n    door_x = meta.get(\"door_coords\", [p[\"door_x\"], p[\"door_y\"]])[0]\n    door_y = meta.get(\"door_coords\", [p[\"door_x\"], p[\"door_y\"]])[1]\n    dist_to_door = math.sqrt((nx - door_x)**2 + (ny - door_y)**2)\n    if dist_to_door < p[\"door_radius\"] and dist_to_door > 1e-6:\n        nx = state[\"agent.x\"]\n        ny = state[\"agent.y\"]\n    new_state[\"agent.x\"] = nx\n    new_state[\"agent.y\"] = ny\n    new_state[\"target.x\"] = state[\"target.x\"]\n    new_state[\"target.y\"] = state[\"target.y\"]\n    return new_state",
+      "init_params": {
+        "scale_x": 25.0,
+        "scale_y": 25.0,
+        "door_x": 112.0,
+        "door_y": 49.0,
+        "door_radius": 15.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "action_coupling_cross_terms",
+      "mechanism": "X and Y actions couple to produce diagonal motion (cross-terms in transition function).",
+      "code": "# HYPOTHESIS: action_coupling_cross_terms\n# MECHANISM: X and Y actions couple to produce diagonal motion (cross-terms in transition function).\nPARAMS = {\"scale_main\": 20.0, \"scale_cross\": 5.0, \"bias_x\": 0.0, \"bias_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    ax = action[0] if len(action) > 0 else 0.0\n    ay = action[1] if len(action) > 1 else 0.0\n    dx = p[\"scale_main\"] * ax + p[\"scale_cross\"] * ay + p[\"bias_x\"]\n    dy = p[\"scale_main\"] * ay + p[\"scale_cross\"] * ax + p[\"bias_y\"]\n    new_state[\"agent.x\"] = state[\"agent.x\"] + dx\n    new_state[\"agent.y\"] = state[\"agent.y\"] + dy\n    new_state[\"target.x\"] = state[\"target.x\"]\n    new_state[\"target.y\"] = state[\"target.y\"]\n    return new_state",
+      "init_params": {
+        "scale_main": 20.0,
+        "scale_cross": 5.0,
+        "bias_x": 0.0,
+        "bias_y": 0.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "velocity_dependent_friction",
+      "mechanism": "Effective action scale decreases with current speed (drag-like velocity-dependent friction).",
+      "code": "# HYPOTHESIS: velocity_dependent_friction\n# MECHANISM: Effective action scale decreases with current speed (drag-like velocity-dependent friction).\nPARAMS = {\"base_scale\": 30.0, \"friction_coef\": 0.02, \"min_scale\": 5.0}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    ax = action[0] if len(action) > 0 else 0.0\n    ay = action[1] if len(action) > 1 else 0.0\n    vx_prev = state.get(\"agent.vx\", 0.0)\n    vy_prev = state.get(\"agent.vy\", 0.0)\n    speed = math.sqrt(vx_prev*vx_prev + vy_prev*vy_prev)\n    effective_scale = max(p[\"min_scale\"], p[\"base_scale\"] * (1.0 - p[\"friction_coef\"] * speed))\n    new_state[\"agent.x\"] = state[\"agent.x\"] + effective_scale * ax\n    new_state[\"agent.y\"] = state[\"agent.y\"] + effective_scale * ay\n    new_state[\"target.x\"] = state[\"target.x\"]\n    new_state[\"target.y\"] = state[\"target.y\"]\n    return new_state",
+      "init_params": {
+        "base_scale": 30.0,
+        "friction_coef": 0.02,
+        "min_scale": 5.0
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "simple_linear_velocity": {
+        "params": {
+          "scale_x": 22.48479843233292,
+          "scale_y": 25.005898292288023
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.033903706180369114,
+        "val_one_step_nrmse": 0.0699762758278802,
+        "val_rollout_nrmse": 0.13932445212617034,
+        "restarts": 4,
+        "nfev": 11,
+        "elapsed_s": 0.1564011573791504,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.0339037061803691,
+            "val_rollout_nrmse": 0.13932445376199012
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03390370618036911,
+            "val_rollout_nrmse": 0.13932445413497666
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.033903706180369114,
+            "val_rollout_nrmse": 0.13932445332425866
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.033903706180369114,
+            "val_rollout_nrmse": 0.13932445212617034
+          }
+        ]
+      },
+      "momentum_with_damping": {
+        "params": {
+          "accel_scale": 23.709979532009054,
+          "damping": -1.2068029209085702,
+          "vel_x": 0.10497736558012365,
+          "vel_y": 0.06619937950883145
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.035187435133037244,
+        "val_one_step_nrmse": 0.05847403235969232,
+        "val_rollout_nrmse": 0.11577803430333053,
+        "restarts": 4,
+        "nfev": 76,
+        "elapsed_s": 0.9060218334197998,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03518743511909802,
+            "val_rollout_nrmse": 0.11578027590812232
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.035187435118345184,
+            "val_rollout_nrmse": 0.11578046239162426
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03518743511845419,
+            "val_rollout_nrmse": 0.1157804352321746
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.035187435133037244,
+            "val_rollout_nrmse": 0.11577803430333053
+          }
+        ]
+      },
+      "saturating_nonlinear_response": {
+        "params": {
+          "max_speed": 231.29569928909777,
+          "steepness": 0.10274768913671302,
+          "threshold": 0.44938515056643125
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.035235300127252775,
+        "val_one_step_nrmse": 0.05747548598176427,
+        "val_rollout_nrmse": 0.11012614616694909,
+        "restarts": 4,
+        "nfev": 314,
+        "elapsed_s": 4.951448917388916,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03523530011357313,
+            "val_rollout_nrmse": 0.11012637904090262
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.035235300127252775,
+            "val_rollout_nrmse": 0.11012614616694909
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035235300029185776,
+            "val_rollout_nrmse": 0.11013113865946858
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523530057348619,
+            "val_rollout_nrmse": 0.11016491621813893
+          }
+        ]
+      },
+      "obstacle_collision_blocking": {
+        "params": {
+          "scale_x": 22.44692352396275,
+          "scale_y": 25.005957007794,
+          "door_x": 34.99061683870953,
+          "door_y": 43.96356417925032,
+          "door_radius": 8.149604898580261
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.04344030270565115,
+        "val_one_step_nrmse": 0.12616321065405378,
+        "val_rollout_nrmse": 0.29101397965196724,
+        "restarts": 4,
+        "nfev": 115,
+        "elapsed_s": 1.4665818214416504,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.08577731897039834,
+            "val_rollout_nrmse": 0.5955978170062041
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.06600226519748618,
+            "val_rollout_nrmse": 0.4317865910390407
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.04344030270565115,
+            "val_rollout_nrmse": 0.29101397965196724
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1288448028229167,
+            "val_rollout_nrmse": 0.7279771165013088
+          }
+        ]
+      },
+      "action_coupling_cross_terms": {
+        "params": {
+          "scale_main": 23.71223864655262,
+          "scale_cross": -0.12460701163326382,
+          "bias_x": -0.13523700192093227,
+          "bias_y": -0.07504894425842808
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03517457731032471,
+        "val_one_step_nrmse": 0.058545984112459405,
+        "val_rollout_nrmse": 0.11602440222454083,
+        "restarts": 4,
+        "nfev": 13,
+        "elapsed_s": 0.43181490898132324,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.0351745773103247,
+            "val_rollout_nrmse": 0.11602440421819674
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.0351745773103247,
+            "val_rollout_nrmse": 0.11602440364202578
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03517457731032471,
+            "val_rollout_nrmse": 0.11602440222454083
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.0351745773103247,
+            "val_rollout_nrmse": 0.11602440702546307
+          }
+        ]
+      },
+      "velocity_dependent_friction": {
+        "params": {
+          "base_scale": -0.10779551895644346,
+          "friction_coef": 0.8679292848482192,
+          "min_scale": 23.710023652247727
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.035235998764451784,
+        "val_one_step_nrmse": 0.057592725594095666,
+        "val_rollout_nrmse": 0.11059307903312107,
+        "restarts": 4,
+        "nfev": 86,
+        "elapsed_s": 0.7226195335388184,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035235998764841826,
+            "val_rollout_nrmse": 0.11059410167001141
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523599894854415,
+            "val_rollout_nrmse": 0.1106153048642568
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307903312107
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523599877984151,
+            "val_rollout_nrmse": 0.11059950473108945
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "simple_linear_velocity": {
+        "params": {
+          "scale_x": 21.897836256703517,
+          "scale_y": 25.041248571833698
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.15921703796899853,
+        "val_one_step_nrmse": 0.07980509526871579,
+        "val_rollout_nrmse": 0.16157367530659061,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 1.2162258625030518,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.15921703796899855,
+            "val_rollout_nrmse": 0.16157367746603185
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.15921703796899853,
+            "val_rollout_nrmse": 0.16157367530659061
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.15921703796899855,
+            "val_rollout_nrmse": 0.16157367704030662
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.15921703796899855,
+            "val_rollout_nrmse": 0.16157367646603413
+          }
+        ]
+      },
+      "momentum_with_damping": {
+        "params": {
+          "accel_scale": 23.487948382689,
+          "damping": 0.14740450729736101,
+          "vel_x": -1.122138341726094,
+          "vel_y": -0.7000058308972613
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1682871083444937,
+        "val_one_step_nrmse": 0.06325572982556721,
+        "val_rollout_nrmse": 0.1291780134588511,
+        "restarts": 4,
+        "nfev": 72,
+        "elapsed_s": 8.095598220825195,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16828710824816623,
+            "val_rollout_nrmse": 0.12917985901617907
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16828710820419826,
+            "val_rollout_nrmse": 0.1291816044420485
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.1682871083444937,
+            "val_rollout_nrmse": 0.1291780134588511
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16828710825154408,
+            "val_rollout_nrmse": 0.1291797700461699
+          }
+        ]
+      },
+      "saturating_nonlinear_response": {
+        "params": {
+          "max_speed": 1012.0159135297905,
+          "steepness": 0.023220376442600103,
+          "threshold": 0.3
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1691922253780427,
+        "val_one_step_nrmse": 0.06169622950578738,
+        "val_rollout_nrmse": 0.12092693623242311,
+        "restarts": 4,
+        "nfev": 1307,
+        "elapsed_s": 162.2238254547119,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1691922253780427,
+            "val_rollout_nrmse": 0.12092693623242311
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1691922063687785,
+            "val_rollout_nrmse": 0.12092829979390692
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919206506077955,
+            "val_rollout_nrmse": 0.12096251025485563
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919234955751486,
+            "val_rollout_nrmse": 0.12095999653527026
+          }
+        ]
+      },
+      "obstacle_collision_blocking": {
+        "params": {
+          "scale_x": 22.012581642337814,
+          "scale_y": 24.69860916183862,
+          "door_x": 34.99061683870953,
+          "door_y": 43.96356417925032,
+          "door_radius": 8.149604898580261
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.21575129409453164,
+        "val_one_step_nrmse": 0.13034260932817876,
+        "val_rollout_nrmse": 0.29753040732651675,
+        "restarts": 4,
+        "nfev": 124,
+        "elapsed_s": 13.343423128128052,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.3924785690090495,
+            "val_rollout_nrmse": 0.5893859373954363
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.3181822243121837,
+            "val_rollout_nrmse": 0.43297560074914176
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.21575129409453164,
+            "val_rollout_nrmse": 0.29753040732651675
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.6588645844634787,
+            "val_rollout_nrmse": 0.7316564835138022
+          }
+        ]
+      },
+      "action_coupling_cross_terms": {
+        "params": {
+          "scale_main": 23.483517197242563,
+          "scale_cross": 0.3368753613056854,
+          "bias_x": -0.13803688902510494,
+          "bias_y": -0.11591403974383868
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16784692722401293,
+        "val_one_step_nrmse": 0.06386094667319316,
+        "val_rollout_nrmse": 0.1300608059886018,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 1.4192547798156738,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16784692722401293,
+            "val_rollout_nrmse": 0.1300608065160796
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16784692722401293,
+            "val_rollout_nrmse": 0.13006080833556397
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16784692722401293,
+            "val_rollout_nrmse": 0.1300608059886018
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.167846927224013,
+            "val_rollout_nrmse": 0.13006080925924127
+          }
+        ]
+      },
+      "velocity_dependent_friction": {
+        "params": {
+          "base_scale": 23.496874254848393,
+          "friction_coef": 0.02,
+          "min_scale": 5.0
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919190487184899,
+        "val_one_step_nrmse": 0.0616976260303363,
+        "val_rollout_nrmse": 0.12093825933642934,
+        "restarts": 4,
+        "nfev": 83,
+        "elapsed_s": 6.261587858200073,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919190487184899,
+            "val_rollout_nrmse": 0.12093825933642934
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190485534563,
+            "val_rollout_nrmse": 0.1209439877436932
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190484883,
+            "val_rollout_nrmse": 0.12094202714136751
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190519890595,
+            "val_rollout_nrmse": 0.12095657957408916
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "saturating_nonlinear_response",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_linear_velocity": 0.13932445212617034,
+        "momentum_with_damping": 0.11577803430333053,
+        "saturating_nonlinear_response": 0.11012614616694909,
+        "obstacle_collision_blocking": 0.29101397965196724,
+        "action_coupling_cross_terms": 0.11602440222454083,
+        "velocity_dependent_friction": 0.11059307903312107
+      }
+    },
+    "active_one_step": {
+      "winner": "saturating_nonlinear_response",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.x",
+        "agent.y"
+      ],
+      "scores": {
+        "simple_linear_velocity": 0.1679157435949775,
+        "momentum_with_damping": 0.10830630660193179,
+        "saturating_nonlinear_response": 0.09611255482099187,
+        "obstacle_collision_blocking": 1.9991239846194133,
+        "action_coupling_cross_terms": 0.11057343702326221,
+        "velocity_dependent_friction": 0.09659607004585512
+      },
+      "probes": [
+        {
+          "disagreement": 0.882806949411116,
+          "actions": [
+            [
+              0.7470452622414643,
+              -0.05539932649997703
+            ],
+            [
+              0.7470452622414643,
+              -0.05539932649997703
+            ],
+            [
+              0.7470452622414643,
+              -0.05539932649997703
+            ]
+          ],
+          "start": {
+            "agent.x": 87.972,
+            "agent.y": 51.662,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "simple_linear_velocity": 0.2708152422055744,
+            "momentum_with_damping": 0.15715388844591202,
+            "saturating_nonlinear_response": 0.1383362333928608,
+            "obstacle_collision_blocking": 2.698602697925603,
+            "action_coupling_cross_terms": 0.1576996081705312,
+            "velocity_dependent_friction": 0.13922755955385446
+          }
+        },
+        {
+          "disagreement": 0.8683163174006786,
+          "actions": [
+            [
+              0.7258999971663891,
+              0.1288256422411882
+            ],
+            [
+              0.7258999971663891,
+              0.1288256422411882
+            ],
+            [
+              0.7258999971663891,
+              0.1288256422411882
+            ]
+          ],
+          "start": {
+            "agent.x": 101.368,
+            "agent.y": 48.079,
+            "target.x": 178.335,
+            "target.y": 111.47
+          },
+          "errors": {
+            "simple_linear_velocity": 0.26314763021936055,
+            "momentum_with_damping": 0.1568628241027215,
+            "saturating_nonlinear_response": 0.1358160571309949,
+            "obstacle_collision_blocking": 2.652539427233761,
+            "action_coupling_cross_terms": 0.16294621528113593,
+            "velocity_dependent_friction": 0.13684778175954432
+          }
+        },
+        {
+          "disagreement": 0.5564691618923564,
+          "actions": [
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ],
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ],
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ]
+          ],
+          "start": {
+            "agent.x": 96.734,
+            "agent.y": 58.078,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "simple_linear_velocity": 0.13727762250857634,
+            "momentum_with_damping": 0.09729403937468355,
+            "saturating_nonlinear_response": 0.08447985197099019,
+            "obstacle_collision_blocking": 1.6837079706239917,
+            "action_coupling_cross_terms": 0.09123504509735476,
+            "velocity_dependent_friction": 0.08691335381152888
+          }
+        },
+        {
+          "disagreement": 0.5342483696906649,
+          "actions": [
+            [
+              -0.8525671347509249,
+              -0.5071880618980489
+            ],
+            [
+              0.14875609619586383,
+              -0.21162646794220485
+            ],
+            [
+              0.98404645716289,
+              0.8474907147503625
+            ]
+          ],
+          "start": {
+            "agent.x": 130.291,
+            "agent.y": 55.595,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "simple_linear_velocity": 0.11049659583906145,
+            "momentum_with_damping": 0.06559241044078533,
+            "saturating_nonlinear_response": 0.07249035890808753,
+            "obstacle_collision_blocking": 1.5722316701523622,
+            "action_coupling_cross_terms": 0.07149881884280339,
+            "velocity_dependent_friction": 0.07047050971361579
+          }
+        },
+        {
+          "disagreement": 0.468194051950414,
+          "actions": [
+            [
+              0.49649700660350815,
+              0.7214028190953554
+            ],
+            [
+              -0.505706519355785,
+              -0.7175068861979368
+            ],
+            [
+              0.3401236986298719,
+              0.42923707330950545
+            ]
+          ],
+          "start": {
+            "agent.x": 94.909,
+            "agent.y": 33.876,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "simple_linear_velocity": 0.0578416272023147,
+            "momentum_with_damping": 0.06462837064555658,
+            "saturating_nonlinear_response": 0.04944027270202593,
+            "obstacle_collision_blocking": 1.3885381571613495,
+            "action_coupling_cross_terms": 0.0694874977244858,
+            "velocity_dependent_friction": 0.04952114539073215
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 14.361320495605469
+    },
+    "offline_multi_step": {
+      "winner": "saturating_nonlinear_response",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "simple_linear_velocity": 0.16157367530659061,
+        "momentum_with_damping": 0.1291780134588511,
+        "saturating_nonlinear_response": 0.12092693623242311,
+        "obstacle_collision_blocking": 0.29753040732651675,
+        "action_coupling_cross_terms": 0.1300608059886018,
+        "velocity_dependent_friction": 0.12093825933642934
+      }
+    },
+    "active_multi_step": {
+      "winner": "saturating_nonlinear_response",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.x",
+        "agent.y"
+      ],
+      "scores": {
+        "simple_linear_velocity": 0.2071071654244002,
+        "momentum_with_damping": 0.12871929572950644,
+        "saturating_nonlinear_response": 0.11255270764210448,
+        "obstacle_collision_blocking": 1.9951228486576311,
+        "action_coupling_cross_terms": 0.12380188108280317,
+        "velocity_dependent_friction": 0.11255739321786824
+      },
+      "probes": [
+        {
+          "disagreement": 0.8837660590306362,
+          "actions": [
+            [
+              0.7470452622414643,
+              -0.05539932649997703
+            ],
+            [
+              0.7470452622414643,
+              -0.05539932649997703
+            ],
+            [
+              0.7470452622414643,
+              -0.05539932649997703
+            ]
+          ],
+          "start": {
+            "agent.x": 87.972,
+            "agent.y": 51.662,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "simple_linear_velocity": 0.33401883896949863,
+            "momentum_with_damping": 0.18665787383220991,
+            "saturating_nonlinear_response": 0.1622201266797211,
+            "obstacle_collision_blocking": 2.698602697925603,
+            "action_coupling_cross_terms": 0.1882730025316306,
+            "velocity_dependent_friction": 0.16223594100107488
+          }
+        },
+        {
+          "disagreement": 0.86954621530602,
+          "actions": [
+            [
+              0.7258999971663891,
+              0.1288256422411882
+            ],
+            [
+              0.7258999971663891,
+              0.1288256422411882
+            ],
+            [
+              0.7258999971663891,
+              0.1288256422411882
+            ]
+          ],
+          "start": {
+            "agent.x": 101.368,
+            "agent.y": 48.079,
+            "target.x": 178.335,
+            "target.y": 111.47
+          },
+          "errors": {
+            "simple_linear_velocity": 0.32456290940645666,
+            "momentum_with_damping": 0.18652783903289438,
+            "saturating_nonlinear_response": 0.15944001703293847,
+            "obstacle_collision_blocking": 2.652539427233761,
+            "action_coupling_cross_terms": 0.17253263768833912,
+            "velocity_dependent_friction": 0.1594634550060937
+          }
+        },
+        {
+          "disagreement": 0.5572073291462618,
+          "actions": [
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ],
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ],
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ]
+          ],
+          "start": {
+            "agent.x": 96.734,
+            "agent.y": 58.078,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "simple_linear_velocity": 0.16931653365037674,
+            "momentum_with_damping": 0.11574065048923,
+            "saturating_nonlinear_response": 0.1011633067642951,
+            "obstacle_collision_blocking": 1.6837079706239917,
+            "action_coupling_cross_terms": 0.1318952830183907,
+            "velocity_dependent_friction": 0.10126828603864764
+          }
+        },
+        {
+          "disagreement": 0.5378056947579031,
+          "actions": [
+            [
+              -0.8525671347509249,
+              -0.5071880618980489
+            ],
+            [
+              0.14875609619586383,
+              -0.21162646794220485
+            ],
+            [
+              0.98404645716289,
+              0.8474907147503625
+            ]
+          ],
+          "start": {
+            "agent.x": 130.291,
+            "agent.y": 55.595,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "simple_linear_velocity": 0.13629161585817676,
+            "momentum_with_damping": 0.07673784936511743,
+            "saturating_nonlinear_response": 0.0822311645445603,
+            "obstacle_collision_blocking": 1.5610902152697879,
+            "action_coupling_cross_terms": 0.06152430664236298,
+            "velocity_dependent_friction": 0.08211651555447488
+          }
+        },
+        {
+          "disagreement": 0.46702196173701854,
+          "actions": [
+            [
+              0.49649700660350815,
+              0.7214028190953554
+            ],
+            [
+              -0.505706519355785,
+              -0.7175068861979368
+            ],
+            [
+              0.3401236986298719,
+              0.42923707330950545
+            ]
+          ],
+          "start": {
+            "agent.x": 94.909,
+            "agent.y": 33.876,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "simple_linear_velocity": 0.07134592923749225,
+            "momentum_with_damping": 0.07793226592808059,
+            "saturating_nonlinear_response": 0.05770892318900743,
+            "obstacle_collision_blocking": 1.3796739322350124,
+            "action_coupling_cross_terms": 0.06478417553329235,
+            "velocity_dependent_friction": 0.05770276848905015
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 1.1883635520935059
+    }
+  },
+  "args": {
+    "env": "tworoom",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/v1_tworoom_qwen35_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 286.1479206085205
+}

@@ -1,0 +1,1166 @@
+{
+  "env": "cube",
+  "llm_model": "Qwen/Qwen3.5-397B-A17B",
+  "schema": {
+    "state_keys": [
+      "block.x",
+      "block.y",
+      "block.z",
+      "effector.x",
+      "effector.y",
+      "effector.z",
+      "goal.x",
+      "goal.y",
+      "goal.z"
+    ],
+    "state_ranges": {
+      "block.x": {
+        "min": 0.251,
+        "max": 0.557
+      },
+      "block.y": {
+        "min": -0.339,
+        "max": 0.294
+      },
+      "block.z": {
+        "min": 0.019,
+        "max": 0.335
+      },
+      "effector.x": {
+        "min": 0.248,
+        "max": 0.567
+      },
+      "effector.y": {
+        "min": -0.339,
+        "max": 0.294
+      },
+      "effector.z": {
+        "min": 0.015,
+        "max": 0.335
+      },
+      "goal.x": {
+        "min": 0.304,
+        "max": 0.536
+      },
+      "goal.y": {
+        "min": -0.285,
+        "max": 0.283
+      },
+      "goal.z": {
+        "min": 0.02,
+        "max": 0.02
+      }
+    },
+    "action_dim": 5,
+    "action_min": [
+      -1.0,
+      -1.0,
+      -1.0,
+      -1.0,
+      -0.321
+    ],
+    "action_max": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.567
+    ],
+    "num_episodes": 51,
+    "num_transitions": 2040
+  },
+  "scales": {
+    "block.x": 0.015027326695920107,
+    "block.y": 0.02119843666027467,
+    "block.z": 0.04406113733540159,
+    "effector.x": 0.025943293893212635,
+    "effector.y": 0.03839158734668915,
+    "effector.z": 0.06011630803798929,
+    "goal.x": 1.0,
+    "goal.y": 1.0,
+    "goal.z": 1.0
+  },
+  "candidates": [
+    {
+      "name": "binary_grip_attachment",
+      "mechanism": "Effector moves kinematically by action; block rigidly attaches when gripper closed (action[4]>0) and within distance threshold",
+      "code": "# HYPOTHESIS: binary_grip_attachment\n# MECHANISM: Effector moves kinematically by action; block rigidly attaches when gripper closed (action[4]>0) and within distance threshold\nPARAMS = {\"move_scale\": 0.1, \"attach_dist\": 0.03, \"grip_thresh\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    \n    # Effector moves by action (velocity-like)\n    ex = state[\"effector.x\"] + action[0] * p[\"move_scale\"]\n    ey = state[\"effector.y\"] + action[1] * p[\"move_scale\"]\n    ez = max(0.02, state[\"effector.z\"] + action[2] * p[\"move_scale\"])\n    new_state[\"effector.x\"] = ex\n    new_state[\"effector.y\"] = ey\n    new_state[\"effector.z\"] = ez\n    \n    # Check attachment: gripper closed AND close enough\n    dx = state[\"block.x\"] - state[\"effector.x\"]\n    dy = state[\"block.y\"] - state[\"effector.y\"]\n    dz = state[\"block.z\"] - state[\"effector.z\"]\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    \n    gripper_closed = action[4] > p[\"grip_thresh\"]\n    attached = gripper_closed and (dist < p[\"attach_dist\"])\n    \n    if attached:\n        # Block moves with effector\n        new_state[\"block.x\"] = ex\n        new_state[\"block.y\"] = ey\n        new_state[\"block.z\"] = max(0.02, ez + (state[\"block.z\"] - state[\"effector.z\"]))\n    else:\n        # Block stays still (on ground if z low)\n        new_state[\"block.x\"] = state[\"block.x\"]\n        new_state[\"block.y\"] = state[\"block.y\"]\n        new_state[\"block.z\"] = state[\"block.z\"]\n    \n    # Goal is static\n    new_state[\"goal.x\"] = state[\"goal.x\"]\n    new_state[\"goal.y\"] = state[\"goal.y\"]\n    new_state[\"goal.z\"] = state[\"goal.z\"]\n    \n    return new_state",
+      "init_params": {
+        "move_scale": 0.1,
+        "attach_dist": 0.03,
+        "grip_thresh": 0.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "spring_coupled_dynamics",
+      "mechanism": "Block is connected to effector via spring-damper; action[4] controls spring stiffness (grip strength)",
+      "code": "# HYPOTHESIS: spring_coupled_dynamics\n# MECHANISM: Block is connected to effector via spring-damper; action[4] controls spring stiffness (grip strength)\nPARAMS = {\"move_scale\": 0.1, \"k_grip\": 50.0, \"k_loose\": 0.5, \"damping\": 5.0, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    \n    # Effector moves kinematically\n    ex = state[\"effector.x\"] + action[0] * p[\"move_scale\"]\n    ey = state[\"effector.y\"] + action[1] * p[\"move_scale\"]\n    ez = max(0.02, state[\"effector.z\"] + action[2] * p[\"move_scale\"])\n    new_state[\"effector.x\"] = ex\n    new_state[\"effector.y\"] = ey\n    new_state[\"effector.z\"] = ez\n    \n    # Spring stiffness depends on grip action\n    k = p[\"k_grip\"] if action[4] > 0 else p[\"k_loose\"]\n    \n    # Spring force on block toward effector\n    dx = ex - state[\"block.x\"]\n    dy = ey - state[\"block.y\"]\n    dz = ez - state[\"block.z\"]\n    \n    fx = k * dx * p[\"dt\"]\n    fy = k * dy * p[\"dt\"]\n    fz = k * dz * p[\"dt\"]\n    \n    # Update block position (first-order, no momentum)\n    bx = state[\"block.x\"] + fx\n    by = state[\"block.y\"] + fy\n    bz = max(0.02, state[\"block.z\"] + fz)\n    \n    new_state[\"block.x\"] = bx\n    new_state[\"block.y\"] = by\n    new_state[\"block.z\"] = bz\n    \n    # Goal static\n    new_state[\"goal.x\"] = state[\"goal.x\"]\n    new_state[\"goal.y\"] = state[\"goal.y\"]\n    new_state[\"goal.z\"] = state[\"goal.z\"]\n    \n    return new_state",
+      "init_params": {
+        "move_scale": 0.1,
+        "k_grip": 50.0,
+        "k_loose": 0.5,
+        "damping": 5.0,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "velocity_momentum_friction",
+      "mechanism": "Objects have hidden velocity; action applies acceleration; friction dissipates momentum; block slides when pushed",
+      "code": "# HYPOTHESIS: velocity_momentum_friction\n# MECHANISM: Objects have hidden velocity; action applies acceleration; friction dissipates momentum; block slides when pushed\nPARAMS = {\"eff_mass\": 1.0, \"block_mass\": 2.0, \"friction\": 0.5, \"force_scale\": 0.2, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    \n    # Initialize velocities from meta or assume zero (hidden state approximation)\n    evx = meta.get(\"eff_vx\", 0.0)\n    evy = meta.get(\"eff_vy\", 0.0)\n    evz = meta.get(\"eff_vz\", 0.0)\n    bvx = meta.get(\"block_vx\", 0.0)\n    bvy = meta.get(\"block_vy\", 0.0)\n    bvz = meta.get(\"block_vz\", 0.0)\n    \n    # Action applies force to effector\n    evx += action[0] * p[\"force_scale\"] / p[\"eff_mass\"] * p[\"dt\"]\n    evy += action[1] * p[\"force_scale\"] / p[\"eff_mass\"] * p[\"dt\"]\n    evz += action[2] * p[\"force_scale\"] / p[\"eff_mass\"] * p[\"dt\"]\n    \n    # Friction\n    evx *= (1 - p[\"friction\"] * p[\"dt\"])\n    evy *= (1 - p[\"friction\"] * p[\"dt\"])\n    evz *= (1 - p[\"friction\"] * p[\"dt\"])\n    \n    # Update effector position\n    ex = state[\"effector.x\"] + evx * p[\"dt\"]\n    ey = state[\"effector.y\"] + evy * p[\"dt\"]\n    ez = max(0.02, state[\"effector.z\"] + evz * p[\"dt\"])\n    new_state[\"effector.x\"] = ex\n    new_state[\"effector.y\"] = ey\n    new_state[\"effector.z\"] = ez\n    \n    # Block moves only if effector pushes it (contact)\n    dx = ex - state[\"block.x\"]\n    dy = ey - state[\"block.y\"]\n    dz = ez - state[\"block.z\"]\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    \n    if dist < 0.02 and action[4] > 0:\n        # Pushed by effector\n        bvx = evx * 0.5\n        bvy = evy * 0.5\n        bvz = evz * 0.5\n    else:\n        # Friction stops block\n        bvx *= (1 - p[\"friction\"] * p[\"dt\"] * 2)\n        bvy *= (1 - p[\"friction\"] * p[\"dt\"] * 2)\n        bvz *= (1 - p[\"friction\"] * p[\"dt\"] * 2)\n    \n    bx = state[\"block.x\"] + bvx * p[\"dt\"]\n    by = state[\"block.y\"] + bvy * p[\"dt\"]\n    bz = max(0.02, state[\"block.z\"] + bvz * p[\"dt\"])\n    new_state[\"block.x\"] = bx\n    new_state[\"block.y\"] = by\n    new_state[\"block.z\"] = bz\n    \n    # Store velocities in meta for next step (simulated hidden state)\n    new_state[\"_eff_vx\"] = evx\n    new_state[\"_eff_vy\"] = evy\n    new_state[\"_eff_vz\"] = evz\n    new_state[\"_block_vx\"] = bvx\n    new_state[\"_block_vy\"] = bvy\n    new_state[\"_block_vz\"] = bvz\n    \n    new_state[\"goal.x\"] = state[\"goal.x\"]\n    new_state[\"goal.y\"] = state[\"goal.y\"]\n    new_state[\"goal.z\"] = state[\"goal.z\"]\n    \n    return new_state",
+      "init_params": {
+        "eff_mass": 1.0,
+        "block_mass": 2.0,
+        "friction": 0.5,
+        "force_scale": 0.2,
+        "dt": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "action_target_position",
+      "mechanism": "Action specifies target position offset; effector moves toward target with first-order lag; block follows when gripped",
+      "code": "# HYPOTHESIS: action_target_position\n# MECHANISM: Action specifies target position offset; effector moves toward target with first-order lag; block follows when gripped\nPARAMS = {\"lag\": 0.3, \"move_scale\": 0.15, \"grip_thresh\": 0.0, \"attach_dist\": 0.03}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    \n    # Action[0:3] is target offset from current position\n    target_x = state[\"effector.x\"] + action[0] * p[\"move_scale\"]\n    target_y = state[\"effector.y\"] + action[1] * p[\"move_scale\"]\n    target_z = max(0.02, state[\"effector.z\"] + action[2] * p[\"move_scale\"])\n    \n    # First-order lag toward target\n    ex = state[\"effector.x\"] + p[\"lag\"] * (target_x - state[\"effector.x\"])\n    ey = state[\"effector.y\"] + p[\"lag\"] * (target_y - state[\"effector.y\"])\n    ez = state[\"effector.z\"] + p[\"lag\"] * (target_z - state[\"effector.z\"])\n    ez = max(0.02, ez)\n    \n    new_state[\"effector.x\"] = ex\n    new_state[\"effector.y\"] = ey\n    new_state[\"effector.z\"] = ez\n    \n    # Check grip and attachment\n    dx = state[\"block.x\"] - state[\"effector.x\"]\n    dy = state[\"block.y\"] - state[\"effector.y\"]\n    dz = state[\"block.z\"] - state[\"effector.z\"]\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    \n    if action[4] > p[\"grip_thresh\"] and dist < p[\"attach_dist\"]:\n        # Block follows with same lag\n        new_state[\"block.x\"] = state[\"block.x\"] + p[\"lag\"] * (ex - state[\"effector.x\"])\n        new_state[\"block.y\"] = state[\"block.y\"] + p[\"lag\"] * (ey - state[\"effector.y\"])\n        new_state[\"block.z\"] = max(0.02, state[\"block.z\"] + p[\"lag\"] * (ez - state[\"effector.z\"]))\n    else:\n        new_state[\"block.x\"] = state[\"block.x\"]\n        new_state[\"block.y\"] = state[\"block.y\"]\n        new_state[\"block.z\"] = state[\"block.z\"]\n    \n    new_state[\"goal.x\"] = state[\"goal.x\"]\n    new_state[\"goal.y\"] = state[\"goal.y\"]\n    new_state[\"goal.z\"] = state[\"goal.z\"]\n    \n    return new_state",
+      "init_params": {
+        "lag": 0.3,
+        "move_scale": 0.15,
+        "grip_thresh": 0.0,
+        "attach_dist": 0.03
+      },
+      "repaired": false
+    },
+    {
+      "name": "hybrid_contact_modes",
+      "mechanism": "Two distinct dynamic modes: free-flight (effector only moves) vs contact (both move together); mode switches on distance+grip",
+      "code": "# HYPOTHESIS: hybrid_contact_modes\n# MECHANISM: Two distinct dynamic modes: free-flight (effector only moves) vs contact (both move together); mode switches on distance+grip\nPARAMS = {\"free_speed\": 0.12, \"contact_speed\": 0.08, \"contact_dist\": 0.025, \"grip_thresh\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    \n    # Determine mode\n    dx = state[\"block.x\"] - state[\"effector.x\"]\n    dy = state[\"block.y\"] - state[\"effector.y\"]\n    dz = state[\"block.z\"] - state[\"effector.z\"]\n    dist = math.sqrt(dx*dx + dy*dy + dz*dz)\n    \n    in_contact = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    if in_contact:\n        # Contact mode: both move together at reduced speed\n        speed = p[\"contact_speed\"]\n        ex = state[\"effector.x\"] + action[0] * speed\n        ey = state[\"effector.y\"] + action[1] * speed\n        ez = max(0.02, state[\"effector.z\"] + action[2] * speed)\n        \n        new_state[\"effector.x\"] = ex\n        new_state[\"effector.y\"] = ey\n        new_state[\"effector.z\"] = ez\n        \n        # Block moves same delta\n        new_state[\"block.x\"] = state[\"block.x\"] + (ex - state[\"effector.x\"])\n        new_state[\"block.y\"] = state[\"block.y\"] + (ey - state[\"effector.y\"])\n        new_state[\"block.z\"] = max(0.02, state[\"block.z\"] + (ez - state[\"effector.z\"]))\n    else:\n        # Free mode: only effector moves\n        speed = p[\"free_speed\"]\n        ex = state[\"effector.x\"] + action[0] * speed\n        ey = state[\"effector.y\"] + action[1] * speed\n        ez = max(0.02, state[\"effector.z\"] + action[2] * speed)\n        \n        new_state[\"effector.x\"] = ex\n        new_state[\"effector.y\"] = ey\n        new_state[\"effector.z\"] = ez\n        \n        # Block stationary\n        new_state[\"block.x\"] = state[\"block.x\"]\n        new_state[\"block.y\"] = state[\"block.y\"]\n        new_state[\"block.z\"] = state[\"block.z\"]\n    \n    new_state[\"goal.x\"] = state[\"goal.x\"]\n    new_state[\"goal.y\"] = state[\"goal.y\"]\n    new_state[\"goal.z\"] = state[\"goal.z\"]\n    \n    return new_state",
+      "init_params": {
+        "free_speed": 0.12,
+        "contact_speed": 0.08,
+        "contact_dist": 0.025,
+        "grip_thresh": 0.1
+      },
+      "repaired": false
+    },
+    {
+      "name": "baseline_random_walk",
+      "mechanism": "Simple baseline - effector performs scaled random walk from action; block never moves (null hypothesis for block dynamics)",
+      "code": "# HYPOTHESIS: baseline_random_walk\n# MECHANISM: Simple baseline - effector performs scaled random walk from action; block never moves (null hypothesis for block dynamics)\nPARAMS = {\"eff_scale\": 0.1, \"noise\": 0.01}\n\ndef step(state, action, p, meta):\n    import math\n    new_state = dict(state)\n    \n    # Effector moves proportionally to action\n    ex = state[\"effector.x\"] + action[0] * p[\"eff_scale\"]\n    ey = state[\"effector.y\"] + action[1] * p[\"eff_scale\"]\n    ez = max(0.02, state[\"effector.z\"] + action[2] * p[\"eff_scale\"])\n    \n    new_state[\"effector.x\"] = ex\n    new_state[\"effector.y\"] = ey\n    new_state[\"effector.z\"] = ez\n    \n    # Block never moves (test if block dynamics are needed)\n    new_state[\"block.x\"] = state[\"block.x\"]\n    new_state[\"block.y\"] = state[\"block.y\"]\n    new_state[\"block.z\"] = state[\"block.z\"]\n    \n    # Goal static\n    new_state[\"goal.x\"] = state[\"goal.x\"]\n    new_state[\"goal.y\"] = state[\"goal.y\"]\n    new_state[\"goal.z\"] = state[\"goal.z\"]\n    \n    return new_state",
+      "init_params": {
+        "eff_scale": 0.1,
+        "noise": 0.01
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "binary_grip_attachment": {
+        "params": {
+          "move_scale": 0.09642436707164771,
+          "attach_dist": 0.03,
+          "grip_thresh": 0.0
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.08395463492327679,
+        "val_one_step_nrmse": 0.28637373934801297,
+        "val_rollout_nrmse": 0.6671319368266095,
+        "restarts": 4,
+        "nfev": 80,
+        "elapsed_s": 2.0238125324249268,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.08395463492327679,
+            "val_rollout_nrmse": 0.6671319368266095
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.36612092614059166,
+            "val_rollout_nrmse": 1.4647646418524654
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.36612092615793346,
+            "val_rollout_nrmse": 1.4647647415287626
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3661209261225624,
+            "val_rollout_nrmse": 1.4647644397858919
+          }
+        ]
+      },
+      "spring_coupled_dynamics": {
+        "params": {
+          "move_scale": 0.11517505481747903,
+          "k_grip": 54.006833380768065,
+          "k_loose": 0.015220822590279496,
+          "damping": 4.523040719516282,
+          "dt": 0.009922457275085537
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.18880803105173616,
+        "val_one_step_nrmse": 0.4298139803188249,
+        "val_rollout_nrmse": 0.8198178539611047,
+        "restarts": 4,
+        "nfev": 87,
+        "elapsed_s": 3.8290834426879883,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.18880803092103485,
+            "val_rollout_nrmse": 0.8198203841457079
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.18880803097413001,
+            "val_rollout_nrmse": 0.8198183284318841
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.18880803105173616,
+            "val_rollout_nrmse": 0.8198178539611047
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1888080309404135,
+            "val_rollout_nrmse": 0.8198200544318023
+          }
+        ]
+      },
+      "velocity_momentum_friction": {
+        "params": {
+          "eff_mass": 0.774563834468255,
+          "block_mass": 2.0025635699061843,
+          "friction": 0.8694222419729835,
+          "force_scale": 0.42323937848334386,
+          "dt": -0.3681946937667255
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36627730693426164,
+        "val_one_step_nrmse": 0.595945645754132,
+        "val_rollout_nrmse": 1.4616615065999472,
+        "restarts": 4,
+        "nfev": 63,
+        "elapsed_s": 3.8215227127075195,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.36627730685156257,
+            "val_rollout_nrmse": 1.461662032345219
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.36627730693426164,
+            "val_rollout_nrmse": 1.4616615065999472
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.36627730688217935,
+            "val_rollout_nrmse": 1.4616622824568886
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.36627730686458737,
+            "val_rollout_nrmse": 1.4616617922763067
+          }
+        ]
+      },
+      "action_target_position": {
+        "params": {
+          "lag": 0.9627817609833257,
+          "move_scale": 0.10175683545127512,
+          "grip_thresh": 0.0,
+          "attach_dist": 0.03
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.0785990750756066,
+        "val_one_step_nrmse": 0.27470439690148174,
+        "val_rollout_nrmse": 0.6561219415283459,
+        "restarts": 4,
+        "nfev": 88,
+        "elapsed_s": 3.332695722579956,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.0785990750756066,
+            "val_rollout_nrmse": 0.6561219415283459
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.07927402240354818,
+            "val_rollout_nrmse": 0.6572834919966908
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.3661209275266792,
+            "val_rollout_nrmse": 1.464764343677505
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.11400434465178731,
+            "val_rollout_nrmse": 0.7843536742095547
+          }
+        ]
+      },
+      "hybrid_contact_modes": {
+        "params": {
+          "free_speed": 0.10044458329851261,
+          "contact_speed": 0.09443072135464256,
+          "contact_dist": 0.16483547493597062,
+          "grip_thresh": 0.20009308931278913
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.0788706656898514,
+        "val_one_step_nrmse": 0.27538405348148054,
+        "val_rollout_nrmse": 0.6583507900102846,
+        "restarts": 4,
+        "nfev": 78,
+        "elapsed_s": 2.207968235015869,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.07834122359856562,
+            "val_rollout_nrmse": 0.6590137787820961
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.0788706656898514,
+            "val_rollout_nrmse": 0.6583507900102846
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.36612092612162594,
+            "val_rollout_nrmse": 1.4647643830618253
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.3661209280193762,
+            "val_rollout_nrmse": 1.4647617862328706
+          }
+        ]
+      },
+      "baseline_random_walk": {
+        "params": {
+          "eff_scale": 0.09797712422462501,
+          "noise": 0.009444098339636425
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.36612092616755526,
+        "val_one_step_nrmse": 0.5957483725184879,
+        "val_rollout_nrmse": 1.4647639778605193,
+        "restarts": 4,
+        "nfev": 79,
+        "elapsed_s": 1.4263458251953125,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.36612092652832495,
+            "val_rollout_nrmse": 1.4647655855821966
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.366120926131444,
+            "val_rollout_nrmse": 1.4647641951555868
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.36612092612709196,
+            "val_rollout_nrmse": 1.4647642425967897
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.36612092616755526,
+            "val_rollout_nrmse": 1.4647639778605193
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "binary_grip_attachment": {
+        "params": {
+          "move_scale": 0.09436055220923717,
+          "attach_dist": 0.03,
+          "grip_thresh": 0.0
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.4628777788442819,
+        "val_one_step_nrmse": 0.2872579777351527,
+        "val_rollout_nrmse": 0.6658780992497152,
+        "restarts": 4,
+        "nfev": 76,
+        "elapsed_s": 7.5164549350738525,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4628777788442819,
+            "val_rollout_nrmse": 0.6658780992497152
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.140112595855807,
+            "val_rollout_nrmse": 1.464147956322824
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.140112593455966,
+            "val_rollout_nrmse": 1.4641480619937164
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.140112596428159,
+            "val_rollout_nrmse": 1.4641479460428208
+          }
+        ]
+      },
+      "spring_coupled_dynamics": {
+        "params": {
+          "move_scale": 0.10335803535066002,
+          "k_grip": 6.291383053910728,
+          "k_loose": -0.31517045926773796,
+          "damping": 4.523040719516282,
+          "dt": 0.08343473627696223
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.705515436250865,
+        "val_one_step_nrmse": 0.4402358313643214,
+        "val_rollout_nrmse": 0.7978227441978638,
+        "restarts": 4,
+        "nfev": 105,
+        "elapsed_s": 19.368740558624268,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.7055154358257756,
+            "val_rollout_nrmse": 0.7978229253820434
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.7055154363830132,
+            "val_rollout_nrmse": 0.7978231446135846
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.705515436250865,
+            "val_rollout_nrmse": 0.7978227441978638
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.70551543593588,
+            "val_rollout_nrmse": 0.7978230550137494
+          }
+        ]
+      },
+      "velocity_momentum_friction": {
+        "params": {
+          "eff_mass": 0.6231740404734614,
+          "block_mass": 1.9873299962087188,
+          "friction": 0.12486024726542513,
+          "force_scale": 0.29811020084238204,
+          "dt": 0.45803567238005455
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.135478379597779,
+        "val_one_step_nrmse": 0.5963242514865741,
+        "val_rollout_nrmse": 1.461264716168597,
+        "restarts": 4,
+        "nfev": 62,
+        "elapsed_s": 13.62135910987854,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.1354783498406342,
+            "val_rollout_nrmse": 1.461264851915651
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.1354783507278134,
+            "val_rollout_nrmse": 1.4612648305620959
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.135478379597779,
+            "val_rollout_nrmse": 1.461264716168597
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.1354137775751987,
+            "val_rollout_nrmse": 1.4613304882570362
+          }
+        ]
+      },
+      "action_target_position": {
+        "params": {
+          "lag": 0.9798738837024057,
+          "move_scale": 0.0972143143774997,
+          "grip_thresh": 0.0,
+          "attach_dist": 0.03
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.4520702059541743,
+        "val_one_step_nrmse": 0.2754172540935464,
+        "val_rollout_nrmse": 0.6549765341477851,
+        "restarts": 4,
+        "nfev": 92,
+        "elapsed_s": 13.370428800582886,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4520702059541743,
+            "val_rollout_nrmse": 0.6549765341477851
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4496699989279851,
+            "val_rollout_nrmse": 0.6558431567333345
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.1401126059391515,
+            "val_rollout_nrmse": 1.464148046177128
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.7056487753006124,
+            "val_rollout_nrmse": 0.7898657193811848
+          }
+        ]
+      },
+      "hybrid_contact_modes": {
+        "params": {
+          "free_speed": 0.09517630216262134,
+          "contact_speed": 0.09405892713727763,
+          "contact_dist": 0.16483547493597062,
+          "grip_thresh": 0.20009308931278913
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.4535319112502562,
+        "val_one_step_nrmse": 0.2769966839044099,
+        "val_rollout_nrmse": 0.657372338308372,
+        "restarts": 4,
+        "nfev": 95,
+        "elapsed_s": 11.098275899887085,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4534490898411491,
+            "val_rollout_nrmse": 0.6585440052036472
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4535319112502562,
+            "val_rollout_nrmse": 0.657372338308372
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.140112595853862,
+            "val_rollout_nrmse": 1.464147956359744
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.1401125938203873,
+            "val_rollout_nrmse": 1.4641480883304052
+          }
+        ]
+      },
+      "baseline_random_walk": {
+        "params": {
+          "eff_scale": 0.09451851204575562,
+          "noise": 0.01985082954226982
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 2.140112599979577,
+        "val_one_step_nrmse": 0.5962315058349391,
+        "val_rollout_nrmse": 1.4641478973717932,
+        "restarts": 4,
+        "nfev": 75,
+        "elapsed_s": 5.6748878955841064,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 2.1401125934153784,
+            "val_rollout_nrmse": 1.4641480487242553
+          },
+          {
+            "restart": 1,
+            "train_loss": 2.140112599979577,
+            "val_rollout_nrmse": 1.4641478973717932
+          },
+          {
+            "restart": 2,
+            "train_loss": 2.1401125949046556,
+            "val_rollout_nrmse": 1.464148123924774
+          },
+          {
+            "restart": 3,
+            "train_loss": 2.140112593421295,
+            "val_rollout_nrmse": 1.4641480450198128
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "action_target_position",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "binary_grip_attachment": 0.6671319368266095,
+        "spring_coupled_dynamics": 0.8198178539611047,
+        "velocity_momentum_friction": 1.4616615065999472,
+        "action_target_position": 0.6561219415283459,
+        "hybrid_contact_modes": 0.6583507900102846,
+        "baseline_random_walk": 1.4647639778605193
+      }
+    },
+    "active_one_step": {
+      "winner": "action_target_position",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "block.x",
+        "block.y",
+        "block.z",
+        "effector.x",
+        "effector.y",
+        "effector.z"
+      ],
+      "scores": {
+        "binary_grip_attachment": 3.0364906751940874,
+        "spring_coupled_dynamics": 3.806587090171388,
+        "velocity_momentum_friction": 3.755078081775711,
+        "action_target_position": 2.9850809741721847,
+        "hybrid_contact_modes": 3.115791886109979,
+        "baseline_random_walk": 3.757864166655652
+      },
+      "probes": [
+        {
+          "disagreement": 3.867721641173174,
+          "actions": [
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ],
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ],
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ]
+          ],
+          "start": {
+            "block.x": 0.525,
+            "block.y": 0.254,
+            "block.z": 0.02,
+            "effector.x": 0.526,
+            "effector.y": 0.254,
+            "effector.z": 0.045,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 5.3288524152395675,
+            "spring_coupled_dynamics": 4.536471890504943,
+            "velocity_momentum_friction": 1.816811304491926,
+            "action_target_position": 5.21556470559324,
+            "hybrid_contact_modes": 1.848996053863298,
+            "baseline_random_walk": 1.8189053044188221
+          }
+        },
+        {
+          "disagreement": 3.712169266614936,
+          "actions": [
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ],
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ],
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ]
+          ],
+          "start": {
+            "block.x": 0.547,
+            "block.y": -0.123,
+            "block.z": 0.087,
+            "effector.x": 0.548,
+            "effector.y": -0.12,
+            "effector.z": 0.085,
+            "goal.x": 0.546,
+            "goal.y": -0.119,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 4.933455836944552,
+            "spring_coupled_dynamics": 4.680814866464157,
+            "velocity_momentum_friction": 4.175197167901708,
+            "action_target_position": 4.837054879699731,
+            "hybrid_contact_modes": 4.226880611081384,
+            "baseline_random_walk": 4.178778427662102
+          }
+        },
+        {
+          "disagreement": 3.381321260108049,
+          "actions": [
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ]
+          ],
+          "start": {
+            "block.x": 0.338,
+            "block.y": 0.023,
+            "block.z": 0.02,
+            "effector.x": 0.337,
+            "effector.y": 0.021,
+            "effector.z": 0.02,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 0.597632196992123,
+            "spring_coupled_dynamics": 1.1841421180119054,
+            "velocity_momentum_friction": 5.665878986303522,
+            "action_target_position": 0.522863532641198,
+            "hybrid_contact_modes": 0.49524974661749777,
+            "baseline_random_walk": 5.666105782285506
+          }
+        },
+        {
+          "disagreement": 3.372800690483517,
+          "actions": [
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ]
+          ],
+          "start": {
+            "block.x": 0.467,
+            "block.y": -0.06,
+            "block.z": 0.071,
+            "effector.x": 0.466,
+            "effector.y": -0.056,
+            "effector.z": 0.068,
+            "goal.x": 0.474,
+            "goal.y": -0.061,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 2.345250331335004,
+            "spring_coupled_dynamics": 2.4370365087644785,
+            "velocity_momentum_friction": 5.090196542163463,
+            "action_target_position": 2.3160351749906423,
+            "hybrid_contact_modes": 2.2739180483410517,
+            "baseline_random_walk": 5.0913693515788365
+          }
+        },
+        {
+          "disagreement": 3.3243070916399087,
+          "actions": [
+            [
+              -0.9180529521276106,
+              -0.9669447289429418,
+              0.6265404784005448,
+              0.8255111545554434,
+              0.2176925688812556
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418,
+              0.6265404784005448,
+              0.8255111545554434,
+              0.2176925688812556
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418,
+              0.6265404784005448,
+              0.8255111545554434,
+              0.2176925688812556
+            ]
+          ],
+          "start": {
+            "block.x": 0.36,
+            "block.y": -0.248,
+            "block.z": 0.02,
+            "effector.x": 0.362,
+            "effector.y": -0.25,
+            "effector.z": 0.053,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 1.9772625954591911,
+            "spring_coupled_dynamics": 6.194470067111453,
+            "velocity_momentum_friction": 2.0273064080179304,
+            "action_target_position": 2.0338865779361126,
+            "hybrid_contact_modes": 6.733914970646663,
+            "baseline_random_walk": 2.0341619673329943
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.37993812561035156
+    },
+    "offline_multi_step": {
+      "winner": "action_target_position",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "binary_grip_attachment": 0.6658780992497152,
+        "spring_coupled_dynamics": 0.7978227441978638,
+        "velocity_momentum_friction": 1.461264716168597,
+        "action_target_position": 0.6549765341477851,
+        "hybrid_contact_modes": 0.657372338308372,
+        "baseline_random_walk": 1.4641478973717932
+      }
+    },
+    "active_multi_step": {
+      "winner": "hybrid_contact_modes",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "block.x",
+        "block.y",
+        "block.z",
+        "effector.x",
+        "effector.y",
+        "effector.z"
+      ],
+      "scores": {
+        "binary_grip_attachment": 2.783216928624788,
+        "spring_coupled_dynamics": 2.761665997757255,
+        "velocity_momentum_friction": 4.645131903656507,
+        "action_target_position": 2.7650313535150253,
+        "hybrid_contact_modes": 1.9744912646501578,
+        "baseline_random_walk": 4.644498357496101
+      },
+      "probes": [
+        {
+          "disagreement": 3.7214607682821876,
+          "actions": [
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ],
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ],
+            [
+              -0.9761805233179643,
+              0.8598150473273567,
+              -0.5209820890554773,
+              -0.4587228991098864,
+              0.012570385226265635
+            ]
+          ],
+          "start": {
+            "block.x": 0.525,
+            "block.y": 0.254,
+            "block.z": 0.02,
+            "effector.x": 0.526,
+            "effector.y": 0.254,
+            "effector.z": 0.045,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 5.186797939143355,
+            "spring_coupled_dynamics": 3.846298817675323,
+            "velocity_momentum_friction": 1.7853461283353498,
+            "action_target_position": 5.14143596384368,
+            "hybrid_contact_modes": 1.7902905715153725,
+            "baseline_random_walk": 1.784454564379488
+          }
+        },
+        {
+          "disagreement": 3.572442719636982,
+          "actions": [
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ],
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ],
+            [
+              0.9543391261629313,
+              -0.778517442155771,
+              -0.015843136033768523,
+              -0.9389808050196782,
+              0.03936857754147799
+            ]
+          ],
+          "start": {
+            "block.x": 0.547,
+            "block.y": -0.123,
+            "block.z": 0.087,
+            "effector.x": 0.548,
+            "effector.y": -0.12,
+            "effector.z": 0.085,
+            "goal.x": 0.546,
+            "goal.y": -0.119,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 4.8021388930199125,
+            "spring_coupled_dynamics": 4.089044756964025,
+            "velocity_momentum_friction": 4.11571901120557,
+            "action_target_position": 4.746178644838122,
+            "hybrid_contact_modes": 4.125952236693744,
+            "baseline_random_walk": 4.1138268011794334
+          }
+        },
+        {
+          "disagreement": 3.312581968459493,
+          "actions": [
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ],
+            [
+              0.9624463371139009,
+              -0.7013920550333714,
+              -0.537939666331545,
+              0.4632624704093249,
+              0.3477183413330292
+            ]
+          ],
+          "start": {
+            "block.x": 0.338,
+            "block.y": 0.023,
+            "block.z": 0.02,
+            "effector.x": 0.337,
+            "effector.y": 0.021,
+            "effector.z": 0.02,
+            "goal.x": 0.523,
+            "goal.y": 0.252,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 0.4856216559467079,
+            "spring_coupled_dynamics": 1.3384910571668696,
+            "velocity_momentum_friction": 5.663277507926,
+            "action_target_position": 0.4539907524188036,
+            "hybrid_contact_modes": 0.4771952813298839,
+            "baseline_random_walk": 5.663232485980499
+          }
+        },
+        {
+          "disagreement": 3.3042138048293794,
+          "actions": [
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ],
+            [
+              0.8649589861175722,
+              0.8588340012457134,
+              0.6003851537870106,
+              -0.20778910155036856,
+              0.44114243105114787
+            ]
+          ],
+          "start": {
+            "block.x": 0.467,
+            "block.y": -0.06,
+            "block.z": 0.071,
+            "effector.x": 0.466,
+            "effector.y": -0.056,
+            "effector.z": 0.068,
+            "goal.x": 0.474,
+            "goal.y": -0.061,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 2.242894527757238,
+            "spring_coupled_dynamics": 2.1447651278945297,
+            "velocity_momentum_friction": 5.0716478151061635,
+            "action_target_position": 2.2466035322375766,
+            "hybrid_contact_modes": 2.256456152921244,
+            "baseline_random_walk": 5.071087796401452
+          }
+        },
+        {
+          "disagreement": 3.210893624779834,
+          "actions": [
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ],
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ],
+            [
+              -0.9876463424314437,
+              0.442331572233684,
+              0.35320892648915914,
+              0.31380289985135423,
+              0.2894245220542339
+            ]
+          ],
+          "start": {
+            "block.x": 0.534,
+            "block.y": -0.165,
+            "block.z": 0.02,
+            "effector.x": 0.531,
+            "effector.y": -0.171,
+            "effector.z": 0.016,
+            "goal.x": 0.531,
+            "goal.y": -0.177,
+            "goal.z": 0.02
+          },
+          "errors": {
+            "binary_grip_attachment": 1.1986316272567243,
+            "spring_coupled_dynamics": 2.3897302290855276,
+            "velocity_momentum_friction": 6.589669055709453,
+            "action_target_position": 1.2369478742369442,
+            "hybrid_contact_modes": 1.222562080790545,
+            "baseline_random_walk": 6.589890139539631
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.19679975509643555
+    }
+  },
+  "args": {
+    "env": "cube",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/bank_general_cube_qwen35_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/qwen35_general.json",
+    "experience_runs": [],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 202.18806433677673
+}

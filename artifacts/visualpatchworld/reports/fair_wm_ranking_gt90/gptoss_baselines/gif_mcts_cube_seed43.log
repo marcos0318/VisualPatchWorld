@@ -1,0 +1,75 @@
+[fair-replan] gif_mcts/cube proto=library_shoot_fs5_h1_r1_400_budget100 obs=oracle sv=0.0 model=cube_gif_mcts_20261118_222308.py
+/home/comp/baijiaxin/miniconda3/envs/lewm/lib/python3.10/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+/home/comp/baijiaxin/miniconda3/envs/lewm/lib/python3.10/site-packages/gymnasium/envs/registration.py:728: UserWarning: [33mWARN: The environment is being initialised with render_mode='rgb_array' that is not in the possible render_modes ([]).[0m
+  logger.warn(
+/home/comp/baijiaxin/miniconda3/envs/lewm/lib/python3.10/site-packages/gymnasium/spaces/box.py:236: UserWarning: [33mWARN: Box low's precision lowered by casting to float32, current low.dtype=float64[0m
+  gym.logger.warn(
+/home/comp/baijiaxin/miniconda3/envs/lewm/lib/python3.10/site-packages/gymnasium/spaces/box.py:306: UserWarning: [33mWARN: Box high's precision lowered by casting to float32, current high.dtype=float64[0m
+  gym.logger.warn(
+/home/comp/baijiaxin/miniconda3/envs/lewm/lib/python3.10/site-packages/gymnasium/spaces/box.py:424: UserWarning: [33mWARN: Casting input x to numpy array.[0m
+  gym.logger.warn("Casting input x to numpy array.")
+[visualpatchworld][general-plan] env=cube seed=43 trial=1/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=2/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=3/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=4/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=5/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=6/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=7/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=8/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=9/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=10/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=11/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=12/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=13/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=14/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=15/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=16/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=17/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=18/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=19/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=20/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=21/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=22/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=23/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=24/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=25/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=26/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=27/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=28/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=29/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=30/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=31/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=32/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=33/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=34/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=35/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=36/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=37/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=38/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=39/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=40/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=41/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=42/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=43/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=44/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=45/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=46/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=47/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=48/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=49/50 obs=oracle sim_verify=0.0
+[visualpatchworld][general-plan] env=cube seed=43 trial=50/50 obs=oracle sim_verify=0.0
+[fair-replan] RESULT gif_mcts/cube success_rate=82.0
+{
+  "wrote": "artifacts/visualpatchworld/reports/fair_wm_ranking_gt90/gptoss_baselines/summary_n50_seed43.json",
+  "table": [
+    {
+      "method": "gif_mcts",
+      "tworoom": null,
+      "pusht": null,
+      "cube": 82.0,
+      "reacher": null,
+      "mean": null
+    }
+  ]
+}

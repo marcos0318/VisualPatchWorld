@@ -1,0 +1,958 @@
+{
+  "env": "tworoom",
+  "llm_model": "openai/gpt-oss-120b",
+  "schema": {
+    "state_keys": [
+      "agent.x",
+      "agent.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "agent.x": {
+        "min": 14.06,
+        "max": 199.404
+      },
+      "agent.y": {
+        "min": 21.0,
+        "max": 208.141
+      },
+      "target.x": {
+        "min": 22.652,
+        "max": 205.757
+      },
+      "target.y": {
+        "min": 19.804,
+        "max": 207.074
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -1.0,
+      -1.0
+    ],
+    "action_max": [
+      1.0,
+      1.0
+    ],
+    "num_episodes": 51,
+    "num_transitions": 892
+  },
+  "scales": {
+    "agent.x": 10.597528584591904,
+    "agent.y": 11.175281778471136,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "baseline_linear",
+      "mechanism": "Direct proportional mapping from action to position displacement (no dynamics).",
+      "code": "# HYPOTHESIS: baseline_linear\n# MECHANISM: Direct proportional mapping from action to position displacement (no dynamics).\nPARAMS = {\"scale\": 25.0}\n\ndef step(state, action, p, meta):\n    \"\"\"Simple linear controller: \u0394pos = scale * action.\"\"\"\n    sx = state[\"agent.x\"]\n    sy = state[\"agent.y\"]\n    ax, ay = action[0], action[1]\n    scale = p[\"scale\"]\n    new_state = {\n        \"agent.x\": sx + scale * ax,\n        \"agent.y\": sy + scale * ay,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }\n    return new_state",
+      "init_params": {
+        "scale": 25.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "point_mass_velocity_control",
+      "mechanism": "First\u2011order velocity controller with saturation; action is a commanded velocity.",
+      "code": "# HYPOTHESIS: point_mass_velocity_control\n# MECHANISM: First\u2011order velocity controller with saturation; action is a commanded velocity.\nPARAMS = {\"k_vel\": 1.0, \"v_max\": 30.0, \"dt\": 1.0}\n\ndef step(state, action, p, meta):\n    \"\"\"Velocity command is filtered toward the desired value, then integrated.\"\"\"\n    sx, sy = state[\"agent.x\"], state[\"agent.y\"]\n    cx, cy = action[0], action[1]          # commanded velocities\n    k, vmax, dt = p[\"k_vel\"], p[\"v_max\"], p[\"dt\"]\n    # internal velocity assumed zero at the start of each macro\u2011step\n    vx = max(-vmax, min(vmax, k * (cx - 0.0) * dt))\n    vy = max(-vmax, min(vmax, k * (cy - 0.0) * dt))\n    new_state = {\n        \"agent.x\": sx + vx * dt,\n        \"agent.y\": sy + vy * dt,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }\n    return new_state",
+      "init_params": {
+        "k_vel": 1.0,
+        "v_max": 30.0,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "deadzone_actuator",
+      "mechanism": "Small commands are suppressed (dead\u2011zone) before linear scaling to displacement.",
+      "code": "# HYPOTHESIS: deadzone_actuator\n# MECHANISM: Small commands are suppressed (dead\u2011zone) before linear scaling to displacement.\nPARAMS = {\"dz\": 0.1, \"scale\": 25.0}\n\ndef step(state, action, p, meta):\n    \"\"\"Apply dead\u2011zone to each action component then scale.\"\"\"\n    def deadzone(u, dz):\n        if abs(u) < dz:\n            return 0.0\n        return (abs(u) - dz) * (1 if u > 0 else -1)\n\n    sx, sy = state[\"agent.x\"], state[\"agent.y\"]\n    ax, ay = action[0], action[1]\n    dz, scale = p[\"dz\"], p[\"scale\"]\n    axz = deadzone(ax, dz)\n    ayz = deadzone(ay, dz)\n    new_state = {\n        \"agent.x\": sx + scale * axz,\n        \"agent.y\": sy + scale * ayz,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }\n    return new_state",
+      "init_params": {
+        "dz": 0.1,
+        "scale": 25.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "pos_barrier",
+      "mechanism": "A repulsive barrier pushes the agent back when it crosses the door x\u2011coordinate.",
+      "code": "# HYPOTHESIS: pos_barrier\n# MECHANISM: A repulsive barrier pushes the agent back when it crosses the door x\u2011coordinate.\nPARAMS = {\"k_bar\": 10.0, \"dt\": 1.0, \"scale\": 25.0}\n\ndef step(state, action, p, meta):\n    \"\"\"If agent.x exceeds the door x\u2011position a barrier force reduces the x\u2011step.\"\"\"\n    sx, sy = state[\"agent.x\"], state[\"agent.y\"]\n    ax, ay = action[0], action[1]\n    scale, k_bar, dt = p[\"scale\"], p[\"k_bar\"], p[\"dt\"]\n    # door x\u2011coordinate is the first element of meta[\"door_coords\"]\n    door_x = meta.get(\"door_coords\", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])[0]\n    # linear displacement from action\n    dx = scale * ax\n    dy = scale * ay\n    # barrier on x\u2011direction\n    if sx > door_x:\n        dx -= k_bar * (sx - door_x) * dt\n    new_state = {\n        \"agent.x\": sx + dx,\n        \"agent.y\": sy + dy,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }\n    return new_state",
+      "init_params": {
+        "k_bar": 10.0,
+        "dt": 1.0,
+        "scale": 25.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "elastic_coupling",
+      "mechanism": "A linear spring pulls the agent toward the (static) target while the action adds a displacement.",
+      "code": "# HYPOTHESIS: elastic_coupling\n# MECHANISM: A linear spring pulls the agent toward the (static) target while the action adds a displacement.\nPARAMS = {\"k_spring\": 0.5, \"scale\": 25.0}\n\ndef step(state, action, p, meta):\n    \"\"\"Combine joystick displacement with a spring force toward the goal.\"\"\"\n    sx, sy = state[\"agent.x\"], state[\"agent.y\"]\n    tx, ty = state[\"target.x\"], state[\"target.y\"]\n    ax, ay = action[0], action[1]\n    k, scale = p[\"k_spring\"], p[\"scale\"]\n    # spring displacement (Hooke's law, assuming unit mass and dt=1)\n    spring_dx = -k * (sx - tx)\n    spring_dy = -k * (sy - ty)\n    # total displacement\n    dx = scale * ax + spring_dx\n    dy = scale * ay + spring_dy\n    new_state = {\n        \"agent.x\": sx + dx,\n        \"agent.y\": sy + dy,\n        \"target.x\": tx,\n        \"target.y\": ty,\n    }\n    return new_state",
+      "init_params": {
+        "k_spring": 0.5,
+        "scale": 25.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "mode_controller",
+      "mechanism": "Gain switches between \u201cfar\u201d and \u201cnear\u201d modes based on distance to target.",
+      "code": "# HYPOTHESIS: mode_controller\n# MECHANISM: Gain switches between \u201cfar\u201d and \u201cnear\u201d modes based on distance to target.\nPARAMS = {\"thr_dist\": 30.0, \"k_near\": 10.0, \"k_far\": 30.0, \"scale\": 1.0}\n\ndef step(state, action, p, meta):\n    \"\"\"Apply a higher gain when far from the goal, lower gain when close.\"\"\"\n    sx, sy = state[\"agent.x\"], state[\"agent.y\"]\n    tx, ty = state[\"target.x\"], state[\"target.y\"]\n    ax, ay = action[0], action[1]\n    thr, k_near, k_far, scale = p[\"thr_dist\"], p[\"k_near\"], p[\"k_far\"], p[\"scale\"]\n    # Euclidean distance to target\n    dist = ((sx - tx) ** 2 + (sy - ty) ** 2) ** 0.5\n    gain = k_near if dist < thr else k_far\n    dx = scale * gain * ax\n    dy = scale * gain * ay\n    new_state = {\n        \"agent.x\": sx + dx,\n        \"agent.y\": sy + dy,\n        \"target.x\": tx,\n        \"target.y\": ty,\n    }\n    return new_state",
+      "init_params": {
+        "thr_dist": 30.0,
+        "k_near": 10.0,
+        "k_far": 30.0,
+        "scale": 1.0
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "baseline_linear": {
+        "params": {
+          "scale": 23.710023664290333
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03523599876445178,
+        "val_one_step_nrmse": 0.05759272537065468,
+        "val_rollout_nrmse": 0.1105930784617024,
+        "restarts": 4,
+        "nfev": 10,
+        "elapsed_s": 0.06867527961730957,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307860531271
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523599876445178,
+            "val_rollout_nrmse": 0.11059307876747232
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307862186181
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523599876445178,
+            "val_rollout_nrmse": 0.1105930784617024
+          }
+        ]
+      },
+      "point_mass_velocity_control": {
+        "params": {
+          "k_vel": 0.8322335521387447,
+          "v_max": 48.10774204309884,
+          "dt": 5.337558734905955
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03523599876958395,
+        "val_one_step_nrmse": 0.05759417651803478,
+        "val_rollout_nrmse": 0.11059678954437663,
+        "restarts": 4,
+        "nfev": 78,
+        "elapsed_s": 0.7744059562683105,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03523599878352311,
+            "val_rollout_nrmse": 0.1106002322082976
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.0352359987794584,
+            "val_rollout_nrmse": 0.11059942424142334
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03523599876958395,
+            "val_rollout_nrmse": 0.11059678954437663
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.035235998777189026,
+            "val_rollout_nrmse": 0.11059892477288466
+          }
+        ]
+      },
+      "deadzone_actuator": {
+        "params": {
+          "dz": 0.003416955611759366,
+          "scale": 23.860348467997177
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03522798630264961,
+        "val_one_step_nrmse": 0.05795388756108152,
+        "val_rollout_nrmse": 0.11134581622764614,
+        "restarts": 4,
+        "nfev": 19,
+        "elapsed_s": 0.21883249282836914,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03522798630264961,
+            "val_rollout_nrmse": 0.11134581622764614
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03522798630264961,
+            "val_rollout_nrmse": 0.11134581718997609
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03522798630264961,
+            "val_rollout_nrmse": 0.11134581624512296
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.035227986302649617,
+            "val_rollout_nrmse": 0.11134581788371054
+          }
+        ]
+      },
+      "pos_barrier": {
+        "params": {
+          "k_bar": 0.24430933037172015,
+          "dt": -0.03455555418729068,
+          "scale": 23.74410761780354
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03514732836439316,
+        "val_one_step_nrmse": 0.05813925979044445,
+        "val_rollout_nrmse": 0.11305892889041257,
+        "restarts": 4,
+        "nfev": 76,
+        "elapsed_s": 0.6928021907806396,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03514732836439316,
+            "val_rollout_nrmse": 0.11305892889041257
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03514732832046007,
+            "val_rollout_nrmse": 0.11306263506358652
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03514732832236641,
+            "val_rollout_nrmse": 0.1130622912866727
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.035147328317385235,
+            "val_rollout_nrmse": 0.11306365656456115
+          }
+        ]
+      },
+      "elastic_coupling": {
+        "params": {
+          "k_spring": 0.0005019793403736039,
+          "scale": 23.679505616202245
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03523048630299802,
+        "val_one_step_nrmse": 0.05747725885728187,
+        "val_rollout_nrmse": 0.1085142555261017,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 0.11042284965515137,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03523048630299802,
+            "val_rollout_nrmse": 0.1085142555261017
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.035230486302998014,
+            "val_rollout_nrmse": 0.10851425756283616
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03523048630299802,
+            "val_rollout_nrmse": 0.1085142558201751
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523048630299802,
+            "val_rollout_nrmse": 0.10851425685076427
+          }
+        ]
+      },
+      "mode_controller": {
+        "params": {
+          "thr_dist": 22.839814950113517,
+          "k_near": 28.84799053282467,
+          "k_far": 51.21056370080798,
+          "scale": 0.4632947292422733
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03510047924095136,
+        "val_one_step_nrmse": 0.05730487124687492,
+        "val_rollout_nrmse": 0.10985608836505507,
+        "restarts": 4,
+        "nfev": 58,
+        "elapsed_s": 0.7038118839263916,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03522746676861325,
+            "val_rollout_nrmse": 0.1101376545524748
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.0352251349550469,
+            "val_rollout_nrmse": 0.11006688179385783
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03510047925655159,
+            "val_rollout_nrmse": 0.10986055250505244
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03510047924095136,
+            "val_rollout_nrmse": 0.10985608836505507
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "baseline_linear": {
+        "params": {
+          "scale": 23.496798763218933
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919190484882865,
+        "val_one_step_nrmse": 0.06169912950742104,
+        "val_rollout_nrmse": 0.1209419982477448,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 0.2568032741546631,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919190484882865,
+            "val_rollout_nrmse": 0.1209419982477448
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.1209419991178051
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190484882865,
+            "val_rollout_nrmse": 0.12094199863554395
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190484882865,
+            "val_rollout_nrmse": 0.1209419984203615
+          }
+        ]
+      },
+      "point_mass_velocity_control": {
+        "params": {
+          "k_vel": 3.4872663476678403,
+          "v_max": 26.836840096987476,
+          "dt": 2.5957405645645237
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919190486090063,
+        "val_one_step_nrmse": 0.06170021833893858,
+        "val_rollout_nrmse": 0.12094470598006438,
+        "restarts": 4,
+        "nfev": 82,
+        "elapsed_s": 2.885446310043335,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1691919049050632,
+            "val_rollout_nrmse": 0.12094784229330742
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190492076883,
+            "val_rollout_nrmse": 0.12094860819037119
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190487568037,
+            "val_rollout_nrmse": 0.12094603655533878
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190486090063,
+            "val_rollout_nrmse": 0.12094470598006438
+          }
+        ]
+      },
+      "deadzone_actuator": {
+        "params": {
+          "dz": 0.01883941675521155,
+          "scale": 24.361626428796296
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1683061786984372,
+        "val_one_step_nrmse": 0.06491330500062496,
+        "val_rollout_nrmse": 0.12646497100029955,
+        "restarts": 4,
+        "nfev": 25,
+        "elapsed_s": 1.0033156871795654,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16830617869843725,
+            "val_rollout_nrmse": 0.12646497175653676
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16830617869843725,
+            "val_rollout_nrmse": 0.1264649710318747
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.1683061786984372,
+            "val_rollout_nrmse": 0.12646497100029955
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1683061786984372,
+            "val_rollout_nrmse": 0.12646497178100485
+          }
+        ]
+      },
+      "pos_barrier": {
+        "params": {
+          "k_bar": 19.16114410412876,
+          "dt": -0.00013452051516277087,
+          "scale": 23.514218101637987
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.169118978764696,
+        "val_one_step_nrmse": 0.061574736156497646,
+        "val_rollout_nrmse": 0.12073377514586113,
+        "restarts": 4,
+        "nfev": 76,
+        "elapsed_s": 2.4296553134918213,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.169118978764696,
+            "val_rollout_nrmse": 0.12073377514586113
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1691189785274877,
+            "val_rollout_nrmse": 0.12073511458711429
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16911897859606603,
+            "val_rollout_nrmse": 0.12073431148504464
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16911897853197252,
+            "val_rollout_nrmse": 0.12073496417041492
+          }
+        ]
+      },
+      "elastic_coupling": {
+        "params": {
+          "k_spring": 0.0009672198408547806,
+          "scale": 23.38079243941255
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16897872223077326,
+        "val_one_step_nrmse": 0.06270326363008705,
+        "val_rollout_nrmse": 0.1200109474287832,
+        "restarts": 4,
+        "nfev": 42,
+        "elapsed_s": 1.2463734149932861,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16897872223077326,
+            "val_rollout_nrmse": 0.1200109474287832
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1689787222307732,
+            "val_rollout_nrmse": 0.12001095186225537
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.1689787222307732,
+            "val_rollout_nrmse": 0.12001095088171167
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16897872223077326,
+            "val_rollout_nrmse": 0.12001095258826414
+          }
+        ]
+      },
+      "mode_controller": {
+        "params": {
+          "thr_dist": 31.89292870364214,
+          "k_near": 30.42951347211666,
+          "k_far": 37.83525093569415,
+          "scale": 0.6226657176358266
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.168602885595411,
+        "val_one_step_nrmse": 0.06202166798979854,
+        "val_rollout_nrmse": 0.11836789447266984,
+        "restarts": 4,
+        "nfev": 77,
+        "elapsed_s": 2.988215208053589,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16907403150695294,
+            "val_rollout_nrmse": 0.11969510900333842
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.168602885595411,
+            "val_rollout_nrmse": 0.11836789447266984
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.1691573774811556,
+            "val_rollout_nrmse": 0.12057317330800953
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1689466390381757,
+            "val_rollout_nrmse": 0.1198249504414833
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "elastic_coupling",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "baseline_linear": 0.1105930784617024,
+        "point_mass_velocity_control": 0.11059678954437663,
+        "deadzone_actuator": 0.11134581622764614,
+        "pos_barrier": 0.11305892889041257,
+        "elastic_coupling": 0.1085142555261017,
+        "mode_controller": 0.10985608836505507
+      }
+    },
+    "active_one_step": {
+      "winner": "elastic_coupling",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.x",
+        "agent.y"
+      ],
+      "scores": {
+        "baseline_linear": 0.7549917673599558,
+        "point_mass_velocity_control": 0.7549913168139165,
+        "deadzone_actuator": 0.7529012259378605,
+        "pos_barrier": 0.8303008791307551,
+        "elastic_coupling": 0.7492196824409659,
+        "mode_controller": 0.8398379221673073
+      },
+      "probes": [
+        {
+          "disagreement": 0.15046287864614952,
+          "actions": [
+            [
+              -0.6117404542184128,
+              0.05204449723575033
+            ],
+            [
+              0.04686945478983984,
+              -0.822128719507456
+            ],
+            [
+              0.9638853862534125,
+              0.14279120091154884
+            ]
+          ],
+          "start": {
+            "agent.x": 75.597,
+            "agent.y": 123.361,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "baseline_linear": 0.06559089024321194,
+            "point_mass_velocity_control": 0.06559486692043251,
+            "deadzone_actuator": 0.059426742588989404,
+            "pos_barrier": 0.06385785377961285,
+            "elastic_coupling": 0.06759595101746617,
+            "mode_controller": 0.48858130700322117
+          }
+        },
+        {
+          "disagreement": 0.04603366555018876,
+          "actions": [
+            [
+              0.7168868545990232,
+              -0.06666692062878021
+            ],
+            [
+              0.6597825623218976,
+              0.04779312845380934
+            ],
+            [
+              0.9126693188452377,
+              0.4332156674645373
+            ]
+          ],
+          "start": {
+            "agent.x": 193.436,
+            "agent.y": 88.864,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "baseline_linear": 1.9596064536089244,
+            "point_mass_velocity_control": 1.959598205146366,
+            "deadzone_actuator": 1.9639055150404632,
+            "pos_barrier": 2.0784441247762357,
+            "elastic_coupling": 1.9448900089441152,
+            "mode_controller": 1.9612475867778898
+          }
+        },
+        {
+          "disagreement": 0.04553301391012807,
+          "actions": [
+            [
+              0.2307702229625077,
+              -0.23264489147623313
+            ],
+            [
+              0.994419871578422,
+              0.9616706775524602
+            ],
+            [
+              0.3710839689613894,
+              0.3009185525356326
+            ]
+          ],
+          "start": {
+            "agent.x": 198.462,
+            "agent.y": 83.864,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "baseline_linear": 1.5947168410916075,
+            "point_mass_velocity_control": 1.5947109087851796,
+            "deadzone_actuator": 1.594867768967846,
+            "pos_barrier": 1.7101784356955103,
+            "elastic_coupling": 1.5810503213403553,
+            "mode_controller": 1.595897318747106
+          }
+        },
+        {
+          "disagreement": 0.039492116409194714,
+          "actions": [
+            [
+              0.20447835275925152,
+              0.924846186248762
+            ],
+            [
+              -0.8554694689402464,
+              -5.4352682762992544e-05
+            ],
+            [
+              0.4881949585652965,
+              -0.6455465190506824
+            ]
+          ],
+          "start": {
+            "agent.x": 198.462,
+            "agent.y": 83.864,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "baseline_linear": 0.0893924270607646,
+            "point_mass_velocity_control": 0.08939639842268891,
+            "deadzone_actuator": 0.08319484692679713,
+            "pos_barrier": 0.17412712800572053,
+            "elastic_coupling": 0.08286990744423202,
+            "mode_controller": 0.0886030295002123
+          }
+        },
+        {
+          "disagreement": 0.03717416365797689,
+          "actions": [
+            [
+              -0.2702855502654993,
+              -0.8329251580207364
+            ],
+            [
+              0.31596478847815335,
+              0.43320984143095265
+            ],
+            [
+              -0.25551795160996216,
+              -0.5772296891002251
+            ]
+          ],
+          "start": {
+            "agent.x": 193.436,
+            "agent.y": 88.864,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "baseline_linear": 0.06565222479526978,
+            "point_mass_velocity_control": 0.06565620479491562,
+            "deadzone_actuator": 0.06311125616520612,
+            "pos_barrier": 0.12489685339669576,
+            "elastic_coupling": 0.0696922234586611,
+            "mode_controller": 0.06486036880810742
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.06619668006896973
+    },
+    "offline_multi_step": {
+      "winner": "mode_controller",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "baseline_linear": 0.1209419982477448,
+        "point_mass_velocity_control": 0.12094470598006438,
+        "deadzone_actuator": 0.12646497100029955,
+        "pos_barrier": 0.12073377514586113,
+        "elastic_coupling": 0.1200109474287832,
+        "mode_controller": 0.11836789447266984
+      }
+    },
+    "active_multi_step": {
+      "winner": "elastic_coupling",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.x",
+        "agent.y"
+      ],
+      "scores": {
+        "baseline_linear": 1.1716183268005405,
+        "point_mass_velocity_control": 1.171615260880274,
+        "deadzone_actuator": 1.1961602926896002,
+        "pos_barrier": 1.1715328541493206,
+        "elastic_coupling": 1.1568403784882588,
+        "mode_controller": 1.1828410578532822
+      },
+      "probes": [
+        {
+          "disagreement": 0.12649988861624722,
+          "actions": [
+            [
+              -0.469014739336977,
+              0.88387917174626
+            ],
+            [
+              -0.7762853071975497,
+              0.5383649810295112
+            ],
+            [
+              -0.9596270939805613,
+              -0.5273586729169779
+            ]
+          ],
+          "start": {
+            "agent.x": 138.237,
+            "agent.y": 120.23,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "baseline_linear": 1.587529725974465,
+            "point_mass_velocity_control": 1.5875247138498698,
+            "deadzone_actuator": 1.607616623341073,
+            "pos_barrier": 1.5838137568504183,
+            "elastic_coupling": 1.5763718973292755,
+            "mode_controller": 1.265265525110285
+          }
+        },
+        {
+          "disagreement": 0.10096083677639488,
+          "actions": [
+            [
+              -0.6117404542184128,
+              0.05204449723575033
+            ],
+            [
+              0.04686945478983984,
+              -0.822128719507456
+            ],
+            [
+              0.9638853862534125,
+              0.14279120091154884
+            ]
+          ],
+          "start": {
+            "agent.x": 75.597,
+            "agent.y": 123.361,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "baseline_linear": 0.07643254727472863,
+            "point_mass_velocity_control": 0.07643532706645678,
+            "deadzone_actuator": 0.05167759393369158,
+            "pos_barrier": 0.0755468416471128,
+            "elastic_coupling": 0.0832305209462498,
+            "mode_controller": 0.3101132729238847
+          }
+        },
+        {
+          "disagreement": 0.0593046563944214,
+          "actions": [
+            [
+              -0.12060110006893732,
+              0.5471124566185981
+            ],
+            [
+              0.001875913976973509,
+              -0.6332875137897449
+            ],
+            [
+              -0.4081463059811734,
+              0.14882153760563432
+            ]
+          ],
+          "start": {
+            "agent.x": 75.597,
+            "agent.y": 123.361,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "baseline_linear": 0.044321954018793214,
+            "point_mass_velocity_control": 0.04432356571537939,
+            "deadzone_actuator": 0.064478455630379,
+            "pos_barrier": 0.04380843038936816,
+            "elastic_coupling": 0.04489932264965252,
+            "mode_controller": 0.1723457432531138
+          }
+        },
+        {
+          "disagreement": 0.041440471463714185,
+          "actions": [
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ]
+          ],
+          "start": {
+            "agent.x": 78.552,
+            "agent.y": 30.974,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "baseline_linear": 2.5502951043667434,
+            "point_mass_velocity_control": 2.550287534804808,
+            "deadzone_actuator": 2.6045233994431443,
+            "pos_barrier": 2.552707883568461,
+            "elastic_coupling": 2.5184217033242975,
+            "mode_controller": 2.558879535687905
+          }
+        },
+        {
+          "disagreement": 0.03962068628339844,
+          "actions": [
+            [
+              -0.9725242827670428,
+              -0.13221755130013713
+            ],
+            [
+              -0.9725242827670428,
+              -0.13221755130013713
+            ],
+            [
+              -0.9725242827670428,
+              -0.13221755130013713
+            ]
+          ],
+          "start": {
+            "agent.x": 51.107,
+            "agent.y": 100.214,
+            "target.x": 207.692,
+            "target.y": 48.391
+          },
+          "errors": {
+            "baseline_linear": 1.5995123023679723,
+            "point_mass_velocity_control": 1.5995051629648556,
+            "deadzone_actuator": 1.6525053910997143,
+            "pos_barrier": 1.6017873582912439,
+            "elastic_coupling": 1.5612784481918185,
+            "mode_controller": 1.6076012122912222
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.06056976318359375
+    }
+  },
+  "args": {
+    "env": "tworoom",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/bank_general_tworoom_gptoss_s0",
+    "num_hypotheses": 6,
+    "model": "openai/gpt-oss-120b",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/gptoss_general.frozen.json",
+    "experience_runs": [],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 167.58275198936462
+}

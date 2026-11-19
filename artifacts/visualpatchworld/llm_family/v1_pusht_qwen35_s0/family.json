@@ -1,0 +1,1031 @@
+{
+  "env": "pusht",
+  "llm_model": "Qwen/Qwen3.5-397B-A17B",
+  "schema": {
+    "state_keys": [
+      "agent.vx",
+      "agent.vy",
+      "agent.x",
+      "agent.y",
+      "block.angle",
+      "block.x",
+      "block.y"
+    ],
+    "state_ranges": {
+      "agent.vx": {
+        "min": -239.038,
+        "max": 197.288
+      },
+      "agent.vy": {
+        "min": -164.106,
+        "max": 212.259
+      },
+      "agent.x": {
+        "min": 44.226,
+        "max": 431.137
+      },
+      "agent.y": {
+        "min": 166.867,
+        "max": 468.784
+      },
+      "block.angle": {
+        "min": 0.743,
+        "max": 2.948
+      },
+      "block.x": {
+        "min": 188.561,
+        "max": 253.842
+      },
+      "block.y": {
+        "min": 257.991,
+        "max": 341.005
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.643,
+      -0.44
+    ],
+    "action_max": [
+      0.53,
+      0.571
+    ],
+    "num_episodes": 40,
+    "num_transitions": 4320
+  },
+  "scales": {
+    "agent.vx": 29.0491526697332,
+    "agent.vy": 33.10328911582162,
+    "agent.x": 8.784955836446613,
+    "agent.y": 7.583339167070911,
+    "block.angle": 0.03517513204333592,
+    "block.x": 1.5088737783332182,
+    "block.y": 1.686962387941111
+  },
+  "candidates": [
+    {
+      "name": "newtonian_agent_static_block",
+      "mechanism": "Agent obeys Newtonian dynamics (action is acceleration); Block is completely immovable.",
+      "code": "# HYPOTHESIS: newtonian_agent_static_block\n# MECHANISM: Agent obeys Newtonian dynamics (action is acceleration); Block is completely immovable.\nPARAMS = {\"agent_acc_scale\": 50.0, \"dt\": 1.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    ax = action[0] * p[\"agent_acc_scale\"]\n    ay = action[1] * p[\"agent_acc_scale\"]\n    \n    vx = s[\"agent.vx\"] + ax * p[\"dt\"]\n    vy = s[\"agent.vy\"] + ay * p[\"dt\"]\n    x = s[\"agent.x\"] + vx * p[\"dt\"]\n    y = s[\"agent.y\"] + vy * p[\"dt\"]\n    \n    s[\"agent.vx\"] = vx\n    s[\"agent.vy\"] = vy\n    s[\"agent.x\"] = x\n    s[\"agent.y\"] = y\n    # Block remains static\n    return s",
+      "init_params": {
+        "agent_acc_scale": 50.0,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "kinematic_agent_static_block",
+      "mechanism": "Agent velocity is directly set by action (no momentum); Block is completely immovable.",
+      "code": "# HYPOTHESIS: kinematic_agent_static_block\n# MECHANISM: Agent velocity is directly set by action (no momentum); Block is completely immovable.\nPARAMS = {\"agent_vel_scale\": 100.0, \"dt\": 1.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    vx = action[0] * p[\"agent_vel_scale\"]\n    vy = action[1] * p[\"agent_vel_scale\"]\n    \n    x = s[\"agent.x\"] + vx * p[\"dt\"]\n    y = s[\"agent.y\"] + vy * p[\"dt\"]\n    \n    s[\"agent.vx\"] = vx\n    s[\"agent.vy\"] = vy\n    s[\"agent.x\"] = x\n    s[\"agent.y\"] = y\n    # Block remains static\n    return s",
+      "init_params": {
+        "agent_vel_scale": 100.0,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "hard_contact_push",
+      "mechanism": "Agent has momentum; Block moves kinematically with agent only if distance < radius.",
+      "code": "# HYPOTHESIS: hard_contact_push\n# MECHANISM: Agent has momentum; Block moves kinematically with agent only if distance < radius.\nPARAMS = {\"agent_acc_scale\": 50.0, \"dt\": 1.0, \"contact_radius\": 50.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    ax = action[0] * p[\"agent_acc_scale\"]\n    ay = action[1] * p[\"agent_acc_scale\"]\n    \n    vx = s[\"agent.vx\"] + ax * p[\"dt\"]\n    vy = s[\"agent.vy\"] + ay * p[\"dt\"]\n    x = s[\"agent.x\"] + vx * p[\"dt\"]\n    y = s[\"agent.y\"] + vy * p[\"dt\"]\n    \n    s[\"agent.vx\"] = vx\n    s[\"agent.vy\"] = vy\n    s[\"agent.x\"] = x\n    s[\"agent.y\"] = y\n    \n    dx = x - s[\"block.x\"]\n    dy = y - s[\"block.y\"]\n    dist = math.hypot(dx, dy) + 1e-6\n    \n    if dist < p[\"contact_radius\"]:\n        # Push block with agent velocity\n        s[\"block.x\"] = s[\"block.x\"] + vx * p[\"dt\"]\n        s[\"block.y\"] = s[\"block.y\"] + vy * p[\"dt\"]\n        # Angle unchanged in this simple model\n        \n    return s",
+      "init_params": {
+        "agent_acc_scale": 50.0,
+        "dt": 1.0,
+        "contact_radius": 50.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "soft_contact_spring",
+      "mechanism": "Agent and Block interact via a repulsive spring force when within a threshold distance.",
+      "code": "# HYPOTHESIS: soft_contact_spring\n# MECHANISM: Agent and Block interact via a repulsive spring force when within a threshold distance.\nPARAMS = {\"agent_acc_scale\": 50.0, \"dt\": 1.0, \"contact_radius\": 60.0, \"stiffness\": 0.5, \"torque_scale\": 0.01}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    ax = action[0] * p[\"agent_acc_scale\"]\n    ay = action[1] * p[\"agent_acc_scale\"]\n    \n    vx = s[\"agent.vx\"] + ax * p[\"dt\"]\n    vy = s[\"agent.vy\"] + ay * p[\"dt\"]\n    x = s[\"agent.x\"] + vx * p[\"dt\"]\n    y = s[\"agent.y\"] + vy * p[\"dt\"]\n    \n    s[\"agent.vx\"] = vx\n    s[\"agent.vy\"] = vy\n    s[\"agent.x\"] = x\n    s[\"agent.y\"] = y\n    \n    dx = x - s[\"block.x\"]\n    dy = y - s[\"block.y\"]\n    dist = math.hypot(dx, dy) + 1e-6\n    \n    if dist < p[\"contact_radius\"]:\n        overlap = p[\"contact_radius\"] - dist\n        force = overlap * p[\"stiffness\"]\n        nx = dx / dist\n        ny = dy / dist\n        \n        s[\"block.x\"] += nx * force * p[\"dt\"]\n        s[\"block.y\"] += ny * force * p[\"dt\"]\n        # Simple torque approximation based on lateral offset\n        s[\"block.angle\"] += (nx * vy - ny * vx) * p[\"torque_scale\"] * p[\"dt\"]\n        \n    return s",
+      "init_params": {
+        "agent_acc_scale": 50.0,
+        "dt": 1.0,
+        "contact_radius": 60.0,
+        "stiffness": 0.5,
+        "torque_scale": 0.01
+      },
+      "repaired": false
+    },
+    {
+      "name": "long_range_field",
+      "mechanism": "Agent exerts a continuous force on Block proportional to inverse square of distance (no contact threshold).",
+      "code": "# HYPOTHESIS: long_range_field\n# MECHANISM: Agent exerts a continuous force on Block proportional to inverse square of distance (no contact threshold).\nPARAMS = {\"agent_acc_scale\": 50.0, \"dt\": 1.0, \"field_strength\": 5000.0, \"rot_coupling\": 0.001}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    ax = action[0] * p[\"agent_acc_scale\"]\n    ay = action[1] * p[\"agent_acc_scale\"]\n    \n    vx = s[\"agent.vx\"] + ax * p[\"dt\"]\n    vy = s[\"agent.vy\"] + ay * p[\"dt\"]\n    x = s[\"agent.x\"] + vx * p[\"dt\"]\n    y = s[\"agent.y\"] + vy * p[\"dt\"]\n    \n    s[\"agent.vx\"] = vx\n    s[\"agent.vy\"] = vy\n    s[\"agent.x\"] = x\n    s[\"agent.y\"] = y\n    \n    dx = x - s[\"block.x\"]\n    dy = y - s[\"block.y\"]\n    dist_sq = dx*dx + dy*dy + 100.0 # Soften singularity\n    dist = math.sqrt(dist_sq)\n    \n    force = p[\"field_strength\"] / dist_sq\n    nx = dx / dist\n    ny = dy / dist\n    \n    s[\"block.x\"] += nx * force * p[\"dt\"]\n    s[\"block.y\"] += ny * force * p[\"dt\"]\n    s[\"block.angle\"] += (nx * vy - ny * vx) * p[\"rot_coupling\"] * p[\"dt\"]\n    \n    return s",
+      "init_params": {
+        "agent_acc_scale": 50.0,
+        "dt": 1.0,
+        "field_strength": 5000.0,
+        "rot_coupling": 0.001
+      },
+      "repaired": false
+    },
+    {
+      "name": "velocity_gated_push",
+      "mechanism": "Block moves only if agent is close AND agent speed exceeds a threshold (static friction model).",
+      "code": "# HYPOTHESIS: velocity_gated_push\n# MECHANISM: Block moves only if agent is close AND agent speed exceeds a threshold (static friction model).\nPARAMS = {\"agent_acc_scale\": 50.0, \"dt\": 1.0, \"contact_radius\": 50.0, \"speed_thresh\": 50.0, \"push_gain\": 0.5}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    ax = action[0] * p[\"agent_acc_scale\"]\n    ay = action[1] * p[\"agent_acc_scale\"]\n    \n    vx = s[\"agent.vx\"] + ax * p[\"dt\"]\n    vy = s[\"agent.vy\"] + ay * p[\"dt\"]\n    x = s[\"agent.x\"] + vx * p[\"dt\"]\n    y = s[\"agent.y\"] + vy * p[\"dt\"]\n    \n    s[\"agent.vx\"] = vx\n    s[\"agent.vy\"] = vy\n    s[\"agent.x\"] = x\n    s[\"agent.y\"] = y\n    \n    dx = x - s[\"block.x\"]\n    dy = y - s[\"block.y\"]\n    dist = math.hypot(dx, dy) + 1e-6\n    speed = math.hypot(vx, vy)\n    \n    if dist < p[\"contact_radius\"] and speed > p[\"speed_thresh\"]:\n        s[\"block.x\"] += (dx / dist) * speed * p[\"push_gain\"] * p[\"dt\"]\n        s[\"block.y\"] += (dy / dist) * speed * p[\"push_gain\"] * p[\"dt\"]\n        # Rotation depends on tangential component\n        tangent = (vx * dy - vy * dx) / dist\n        s[\"block.angle\"] += tangent * p[\"push_gain\"] * 0.01 * p[\"dt\"]\n        \n    return s",
+      "init_params": {
+        "agent_acc_scale": 50.0,
+        "dt": 1.0,
+        "contact_radius": 50.0,
+        "speed_thresh": 50.0,
+        "push_gain": 0.5
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "newtonian_agent_static_block": {
+        "params": {
+          "agent_acc_scale": 343.54076246680285,
+          "dt": 0.09610148883951107
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8139016398690723,
+        "val_one_step_nrmse": 0.8469711906220001,
+        "val_rollout_nrmse": 2.592977809446953,
+        "restarts": 4,
+        "nfev": 27,
+        "elapsed_s": 2.161660671234131,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.8139016398601374,
+            "val_rollout_nrmse": 2.592978880692592
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8139016398690723,
+            "val_rollout_nrmse": 2.592977809446953
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.813901639861059,
+            "val_rollout_nrmse": 2.592978626549361
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.813901639862933,
+            "val_rollout_nrmse": 2.5929784160216416
+          }
+        ]
+      },
+      "kinematic_agent_static_block": {
+        "params": {
+          "agent_vel_scale": 371.894134753013,
+          "dt": 0.10700398935955975
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.5216647270686771,
+        "val_one_step_nrmse": 0.7191102005220533,
+        "val_rollout_nrmse": 2.308823054904164,
+        "restarts": 4,
+        "nfev": 32,
+        "elapsed_s": 2.1074421405792236,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.5216647270686771,
+            "val_rollout_nrmse": 2.308823054904164
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.5216647270686771,
+            "val_rollout_nrmse": 2.308823054904173
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.5216647270686772,
+            "val_rollout_nrmse": 2.308823054904317
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.5216647270686773,
+            "val_rollout_nrmse": 2.3088230549043605
+          }
+        ]
+      },
+      "hard_contact_push": {
+        "params": {
+          "agent_acc_scale": 401.61826726739,
+          "dt": 0.06852612177156517,
+          "contact_radius": 68.90710035140474
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8563563352828766,
+        "val_one_step_nrmse": 0.7686426174041114,
+        "val_rollout_nrmse": 2.417310321872358,
+        "restarts": 4,
+        "nfev": 84,
+        "elapsed_s": 5.690152883529663,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.7969501760504702,
+            "val_rollout_nrmse": 2.6545725175964163
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8563563352828766,
+            "val_rollout_nrmse": 2.417310321872358
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.8139016398718122,
+            "val_rollout_nrmse": 2.601575796022212
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.8139016430106054,
+            "val_rollout_nrmse": 2.4733133383496018
+          }
+        ]
+      },
+      "soft_contact_spring": {
+        "params": {
+          "agent_acc_scale": 343.57614036062034,
+          "dt": 0.09610061333557161,
+          "contact_radius": 14.963776489854546,
+          "stiffness": -0.3872223563207207,
+          "torque_scale": 0.0046500914022831715
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8139016400384398,
+        "val_one_step_nrmse": 0.8457999910457806,
+        "val_rollout_nrmse": 2.590812978055029,
+        "restarts": 4,
+        "nfev": 72,
+        "elapsed_s": 7.5275797843933105,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.8139016399696481,
+            "val_rollout_nrmse": 3.097495279040526
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8139016399322554,
+            "val_rollout_nrmse": 2.592978292108747
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.8139016400384398,
+            "val_rollout_nrmse": 2.590812978055029
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.8139016457287719,
+            "val_rollout_nrmse": 2.5930965468836384
+          }
+        ]
+      },
+      "long_range_field": {
+        "params": {
+          "agent_acc_scale": 357.2210467197769,
+          "dt": 0.0957875698721244,
+          "field_strength": -93530.85713189679,
+          "rot_coupling": 0.0025143857302874174
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.7130780931643944,
+        "val_one_step_nrmse": 2.030273424838498,
+        "val_rollout_nrmse": 4.057353825651113,
+        "restarts": 4,
+        "nfev": 34,
+        "elapsed_s": 4.828447580337524,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.7130780931628937,
+            "val_rollout_nrmse": 4.057356549891499
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.7130780931633312,
+            "val_rollout_nrmse": 4.057354730517543
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.7130780931641535,
+            "val_rollout_nrmse": 4.0573545368679715
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.7130780931643944,
+            "val_rollout_nrmse": 4.057353825651113
+          }
+        ]
+      },
+      "velocity_gated_push": {
+        "params": {
+          "agent_acc_scale": 343.4663005871303,
+          "dt": 0.09610461049117049,
+          "contact_radius": 15.603301615767746,
+          "speed_thresh": 44.8599397124261,
+          "push_gain": -0.009174961253149254
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.8139016404007763,
+        "val_one_step_nrmse": 0.846633688847256,
+        "val_rollout_nrmse": 2.592744755148284,
+        "restarts": 4,
+        "nfev": 94,
+        "elapsed_s": 9.19165325164795,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.7907666528465397,
+            "val_rollout_nrmse": 2.893177262920587
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.8054987672847318,
+            "val_rollout_nrmse": 2.70658665323964
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.8139016404007763,
+            "val_rollout_nrmse": 2.592744755148284
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.8139016398717125,
+            "val_rollout_nrmse": 2.598706842772121
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "newtonian_agent_static_block": {
+        "params": {
+          "agent_acc_scale": 549.8284748539154,
+          "dt": 0.07039374042375923
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.357009059038182,
+        "val_one_step_nrmse": 0.8539671662423776,
+        "val_rollout_nrmse": 2.569338238827315,
+        "restarts": 4,
+        "nfev": 42,
+        "elapsed_s": 11.63924789428711,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.357009059038182,
+            "val_rollout_nrmse": 2.569338238827315
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.357009056156818,
+            "val_rollout_nrmse": 2.5693385216531337
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.357009053527506,
+            "val_rollout_nrmse": 2.5693403352885453
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.357009052103567,
+            "val_rollout_nrmse": 2.569340039108999
+          }
+        ]
+      },
+      "kinematic_agent_static_block": {
+        "params": {
+          "agent_vel_scale": 371.88222825200427,
+          "dt": 0.10819373820352872
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 5.057754185087861,
+        "val_one_step_nrmse": 0.719131074541655,
+        "val_rollout_nrmse": 2.308753996452129,
+        "restarts": 4,
+        "nfev": 41,
+        "elapsed_s": 9.388870477676392,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 5.057754185087862,
+            "val_rollout_nrmse": 2.308753996452155
+          },
+          {
+            "restart": 1,
+            "train_loss": 5.057754185087862,
+            "val_rollout_nrmse": 2.3087539964521606
+          },
+          {
+            "restart": 2,
+            "train_loss": 5.05775418508786,
+            "val_rollout_nrmse": 2.3087539964521993
+          },
+          {
+            "restart": 3,
+            "train_loss": 5.057754185087861,
+            "val_rollout_nrmse": 2.308753996452129
+          }
+        ]
+      },
+      "hard_contact_push": {
+        "params": {
+          "agent_acc_scale": 619.3478160477995,
+          "dt": 0.052175266914417234,
+          "contact_radius": 68.90710035140474
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.581461933563402,
+        "val_one_step_nrmse": 0.7402883211749205,
+        "val_rollout_nrmse": 2.2144854492021757,
+        "restarts": 4,
+        "nfev": 81,
+        "elapsed_s": 18.585763692855835,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.266842698232281,
+            "val_rollout_nrmse": 2.2401499488646803
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.581461933563402,
+            "val_rollout_nrmse": 2.2144854492021757
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.269045937407311,
+            "val_rollout_nrmse": 2.43435158077025
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.317108990762379,
+            "val_rollout_nrmse": 2.3851732325700423
+          }
+        ]
+      },
+      "soft_contact_spring": {
+        "params": {
+          "agent_acc_scale": 549.8542316447341,
+          "dt": 0.07039114651199432,
+          "contact_radius": 13.4770341985425,
+          "stiffness": -4.3336648698937905,
+          "torque_scale": -0.009373979913145564
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.357009055786592,
+        "val_one_step_nrmse": 0.8512317052074281,
+        "val_rollout_nrmse": 2.561723574881389,
+        "restarts": 4,
+        "nfev": 84,
+        "elapsed_s": 42.53921413421631,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.357009052577391,
+            "val_rollout_nrmse": 2.5693401703633496
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.18381688694896,
+            "val_rollout_nrmse": 3.2424822799710746
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.357009055786592,
+            "val_rollout_nrmse": 2.561723574881389
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.183816888235339,
+            "val_rollout_nrmse": 3.242488693841635
+          }
+        ]
+      },
+      "long_range_field": {
+        "params": {
+          "agent_acc_scale": 615.4849039528495,
+          "dt": 0.06853859155578798,
+          "field_strength": -118642.15294098742,
+          "rot_coupling": 0.003011590216634737
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 6.315337802910158,
+        "val_one_step_nrmse": 1.7915165403120596,
+        "val_rollout_nrmse": 3.7653974691417247,
+        "restarts": 4,
+        "nfev": 49,
+        "elapsed_s": 31.369191884994507,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 6.315337800037963,
+            "val_rollout_nrmse": 3.765400622303528
+          },
+          {
+            "restart": 1,
+            "train_loss": 6.315337797844158,
+            "val_rollout_nrmse": 3.765401716499458
+          },
+          {
+            "restart": 2,
+            "train_loss": 6.315337802213975,
+            "val_rollout_nrmse": 3.7653980270524974
+          },
+          {
+            "restart": 3,
+            "train_loss": 6.315337802910158,
+            "val_rollout_nrmse": 3.7653974691417247
+          }
+        ]
+      },
+      "velocity_gated_push": {
+        "params": {
+          "agent_acc_scale": 549.9511303495317,
+          "dt": 0.07038944176977609,
+          "contact_radius": -194.83579603579517,
+          "speed_thresh": 44.8599397124261,
+          "push_gain": -1.8347907920765987
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 7.357009051560967,
+        "val_one_step_nrmse": 0.8539693086376442,
+        "val_rollout_nrmse": 2.5693398550687516,
+        "restarts": 4,
+        "nfev": 111,
+        "elapsed_s": 49.229501485824585,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 7.193867290984816,
+            "val_rollout_nrmse": 2.6639731691723925
+          },
+          {
+            "restart": 1,
+            "train_loss": 7.357009053084987,
+            "val_rollout_nrmse": 2.569340294237848
+          },
+          {
+            "restart": 2,
+            "train_loss": 7.357009051560967,
+            "val_rollout_nrmse": 2.5693398550687516
+          },
+          {
+            "restart": 3,
+            "train_loss": 7.272915035691992,
+            "val_rollout_nrmse": 2.6333586403592504
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "kinematic_agent_static_block",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "newtonian_agent_static_block": 2.592977809446953,
+        "kinematic_agent_static_block": 2.308823054904164,
+        "hard_contact_push": 2.417310321872358,
+        "soft_contact_spring": 2.590812978055029,
+        "long_range_field": 4.057353825651113,
+        "velocity_gated_push": 2.592744755148284
+      }
+    },
+    "active_one_step": {
+      "winner": "kinematic_agent_static_block",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "newtonian_agent_static_block": 7.01104028048024,
+        "kinematic_agent_static_block": 6.11575297123166,
+        "hard_contact_push": 6.667808386137779,
+        "soft_contact_spring": 7.004741438993537,
+        "long_range_field": 6.580990437976396,
+        "velocity_gated_push": 7.01150374321742
+      },
+      "probes": [
+        {
+          "disagreement": 4.463760669078353,
+          "actions": [
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ],
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ],
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ]
+          ],
+          "start": {
+            "agent.x": 280.564,
+            "agent.y": 196.025,
+            "agent.vx": -33.638,
+            "agent.vy": 51.769,
+            "block.x": 273.088,
+            "block.y": 208.745,
+            "block.angle": 0.741
+          },
+          "errors": {
+            "newtonian_agent_static_block": 11.227630976613877,
+            "kinematic_agent_static_block": 11.05816360547792,
+            "hard_contact_push": 8.298311581355666,
+            "soft_contact_spring": 11.25931294593603,
+            "long_range_field": 4.469753464363323,
+            "velocity_gated_push": 11.24091856592113
+          }
+        },
+        {
+          "disagreement": 4.112815191055844,
+          "actions": [
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ],
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ],
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ]
+          ],
+          "start": {
+            "agent.x": 228.275,
+            "agent.y": 163.922,
+            "agent.vx": -161.743,
+            "agent.vy": -173.011,
+            "block.x": 221.571,
+            "block.y": 210.686,
+            "block.angle": 1.156
+          },
+          "errors": {
+            "newtonian_agent_static_block": 3.8455948929672763,
+            "kinematic_agent_static_block": 0.459932223889563,
+            "hard_contact_push": 8.925503052792621,
+            "soft_contact_spring": 3.8455752182720424,
+            "long_range_field": 3.952067735215302,
+            "velocity_gated_push": 3.8456504911100393
+          }
+        },
+        {
+          "disagreement": 4.016635953382363,
+          "actions": [
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ],
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ],
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ]
+          ],
+          "start": {
+            "agent.x": 284.486,
+            "agent.y": 189.844,
+            "agent.vx": -41.492,
+            "agent.vy": 68.629,
+            "block.x": 277.94,
+            "block.y": 204.093,
+            "block.angle": 0.75
+          },
+          "errors": {
+            "newtonian_agent_static_block": 1.8995143162333514,
+            "kinematic_agent_static_block": 1.6592730890831109,
+            "hard_contact_push": 1.6247314986672883,
+            "soft_contact_spring": 1.9563015982692895,
+            "long_range_field": 8.076159876476739,
+            "velocity_gated_push": 1.901151067198926
+          }
+        },
+        {
+          "disagreement": 3.7432916836874637,
+          "actions": [
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ]
+          ],
+          "start": {
+            "agent.x": 245.215,
+            "agent.y": 224.349,
+            "agent.vx": -17.355,
+            "agent.vy": 39.688,
+            "block.x": 226.273,
+            "block.y": 223.832,
+            "block.angle": 0.935
+          },
+          "errors": {
+            "newtonian_agent_static_block": 13.390779838348204,
+            "kinematic_agent_static_block": 13.058798234329688,
+            "hard_contact_push": 11.050867315527041,
+            "soft_contact_spring": 13.377536946886337,
+            "long_range_field": 11.320167545964697,
+            "velocity_gated_push": 13.387897333364688
+          }
+        },
+        {
+          "disagreement": 3.735315023051127,
+          "actions": [
+            [
+              -0.41472323511008896,
+              0.34852416346945597
+            ],
+            [
+              0.3756697441314103,
+              -0.12051895939639656
+            ],
+            [
+              -0.047040697204871806,
+              0.16091272314039912
+            ]
+          ],
+          "start": {
+            "agent.x": 253.509,
+            "agent.y": 218.263,
+            "agent.vx": -23.037,
+            "agent.vy": 23.534,
+            "block.x": 241.876,
+            "block.y": 227.882,
+            "block.angle": 0.746
+          },
+          "errors": {
+            "newtonian_agent_static_block": 4.691681378238493,
+            "kinematic_agent_static_block": 4.342597703378017,
+            "hard_contact_push": 3.4396284823462757,
+            "soft_contact_spring": 4.584980485603988,
+            "long_range_field": 5.086803567861923,
+            "velocity_gated_push": 4.68190125849232
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.0490107536315918
+    },
+    "offline_multi_step": {
+      "winner": "hard_contact_push",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "newtonian_agent_static_block": 2.569338238827315,
+        "kinematic_agent_static_block": 2.308753996452129,
+        "hard_contact_push": 2.2144854492021757,
+        "soft_contact_spring": 2.561723574881389,
+        "long_range_field": 3.7653974691417247,
+        "velocity_gated_push": 2.5693398550687516
+      }
+    },
+    "active_multi_step": {
+      "winner": "long_range_field",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.vx",
+        "agent.vy",
+        "agent.x",
+        "agent.y",
+        "block.angle",
+        "block.x",
+        "block.y"
+      ],
+      "scores": {
+        "newtonian_agent_static_block": 7.081994542064183,
+        "kinematic_agent_static_block": 6.216278296469416,
+        "hard_contact_push": 6.643141843728555,
+        "soft_contact_spring": 6.899531372085069,
+        "long_range_field": 5.933622876901475,
+        "velocity_gated_push": 7.081971348497509
+      },
+      "probes": [
+        {
+          "disagreement": 4.013120711493821,
+          "actions": [
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ],
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ],
+            [
+              -0.31241563126936667,
+              0.49706664239660586
+            ]
+          ],
+          "start": {
+            "agent.x": 280.564,
+            "agent.y": 196.025,
+            "agent.vx": -33.638,
+            "agent.vy": 51.769,
+            "block.x": 273.088,
+            "block.y": 208.745,
+            "block.angle": 0.741
+          },
+          "errors": {
+            "newtonian_agent_static_block": 11.240143694047163,
+            "kinematic_agent_static_block": 11.0525370039344,
+            "hard_contact_push": 8.88353290008986,
+            "soft_contact_spring": 10.774448640545668,
+            "long_range_field": 4.611293132424552,
+            "velocity_gated_push": 11.240133762908265
+          }
+        },
+        {
+          "disagreement": 3.4328653823491604,
+          "actions": [
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ],
+            [
+              -0.6357545798360418,
+              0.2890986097641272
+            ]
+          ],
+          "start": {
+            "agent.x": 245.215,
+            "agent.y": 224.349,
+            "agent.vx": -17.355,
+            "agent.vy": 39.688,
+            "block.x": 226.273,
+            "block.y": 223.832,
+            "block.angle": 0.935
+          },
+          "errors": {
+            "newtonian_agent_static_block": 13.392301563856265,
+            "kinematic_agent_static_block": 13.05927917584624,
+            "hard_contact_push": 11.453249027829168,
+            "soft_contact_spring": 13.392302864910233,
+            "long_range_field": 10.826308539986721,
+            "velocity_gated_push": 13.392281052469883
+          }
+        },
+        {
+          "disagreement": 3.423065333888817,
+          "actions": [
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ],
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ],
+            [
+              0.03405319416127095,
+              0.10179381780448454
+            ]
+          ],
+          "start": {
+            "agent.x": 284.486,
+            "agent.y": 189.844,
+            "agent.vx": -41.492,
+            "agent.vy": 68.629,
+            "block.x": 277.94,
+            "block.y": 204.093,
+            "block.angle": 0.75
+          },
+          "errors": {
+            "newtonian_agent_static_block": 1.8666417989181652,
+            "kinematic_agent_static_block": 1.659101979625934,
+            "hard_contact_push": 1.1720863959894825,
+            "soft_contact_spring": 1.494751415516539,
+            "long_range_field": 6.7105606957134825,
+            "velocity_gated_push": 1.8666396911139294
+          }
+        },
+        {
+          "disagreement": 3.410383047938487,
+          "actions": [
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ],
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ],
+            [
+              0.12572689965826234,
+              0.5055570209753861
+            ]
+          ],
+          "start": {
+            "agent.x": 260.743,
+            "agent.y": 217.995,
+            "agent.vx": -7.518,
+            "agent.vy": 19.824,
+            "block.x": 252.474,
+            "block.y": 230.662,
+            "block.angle": 0.726
+          },
+          "errors": {
+            "newtonian_agent_static_block": 5.353801021927363,
+            "kinematic_agent_static_block": 4.848187655103865,
+            "hard_contact_push": 4.607599951981302,
+            "soft_contact_spring": 5.279093614635184,
+            "long_range_field": 3.851987649998467,
+            "velocity_gated_push": 5.3537740859680225
+          }
+        },
+        {
+          "disagreement": 3.3879785616374467,
+          "actions": [
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ],
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ],
+            [
+              0.16555093741910598,
+              -0.08045090566801444
+            ]
+          ],
+          "start": {
+            "agent.x": 228.275,
+            "agent.y": 163.922,
+            "agent.vx": -161.743,
+            "agent.vy": -173.011,
+            "block.x": 221.571,
+            "block.y": 210.686,
+            "block.angle": 1.156
+          },
+          "errors": {
+            "newtonian_agent_static_block": 3.5570846315719606,
+            "kinematic_agent_static_block": 0.4622856678366411,
+            "hard_contact_push": 7.099240942752967,
+            "soft_contact_spring": 3.5570603248177224,
+            "long_range_field": 3.6679643663841515,
+            "velocity_gated_push": 3.5570281500274525
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 15,
+      "elapsed_s": 0.06615924835205078
+    }
+  },
+  "args": {
+    "env": "pusht",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_train.jsonl",
+    "val_file": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data_stride1/pusht_oracle_traj_val.jsonl",
+    "max_train_episodes": 40,
+    "max_val_episodes": 10,
+    "output_dir": "artifacts/visualpatchworld/llm_family/v1_pusht_qwen35_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 339.53611063957214
+}

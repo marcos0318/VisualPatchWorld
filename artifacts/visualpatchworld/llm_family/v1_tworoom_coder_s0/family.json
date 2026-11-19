@@ -1,0 +1,937 @@
+{
+  "env": "tworoom",
+  "llm_model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+  "schema": {
+    "state_keys": [
+      "agent.x",
+      "agent.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "agent.x": {
+        "min": 14.06,
+        "max": 199.404
+      },
+      "agent.y": {
+        "min": 21.0,
+        "max": 208.141
+      },
+      "target.x": {
+        "min": 22.652,
+        "max": 205.757
+      },
+      "target.y": {
+        "min": 19.804,
+        "max": 207.074
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -1.0,
+      -1.0
+    ],
+    "action_max": [
+      1.0,
+      1.0
+    ],
+    "num_episodes": 51,
+    "num_transitions": 892
+  },
+  "scales": {
+    "agent.x": 10.597528584591904,
+    "agent.y": 11.175281778471136,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "linear_no_momentum",
+      "mechanism": "Agent moves with constant velocity directly proportional to action, no inertia.",
+      "code": "# HYPOTHESIS: linear_no_momentum\n# MECHANISM: Agent moves with constant velocity directly proportional to action, no inertia.\nPARAMS = {\"speed\": 10.0}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    speed = p[\"speed\"]\n    return {\n        \"agent.x\": state[\"agent.x\"] + ax * speed,\n        \"agent.y\": state[\"agent.y\"] + ay * speed,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "speed": 10.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_based",
+      "mechanism": "Agent has velocity that changes based on action (acceleration), with position integrated from velocity.",
+      "code": "# HYPOTHESIS: momentum_based\n# MECHANISM: Agent has velocity that changes based on action (acceleration), with position integrated from velocity.\nPARAMS = {\"acc_gain\": 5.0, \"dt\": 1.0}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    acc_gain = p[\"acc_gain\"]\n    dt = p[\"dt\"]\n\n    # Assume hidden velocity states are part of the model but not observed\n    # We simulate them implicitly using prior state if needed\n    # For simplicity here we assume velocities can be approximated from previous positions\n    # But since we don't have access to past velocities, use dummy zero-init or derive from action\n\n    # Approximate new velocity change due to action\n    dvx = ax * acc_gain\n    dvy = ay * acc_gain\n\n    # Assume starting vx=0, vy=0 for simplicity in absence of history\n    vx_new = dvx\n    vy_new = dvy\n\n    return {\n        \"agent.x\": state[\"agent.x\"] + vx_new * dt,\n        \"agent.y\": state[\"agent.y\"] + vy_new * dt,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "acc_gain": 5.0,
+        "dt": 1.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "nonlinear_action_response",
+      "mechanism": "Action affects agent motion through a nonlinear function (e.g., quadratic gain).",
+      "code": "# HYPOTHESIS: nonlinear_action_response\n# MECHANISM: Action affects agent motion through a nonlinear function (e.g., quadratic gain).\nPARAMS = {\"gain\": 3.0, \"exp\": 2.0}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    gain = p[\"gain\"]\n    exp = p[\"exp\"]\n    dx = gain * (abs(ax)**exp) * (1 if ax >= 0 else -1)\n    dy = gain * (abs(ay)**exp) * (1 if ay >= 0 else -1)\n    return {\n        \"agent.x\": state[\"agent.x\"] + dx,\n        \"agent.y\": state[\"agent.y\"] + dy,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "gain": 3.0,
+        "exp": 2.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "bounded_speed_saturation",
+      "mechanism": "Agent's movement is capped at maximum speed regardless of action magnitude.",
+      "code": "# HYPOTHESIS: bounded_speed_saturation\n# MECHANISM: Agent's movement is capped at maximum speed regardless of action magnitude.\nPARAMS = {\"max_speed\": 15.0}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    max_speed = p[\"max_speed\"]\n    norm = math.sqrt(ax**2 + ay**2)\n    if norm > 1e-8:\n        scale = min(norm, 1.0) / norm\n        dx = ax * scale * max_speed\n        dy = ay * scale * max_speed\n    else:\n        dx, dy = 0.0, 0.0\n    return {\n        \"agent.x\": state[\"agent.x\"] + dx,\n        \"agent.y\": state[\"agent.y\"] + dy,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "max_speed": 15.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "door_obstacle_avoidance",
+      "mechanism": "Movement blocked when crossing a static door obstacle unless aligned properly.",
+      "code": "# HYPOTHESIS: door_obstacle_avoidance\n# MECHANISM: Movement blocked when crossing a static door obstacle unless aligned properly.\nPARAMS = {\"speed\": 8.0}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    speed = p[\"speed\"]\n    dx = ax * speed\n    dy = ay * speed\n    new_x = state[\"agent.x\"] + dx\n    new_y = state[\"agent.y\"] + dy\n\n    door = meta.get(\"door_coords\", [])\n    if len(door) >= 2:\n        door_x, door_y = door[0], door[1]\n        threshold = 5.0\n        if abs(new_x - door_x) < threshold and abs(new_y - door_y) < threshold:\n            new_x = state[\"agent.x\"]\n            new_y = state[\"agent.y\"]\n\n    return {\n        \"agent.x\": new_x,\n        \"agent.y\": new_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "speed": 8.0
+      },
+      "repaired": false
+    },
+    {
+      "name": "target_attraction_coupling",
+      "mechanism": "Action influences motion towards target via coupling between agent and target positions.",
+      "code": "# HYPOTHESIS: target_attraction_coupling\n# MECHANISM: Action influences motion towards target via coupling between agent and target positions.\nPARAMS = {\"k_att\": 0.1, \"speed_factor\": 5.0}\n\ndef step(state, action, p, meta):\n    ax, ay = action\n    k_att = p[\"k_att\"]\n    speed_factor = p[\"speed_factor\"]\n\n    tx = state[\"target.x\"]\n    ty = state[\"target.y\"]\n    px = state[\"agent.x\"]\n    py = state[\"agent.y\"]\n\n    dx_total = ax * speed_factor + k_att * (tx - px)\n    dy_total = ay * speed_factor + k_att * (ty - py)\n\n    return {\n        \"agent.x\": px + dx_total,\n        \"agent.y\": py + dy_total,\n        \"target.x\": tx,\n        \"target.y\": ty,\n    }",
+      "init_params": {
+        "k_att": 0.1,
+        "speed_factor": 5.0
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_no_momentum": {
+        "params": {
+          "speed": 23.710023666130812
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.035235998764451784,
+        "val_one_step_nrmse": 0.05759272533650608,
+        "val_rollout_nrmse": 0.11059307837437211,
+        "restarts": 4,
+        "nfev": 13,
+        "elapsed_s": 0.16128087043762207,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307837437211
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.1105930787171338
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307859569001
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.035235998764451784,
+            "val_rollout_nrmse": 0.11059307896382929
+          }
+        ]
+      },
+      "momentum_based": {
+        "params": {
+          "acc_gain": 3.6033399973911244,
+          "dt": 6.579999568462142
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.0352359987663877,
+        "val_one_step_nrmse": 0.05759361665685986,
+        "val_rollout_nrmse": 0.11059535779194332,
+        "restarts": 4,
+        "nfev": 65,
+        "elapsed_s": 0.4437849521636963,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03523599877769843,
+            "val_rollout_nrmse": 0.1105990405322523
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.0352359987663877,
+            "val_rollout_nrmse": 0.11059535779194332
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03523599877193391,
+            "val_rollout_nrmse": 0.11059755930526256
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523599876997314,
+            "val_rollout_nrmse": 0.1105969276801726
+          }
+        ]
+      },
+      "nonlinear_action_response": {
+        "params": {
+          "gain": 23.844746412738328,
+          "exp": 1.011405680263502
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.035224697857486165,
+        "val_one_step_nrmse": 0.05812595108817524,
+        "val_rollout_nrmse": 0.1118055012024279,
+        "restarts": 4,
+        "nfev": 41,
+        "elapsed_s": 0.41568875312805176,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035224697857485915,
+            "val_rollout_nrmse": 0.11180550487646224
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.035224697857485845,
+            "val_rollout_nrmse": 0.1118055079905859
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03522469785748585,
+            "val_rollout_nrmse": 0.11180550797968866
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.035224697857486165,
+            "val_rollout_nrmse": 0.1118055012024279
+          }
+        ]
+      },
+      "bounded_speed_saturation": {
+        "params": {
+          "max_speed": 24.00494364379367
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03634565208189329,
+        "val_one_step_nrmse": 0.05275424688671983,
+        "val_rollout_nrmse": 0.09772595784360431,
+        "restarts": 4,
+        "nfev": 12,
+        "elapsed_s": 0.09159111976623535,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.03634565208189329,
+            "val_rollout_nrmse": 0.09772595784360431
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03634565208189328,
+            "val_rollout_nrmse": 0.09772595833675042
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03634565208189329,
+            "val_rollout_nrmse": 0.09772595857889331
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03634565208189329,
+            "val_rollout_nrmse": 0.09772595838418245
+          }
+        ]
+      },
+      "door_obstacle_avoidance": {
+        "params": {
+          "speed": 23.701155638820353
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03880714867637319,
+        "val_one_step_nrmse": 0.09270904112482148,
+        "val_rollout_nrmse": 0.18923810387672377,
+        "restarts": 4,
+        "nfev": 18,
+        "elapsed_s": 0.11899256706237793,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.038807148676373186,
+            "val_rollout_nrmse": 0.18923810423950646
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03880714867637319,
+            "val_rollout_nrmse": 0.18923810416212344
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03880714867637319,
+            "val_rollout_nrmse": 0.18923810387672377
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03880714867637319,
+            "val_rollout_nrmse": 0.18923810432523508
+          }
+        ]
+      },
+      "target_attraction_coupling": {
+        "params": {
+          "k_att": 0.0005019793187752489,
+          "speed_factor": 23.67950562508911
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.03523048630299802,
+        "val_one_step_nrmse": 0.05747725871927709,
+        "val_rollout_nrmse": 0.10851425524572307,
+        "restarts": 4,
+        "nfev": 20,
+        "elapsed_s": 0.17270946502685547,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.035230486302998014,
+            "val_rollout_nrmse": 0.10851425616524306
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.03523048630299802,
+            "val_rollout_nrmse": 0.10851425562996092
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.03523048630299802,
+            "val_rollout_nrmse": 0.108514256246722
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.03523048630299802,
+            "val_rollout_nrmse": 0.10851425524572307
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_no_momentum": {
+        "params": {
+          "speed": 23.496798770635014
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919190484882865,
+        "val_one_step_nrmse": 0.06169912935972219,
+        "val_rollout_nrmse": 0.12094199788044252,
+        "restarts": 4,
+        "nfev": 15,
+        "elapsed_s": 1.9930312633514404,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919190484882865,
+            "val_rollout_nrmse": 0.12094199788044252
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.12094199867698062
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190484882865,
+            "val_rollout_nrmse": 0.12094199872533637
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190484882868,
+            "val_rollout_nrmse": 0.12094199808599053
+          }
+        ]
+      },
+      "momentum_based": {
+        "params": {
+          "acc_gain": 5.578326654199475,
+          "dt": 4.212150432009565
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16919190485803257,
+        "val_one_step_nrmse": 0.06170008024229596,
+        "val_rollout_nrmse": 0.12094436255898174,
+        "restarts": 4,
+        "nfev": 68,
+        "elapsed_s": 6.099603891372681,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16919190485803257,
+            "val_rollout_nrmse": 0.12094436255898174
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.16919190496132952,
+            "val_rollout_nrmse": 0.12095026414492073
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16919190491738753,
+            "val_rollout_nrmse": 0.12094845098387055
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16919190488231342,
+            "val_rollout_nrmse": 0.1209465078342423
+          }
+        ]
+      },
+      "nonlinear_action_response": {
+        "params": {
+          "gain": 24.333613231627258,
+          "exp": 1.0680793626790206
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.16805336003800053,
+        "val_one_step_nrmse": 0.06638570348706027,
+        "val_rollout_nrmse": 0.12934378585049533,
+        "restarts": 4,
+        "nfev": 41,
+        "elapsed_s": 4.008124113082886,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.16805336003800053,
+            "val_rollout_nrmse": 0.12934378585049533
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1680533600379994,
+            "val_rollout_nrmse": 0.12934379249266395
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16805336003802768,
+            "val_rollout_nrmse": 0.12934386186624564
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.16805336003799923,
+            "val_rollout_nrmse": 0.1293437963636886
+          }
+        ]
+      },
+      "bounded_speed_saturation": {
+        "params": {
+          "max_speed": 23.784594997243325
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1725317453187412,
+        "val_one_step_nrmse": 0.05654868668889572,
+        "val_rollout_nrmse": 0.10771534496543089,
+        "restarts": 4,
+        "nfev": 13,
+        "elapsed_s": 1.1479744911193848,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1725317453187412,
+            "val_rollout_nrmse": 0.10771534549232102
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1725317453187412,
+            "val_rollout_nrmse": 0.10771534687345423
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.1725317453187412,
+            "val_rollout_nrmse": 0.10771534496543089
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1725317453187412,
+            "val_rollout_nrmse": 0.107715345115567
+          }
+        ]
+      },
+      "door_obstacle_avoidance": {
+        "params": {
+          "speed": 23.555747746224178
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.17970281174079067,
+        "val_one_step_nrmse": 0.09444675309539352,
+        "val_rollout_nrmse": 0.19372422263561548,
+        "restarts": 4,
+        "nfev": 23,
+        "elapsed_s": 2.231260061264038,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.17970281174079067,
+            "val_rollout_nrmse": 0.1937242228725808
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.17970281174079064,
+            "val_rollout_nrmse": 0.19372422269837888
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.17970281174079067,
+            "val_rollout_nrmse": 0.19372422288303828
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.17970281174079067,
+            "val_rollout_nrmse": 0.19372422263561548
+          }
+        ]
+      },
+      "target_attraction_coupling": {
+        "params": {
+          "k_att": 0.000967220130175773,
+          "speed_factor": 23.38079230958097
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 0.1689787222307732,
+        "val_one_step_nrmse": 0.06270326591244527,
+        "val_rollout_nrmse": 0.12001095213565864,
+        "restarts": 4,
+        "nfev": 25,
+        "elapsed_s": 2.3458054065704346,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.1689787222307732,
+            "val_rollout_nrmse": 0.12001095213565864
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.1689787222307732,
+            "val_rollout_nrmse": 0.12001095217562095
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.16897872223077323,
+            "val_rollout_nrmse": 0.12001095304179836
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.1689787222307732,
+            "val_rollout_nrmse": 0.1200109530035908
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "bounded_speed_saturation",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_no_momentum": 0.11059307837437211,
+        "momentum_based": 0.11059535779194332,
+        "nonlinear_action_response": 0.1118055012024279,
+        "bounded_speed_saturation": 0.09772595784360431,
+        "door_obstacle_avoidance": 0.18923810387672377,
+        "target_attraction_coupling": 0.10851425524572307
+      }
+    },
+    "active_one_step": {
+      "winner": "target_attraction_coupling",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.x",
+        "agent.y"
+      ],
+      "scores": {
+        "linear_no_momentum": 0.598468574159835,
+        "momentum_based": 0.5984703985813704,
+        "nonlinear_action_response": 0.6005587045822065,
+        "bounded_speed_saturation": 0.6444537241043815,
+        "door_obstacle_avoidance": 1.2667214533826303,
+        "target_attraction_coupling": 0.5977570905524012
+      },
+      "probes": [
+        {
+          "disagreement": 0.43246932725176696,
+          "actions": [
+            [
+              -0.610781304535531,
+              0.5598895419771632
+            ],
+            [
+              0.7368623088344592,
+              -0.36799002847951834
+            ],
+            [
+              0.016128393512579997,
+              0.18874920502551773
+            ]
+          ],
+          "start": {
+            "agent.x": 130.921,
+            "agent.y": 33.702,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "linear_no_momentum": 0.045942146733181775,
+            "momentum_based": 0.04594385738097892,
+            "nonlinear_action_response": 0.04596842378879036,
+            "bounded_speed_saturation": 0.03544001730902275,
+            "door_obstacle_avoidance": 1.3081943671530158,
+            "target_attraction_coupling": 0.04394959699125253
+          }
+        },
+        {
+          "disagreement": 0.3862556769918369,
+          "actions": [
+            [
+              -0.6062737704789469,
+              -0.40862550600460157
+            ],
+            [
+              0.1911097096819987,
+              -0.288484671537214
+            ],
+            [
+              0.47246763189490903,
+              0.18472573868798725
+            ]
+          ],
+          "start": {
+            "agent.x": 122.851,
+            "agent.y": 62.183,
+            "target.x": 178.335,
+            "target.y": 111.47
+          },
+          "errors": {
+            "linear_no_momentum": 0.05809254795818592,
+            "momentum_based": 0.0580947112147641,
+            "nonlinear_action_response": 0.06099330912445457,
+            "bounded_speed_saturation": 0.04481173170179286,
+            "door_obstacle_avoidance": 1.185743526395059,
+            "target_attraction_coupling": 0.06360731423890574
+          }
+        },
+        {
+          "disagreement": 0.36694756902274006,
+          "actions": [
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ]
+          ],
+          "start": {
+            "agent.x": 78.552,
+            "agent.y": 30.974,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_no_momentum": 2.579957009852455,
+            "momentum_based": 2.5799502961898453,
+            "nonlinear_action_response": 2.5974155022287415,
+            "bounded_speed_saturation": 1.9183666205534644,
+            "door_obstacle_avoidance": 2.578717879398387,
+            "target_attraction_coupling": 2.56728798921668
+          }
+        },
+        {
+          "disagreement": 0.3279382776056899,
+          "actions": [
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ],
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ],
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ]
+          ],
+          "start": {
+            "agent.x": 96.734,
+            "agent.y": 58.078,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "linear_no_momentum": 0.0869133528765477,
+            "momentum_based": 0.08691658810112769,
+            "nonlinear_action_response": 0.09724329328763674,
+            "bounded_speed_saturation": 0.06705143369561682,
+            "door_obstacle_avoidance": 1.0379026741314785,
+            "target_attraction_coupling": 0.09240934333352717
+          }
+        },
+        {
+          "disagreement": 0.31934118644247056,
+          "actions": [
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ]
+          ],
+          "start": {
+            "agent.x": 129.849,
+            "agent.y": 54.117,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_no_momentum": 0.2214378133788045,
+            "momentum_based": 0.2214465400201361,
+            "nonlinear_action_response": 0.20117299448140952,
+            "bounded_speed_saturation": 1.1565988172620103,
+            "door_obstacle_avoidance": 0.22304881983521144,
+            "target_attraction_coupling": 0.22153120898164044
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 4.9948461055755615
+    },
+    "offline_multi_step": {
+      "winner": "bounded_speed_saturation",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_no_momentum": 0.12094199788044252,
+        "momentum_based": 0.12094436255898174,
+        "nonlinear_action_response": 0.12934378585049533,
+        "bounded_speed_saturation": 0.10771534496543089,
+        "door_obstacle_avoidance": 0.19372422263561548,
+        "target_attraction_coupling": 0.12001095213565864
+      }
+    },
+    "active_multi_step": {
+      "winner": "linear_no_momentum",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "agent.x",
+        "agent.y"
+      ],
+      "scores": {
+        "linear_no_momentum": 0.6065979628921716,
+        "momentum_based": 0.6065997901665179,
+        "nonlinear_action_response": 0.6194843173863583,
+        "bounded_speed_saturation": 0.6544577734877224,
+        "door_obstacle_avoidance": 1.2674385776941217,
+        "target_attraction_coupling": 0.6077680824160536
+      },
+      "probes": [
+        {
+          "disagreement": 0.4337536800136897,
+          "actions": [
+            [
+              -0.610781304535531,
+              0.5598895419771632
+            ],
+            [
+              0.7368623088344592,
+              -0.36799002847951834
+            ],
+            [
+              0.016128393512579997,
+              0.18874920502551773
+            ]
+          ],
+          "start": {
+            "agent.x": 130.921,
+            "agent.y": 33.702,
+            "target.x": 46.455,
+            "target.y": 136.333
+          },
+          "errors": {
+            "linear_no_momentum": 0.05353510692142316,
+            "momentum_based": 0.05353680709935104,
+            "nonlinear_action_response": 0.054030864345152606,
+            "bounded_speed_saturation": 0.04328665416728598,
+            "door_obstacle_avoidance": 1.3035826397375183,
+            "target_attraction_coupling": 0.052616021342782385
+          }
+        },
+        {
+          "disagreement": 0.41027416660702354,
+          "actions": [
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ],
+            [
+              -0.9180529521276106,
+              -0.9669447289429418
+            ]
+          ],
+          "start": {
+            "agent.x": 78.552,
+            "agent.y": 30.974,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_no_momentum": 2.550295105393556,
+            "momentum_based": 2.55028849484569,
+            "nonlinear_action_response": 2.6592153169206223,
+            "bounded_speed_saturation": 1.9047010210965978,
+            "door_obstacle_avoidance": 2.5584677746076134,
+            "target_attraction_coupling": 2.5184216808604205
+          }
+        },
+        {
+          "disagreement": 0.39178376559864697,
+          "actions": [
+            [
+              -0.6062737704789469,
+              -0.40862550600460157
+            ],
+            [
+              0.1911097096819987,
+              -0.288484671537214
+            ],
+            [
+              0.47246763189490903,
+              0.18472573868798725
+            ]
+          ],
+          "start": {
+            "agent.x": 122.851,
+            "agent.y": 62.183,
+            "target.x": 178.335,
+            "target.y": 111.47
+          },
+          "errors": {
+            "linear_no_momentum": 0.06769447864986385,
+            "momentum_based": 0.06769662866654429,
+            "nonlinear_action_response": 0.087884936781082,
+            "bounded_speed_saturation": 0.054734456542521154,
+            "door_obstacle_avoidance": 1.184180779761015,
+            "target_attraction_coupling": 0.08103640447806074
+          }
+        },
+        {
+          "disagreement": 0.3570814681333463,
+          "actions": [
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ],
+            [
+              0.9833694366677761,
+              0.8383799784757964
+            ]
+          ],
+          "start": {
+            "agent.x": 129.849,
+            "agent.y": 54.117,
+            "target.x": 201.276,
+            "target.y": 125.875
+          },
+          "errors": {
+            "linear_no_momentum": 0.2601917538362372,
+            "momentum_based": 0.26020043513764113,
+            "nonlinear_action_response": 0.13633029592989698,
+            "bounded_speed_saturation": 1.1876755240111518,
+            "door_obstacle_avoidance": 0.24947423260008006,
+            "target_attraction_coupling": 0.27076148555248297
+          }
+        },
+        {
+          "disagreement": 0.3352122892857869,
+          "actions": [
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ],
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ],
+            [
+              0.3786034738603683,
+              -0.28872582723642815
+            ]
+          ],
+          "start": {
+            "agent.x": 96.734,
+            "agent.y": 58.078,
+            "target.x": 128.491,
+            "target.y": 166.92
+          },
+          "errors": {
+            "linear_no_momentum": 0.10127336965977769,
+            "momentum_based": 0.10127658508336268,
+            "nonlinear_action_response": 0.15996017295503753,
+            "bounded_speed_saturation": 0.08189121162105562,
+            "door_obstacle_avoidance": 1.041487461764382,
+            "target_attraction_coupling": 0.11600481984652139
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 5.151437759399414
+    }
+  },
+  "args": {
+    "env": "tworoom",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/v1_tworoom_coder_s0",
+    "num_hypotheses": 6,
+    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false
+  },
+  "elapsed_s": 52.957510232925415
+}

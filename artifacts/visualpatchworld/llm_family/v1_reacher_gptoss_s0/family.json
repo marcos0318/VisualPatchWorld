@@ -1,0 +1,1015 @@
+{
+  "env": "reacher",
+  "llm_model": "openai/gpt-oss-120b",
+  "schema": {
+    "state_keys": [
+      "arm.x",
+      "arm.y",
+      "finger.x",
+      "finger.y",
+      "target.x",
+      "target.y"
+    ],
+    "state_ranges": {
+      "arm.x": {
+        "min": -4.981,
+        "max": 4.435
+      },
+      "arm.y": {
+        "min": -2.899,
+        "max": 2.869
+      },
+      "finger.x": {
+        "min": -0.24,
+        "max": 0.239
+      },
+      "finger.y": {
+        "min": -0.24,
+        "max": 0.24
+      },
+      "target.x": {
+        "min": -0.195,
+        "max": 0.17
+      },
+      "target.y": {
+        "min": -0.194,
+        "max": 0.196
+      }
+    },
+    "action_dim": 2,
+    "action_min": [
+      -0.812,
+      -0.745
+    ],
+    "action_max": [
+      0.732,
+      0.787
+    ],
+    "num_episodes": 51,
+    "num_transitions": 2040
+  },
+  "scales": {
+    "arm.x": 0.1874797487871841,
+    "arm.y": 0.23021797342125136,
+    "finger.x": 0.02727790853899584,
+    "finger.y": 0.027242596319182195,
+    "target.x": 1.0,
+    "target.y": 1.0
+  },
+  "candidates": [
+    {
+      "name": "linear_first_order",
+      "mechanism": "arm moves linearly with the raw action, finger follows arm with a fixed coupling gain.",
+      "code": "# HYPOTHESIS: linear_first_order\n# MECHANISM: arm moves linearly with the raw action, finger follows arm with a fixed coupling gain.\nPARAMS = {\n    \"arm_gain_x\": 0.5,\n    \"arm_gain_y\": 0.5,\n    \"finger_coupling\": 0.2,\n}\n\ndef step(state, action, p, meta):\n    # arm updates directly from action\n    new_arm_x = state[\"arm.x\"] + p[\"arm_gain_x\"] * action[0]\n    new_arm_y = state[\"arm.y\"] + p[\"arm_gain_y\"] * action[1]\n\n    # finger moves a fraction towards the new arm position\n    dx = new_arm_x - state[\"finger.x\"]\n    dy = new_arm_y - state[\"finger.y\"]\n    new_finger_x = state[\"finger.x\"] + p[\"finger_coupling\"] * dx\n    new_finger_y = state[\"finger.y\"] + p[\"finger_coupling\"] * dy\n\n    # target is static\n    return {\n        \"arm.x\": new_arm_x,\n        \"arm.y\": new_arm_y,\n        \"finger.x\": new_finger_x,\n        \"finger.y\": new_finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "arm_gain_x": 0.5,
+        "arm_gain_y": 0.5,
+        "finger_coupling": 0.2
+      },
+      "repaired": false
+    },
+    {
+      "name": "momentum_smoothing",
+      "mechanism": "action is interpreted as a velocity command that is low\u2011pass filtered; finger lags with exponential smoothing.",
+      "code": "# HYPOTHESIS: momentum_smoothing\n# MECHANISM: action is interpreted as a velocity command that is low\u2011pass filtered; finger lags with exponential smoothing.\nPARAMS = {\n    \"arm_vel_gain\": 0.8,      # scale from action to velocity\n    \"arm_alpha\": 0.7,        # smoothing factor for arm (0=no smoothing, 1=full inertia)\n    \"finger_alpha\": 0.4,      # smoothing factor for finger\n}\n\ndef step(state, action, p, meta):\n    # compute raw velocity from action\n    vel_x = p[\"arm_vel_gain\"] * action[0]\n    vel_y = p[\"arm_vel_gain\"] * action[1]\n\n    # low\u2011pass filter the arm position (momentum)\n    new_arm_x = state[\"arm.x\"] + (1.0 - p[\"arm_alpha\"]) * vel_x\n    new_arm_y = state[\"arm.y\"] + (1.0 - p[\"arm_alpha\"]) * vel_y\n\n    # finger follows the arm with its own smoothing\n    new_finger_x = state[\"finger.x\"] + p[\"finger_alpha\"] * (new_arm_x - state[\"finger.x\"])\n    new_finger_y = state[\"finger.y\"] + p[\"finger_alpha\"] * (new_arm_y - state[\"finger.y\"])\n\n    return {\n        \"arm.x\": new_arm_x,\n        \"arm.y\": new_arm_y,\n        \"finger.x\": new_finger_x,\n        \"finger.y\": new_finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "arm_vel_gain": 0.8,
+        "arm_alpha": 0.7,
+        "finger_alpha": 0.4
+      },
+      "repaired": false
+    },
+    {
+      "name": "saturated_tanh",
+      "mechanism": "arm response saturates non\u2011linearly via a tanh nonlinearity; finger follows arm linearly.",
+      "code": "# HYPOTHESIS: saturated_tanh\n# MECHANISM: arm response saturates non\u2011linearly via a tanh nonlinearity; finger follows arm linearly.\nPARAMS = {\n    \"arm_gain_x\": 1.0,\n    \"arm_gain_y\": 1.0,\n    \"sat_scale\": 0.3,          # amplitude of saturated step\n    \"finger_coupling\": 0.15,\n}\n\ndef step(state, action, p, meta):\n    # saturated delta using tanh\n    delta_x = p[\"sat_scale\"] * math.tanh(p[\"arm_gain_x\"] * action[0])\n    delta_y = p[\"sat_scale\"] * math.tanh(p[\"arm_gain_y\"] * action[1])\n\n    new_arm_x = state[\"arm.x\"] + delta_x\n    new_arm_y = state[\"arm.y\"] + delta_y\n\n    # finger moves toward the new arm position\n    dx = new_arm_x - state[\"finger.x\"]\n    dy = new_arm_y - state[\"finger.y\"]\n    new_finger_x = state[\"finger.x\"] + p[\"finger_coupling\"] * dx\n    new_finger_y = state[\"finger.y\"] + p[\"finger_coupling\"] * dy\n\n    return {\n        \"arm.x\": new_arm_x,\n        \"arm.y\": new_arm_y,\n        \"finger.x\": new_finger_x,\n        \"finger.y\": new_finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "arm_gain_x": 1.0,
+        "arm_gain_y": 1.0,
+        "sat_scale": 0.3,
+        "finger_coupling": 0.15
+      },
+      "repaired": false
+    },
+    {
+      "name": "fixed_length_finger",
+      "mechanism": "the finger is rigidly attached to the arm at a constant link length; action moves the arm, finger is recomputed to keep the distance L.",
+      "code": "# HYPOTHESIS: fixed_length_finger\n# MECHANISM: the finger is rigidly attached to the arm at a constant link length; action moves the arm, finger is recomputed to keep the distance L.\nPARAMS = {\n    \"arm_gain_x\": 0.6,\n    \"arm_gain_y\": 0.6,\n    \"link_length\": 0.15,      # desired distance between arm and finger\n}\n\ndef step(state, action, p, meta):\n    # move the arm linearly\n    new_arm_x = state[\"arm.x\"] + p[\"arm_gain_x\"] * action[0]\n    new_arm_y = state[\"arm.y\"] + p[\"arm_gain_y\"] * action[1]\n\n    # vector from arm to current finger\n    vx = state[\"finger.x\"] - state[\"arm.x\"]\n    vy = state[\"finger.y\"] - state[\"arm.y\"]\n    # normalize\n    norm = math.hypot(vx, vy)\n    if norm == 0:\n        # arbitrary direction if collapsed\n        ux, uy = 1.0, 0.0\n    else:\n        ux, uy = vx / norm, vy / norm\n\n    # place finger at fixed distance along that direction from the new arm position\n    new_finger_x = new_arm_x + p[\"link_length\"] * ux\n    new_finger_y = new_arm_y + p[\"link_length\"] * uy\n\n    return {\n        \"arm.x\": new_arm_x,\n        \"arm.y\": new_arm_y,\n        \"finger.x\": new_finger_x,\n        \"finger.y\": new_finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "arm_gain_x": 0.6,
+        "arm_gain_y": 0.6,
+        "link_length": 0.15
+      },
+      "repaired": false
+    },
+    {
+      "name": "proximity_gate",
+      "mechanism": "finger moves toward the arm only while it is farther than a threshold from the target; once close enough it stops (contact/gating).",
+      "code": "# HYPOTHESIS: proximity_gate\n# MECHANISM: finger moves toward the arm only while it is farther than a threshold from the target; once close enough it stops (contact/gating).\nPARAMS = {\n    \"arm_gain_x\": 0.55,\n    \"arm_gain_y\": 0.55,\n    \"finger_gain\": 0.2,\n    \"gate_thresh\": 0.05,      # distance to target below which finger freezes\n}\n\ndef step(state, action, p, meta):\n    # arm update\n    new_arm_x = state[\"arm.x\"] + p[\"arm_gain_x\"] * action[0]\n    new_arm_y = state[\"arm.y\"] + p[\"arm_gain_y\"] * action[1]\n\n    # distance from finger to target\n    dx_t = state[\"finger.x\"] - state[\"target.x\"]\n    dy_t = state[\"finger.y\"] - state[\"target.y\"]\n    dist_to_target = math.hypot(dx_t, dy_t)\n\n    if dist_to_target < p[\"gate_thresh\"]:\n        # finger is considered in contact; freeze its position\n        new_finger_x = state[\"finger.x\"]\n        new_finger_y = state[\"finger.y\"]\n    else:\n        # otherwise move toward the arm\n        dx = new_arm_x - state[\"finger.x\"]\n        dy = new_arm_y - state[\"finger.y\"]\n        new_finger_x = state[\"finger.x\"] + p[\"finger_gain\"] * dx\n        new_finger_y = state[\"finger.y\"] + p[\"finger_gain\"] * dy\n\n    return {\n        \"arm.x\": new_arm_x,\n        \"arm.y\": new_arm_y,\n        \"finger.x\": new_finger_x,\n        \"finger.y\": new_finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "arm_gain_x": 0.55,
+        "arm_gain_y": 0.55,
+        "finger_gain": 0.2,
+        "gate_thresh": 0.05
+      },
+      "repaired": false
+    },
+    {
+      "name": "two_link_arm",
+      "mechanism": "arm.x/y represent the base joint; action is an angular velocity applied to a second joint of fixed length; finger is the end\u2011effector of a two\u2011link planar arm.",
+      "code": "# HYPOTHESIS: two_link_arm\n# MECHANISM: arm.x/y represent the base joint; action is an angular velocity applied to a second joint of fixed length; finger is the end\u2011effector of a two\u2011link planar arm.\nPARAMS = {\n    \"base_gain_x\": 0.5,       # translation gain for the base joint\n    \"base_gain_y\": 0.5,\n    \"link_length\": 0.25,      # length of the second link\n    \"angle_gain\": 0.8,        # scale from action[0] (joint torque) to angle change\n    \"angle_offset_gain\": 0.8, # scale from action[1] to a small offset angle (optional)\n}\n# we treat action[0] as angular increment, action[1] as secondary small angle (e.g., wrist)\n\ndef step(state, action, p, meta):\n    # move the base (first joint) linearly\n    base_x = state[\"arm.x\"] + p[\"base_gain_x\"] * action[0]\n    base_y = state[\"arm.y\"] + p[\"base_gain_y\"] * action[1]\n\n    # compute current angle of the second link relative to the base\n    # we infer it from the current finger position\n    vx = state[\"finger.x\"] - state[\"arm.x\"]\n    vy = state[\"finger.y\"] - state[\"arm.y\"]\n    cur_angle = math.atan2(vy, vx)\n\n    # update the angle with the action (scaled)\n    new_angle = cur_angle + p[\"angle_gain\"] * action[0]\n\n    # place the finger at the end of the second link\n    new_finger_x = base_x + p[\"link_length\"] * math.cos(new_angle)\n    new_finger_y = base_y + p[\"link_length\"] * math.sin(new_angle)\n\n    return {\n        \"arm.x\": base_x,\n        \"arm.y\": base_y,\n        \"finger.x\": new_finger_x,\n        \"finger.y\": new_finger_y,\n        \"target.x\": state[\"target.x\"],\n        \"target.y\": state[\"target.y\"],\n    }",
+      "init_params": {
+        "base_gain_x": 0.5,
+        "base_gain_y": 0.5,
+        "link_length": 0.25,
+        "angle_gain": 0.8,
+        "angle_offset_gain": 0.8
+      },
+      "repaired": false
+    }
+  ],
+  "fits": {
+    "one_step": {
+      "linear_first_order": {
+        "params": {
+          "arm_gain_x": 0.5827903185020196,
+          "arm_gain_y": 0.879739752765672,
+          "finger_coupling": 6.956472963755784e-05
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.40746138009045046,
+        "val_one_step_nrmse": 0.7283122870014488,
+        "val_rollout_nrmse": 1.5684206141506842,
+        "restarts": 4,
+        "nfev": 20,
+        "elapsed_s": 0.5709497928619385,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.40746138009045035,
+            "val_rollout_nrmse": 1.568420614576519
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.40746138009045046,
+            "val_rollout_nrmse": 1.5684206141506842
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.40746138009045035,
+            "val_rollout_nrmse": 1.5684206147066193
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.4074613800904503,
+            "val_rollout_nrmse": 1.5684206147991053
+          }
+        ]
+      },
+      "momentum_smoothing": {
+        "params": {
+          "arm_vel_gain": 3.288569524629959,
+          "arm_alpha": 0.7880017251525561,
+          "finger_alpha": 7.99666331770553e-05
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.4181569483216343,
+        "val_one_step_nrmse": 0.7355322640767374,
+        "val_rollout_nrmse": 1.5562210912428098,
+        "restarts": 4,
+        "nfev": 69,
+        "elapsed_s": 1.5528919696807861,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4181569485779897,
+            "val_rollout_nrmse": 1.5562246308881258
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4181569483604716,
+            "val_rollout_nrmse": 1.556222025239167
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.4181569484737643,
+            "val_rollout_nrmse": 1.5562236115644343
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.4181569483216343,
+            "val_rollout_nrmse": 1.5562210912428098
+          }
+        ]
+      },
+      "saturated_tanh": {
+        "params": {
+          "arm_gain_x": 0.061646551181933504,
+          "arm_gain_y": 0.09308534719130071,
+          "sat_scale": 9.455146394112317,
+          "finger_coupling": 6.955568673380679e-05
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.4074615714606611,
+        "val_one_step_nrmse": 0.7283133132465435,
+        "val_rollout_nrmse": 1.5684379684035574,
+        "restarts": 4,
+        "nfev": 365,
+        "elapsed_s": 13.150423288345337,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.4074615630747611,
+            "val_rollout_nrmse": 1.5684391436832685
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.4074615649228155,
+            "val_rollout_nrmse": 1.5684387518159395
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.40746156545894224,
+            "val_rollout_nrmse": 1.5684385561534755
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.4074615714606611,
+            "val_rollout_nrmse": 1.5684379684035574
+          }
+        ]
+      },
+      "fixed_length_finger": {
+        "params": {
+          "arm_gain_x": -0.028142871996420626,
+          "arm_gain_y": 0.056269481299724436,
+          "link_length": 2.5900339250037483
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 243.80253889647577,
+        "val_one_step_nrmse": 20.07088113504627,
+        "val_rollout_nrmse": 19.74510370199319,
+        "restarts": 4,
+        "nfev": 18,
+        "elapsed_s": 0.4350700378417969,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 243.80253889647577,
+            "val_rollout_nrmse": 19.74510370199319
+          },
+          {
+            "restart": 1,
+            "train_loss": 243.80253889647577,
+            "val_rollout_nrmse": 19.74510370394302
+          },
+          {
+            "restart": 2,
+            "train_loss": 243.80253889647582,
+            "val_rollout_nrmse": 19.745103704214145
+          },
+          {
+            "restart": 3,
+            "train_loss": 243.80253889647577,
+            "val_rollout_nrmse": 19.74510370351991
+          }
+        ]
+      },
+      "proximity_gate": {
+        "params": {
+          "arm_gain_x": 0.5827906795890704,
+          "arm_gain_y": 0.8797479068397297,
+          "finger_gain": 9.62413914480095e-05,
+          "gate_thresh": 0.05
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 0.40745421523183795,
+        "val_one_step_nrmse": 0.728314689608437,
+        "val_rollout_nrmse": 1.5682057551674582,
+        "restarts": 4,
+        "nfev": 87,
+        "elapsed_s": 1.7662954330444336,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 0.40745421523183795,
+            "val_rollout_nrmse": 1.5682057551674582
+          },
+          {
+            "restart": 1,
+            "train_loss": 0.40746980084064294,
+            "val_rollout_nrmse": 1.5686112059628108
+          },
+          {
+            "restart": 2,
+            "train_loss": 0.4074613803367467,
+            "val_rollout_nrmse": 1.5684213458239296
+          },
+          {
+            "restart": 3,
+            "train_loss": 0.4074641280089226,
+            "val_rollout_nrmse": 1.5682423860568062
+          }
+        ]
+      },
+      "two_link_arm": {
+        "params": {
+          "base_gain_x": -0.028391851367429336,
+          "base_gain_y": 0.05629369512308289,
+          "link_length": 2.5900364681679355,
+          "angle_gain": -0.004830131880222669,
+          "angle_offset_gain": 0.8
+        },
+        "objective": "one_step",
+        "rollout_k": 5,
+        "train_loss": 243.80021444252168,
+        "val_one_step_nrmse": 20.071522958698065,
+        "val_rollout_nrmse": 19.74866285734123,
+        "restarts": 4,
+        "nfev": 83,
+        "elapsed_s": 2.200425863265991,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 243.80021444252168,
+            "val_rollout_nrmse": 19.74866285734123
+          },
+          {
+            "restart": 1,
+            "train_loss": 243.80021435801598,
+            "val_rollout_nrmse": 19.74867431402443
+          },
+          {
+            "restart": 2,
+            "train_loss": 243.80021436518444,
+            "val_rollout_nrmse": 19.7486703305763
+          },
+          {
+            "restart": 3,
+            "train_loss": 243.80021435719553,
+            "val_rollout_nrmse": 19.7486737750205
+          }
+        ]
+      }
+    },
+    "multi_step": {
+      "linear_first_order": {
+        "params": {
+          "arm_gain_x": 0.8156907393080762,
+          "arm_gain_y": 0.9037573687778254,
+          "finger_coupling": 0.00020833314212851677
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.495310062424397,
+        "val_one_step_nrmse": 0.7391216820964397,
+        "val_rollout_nrmse": 1.5370170027752579,
+        "restarts": 4,
+        "nfev": 27,
+        "elapsed_s": 2.8513011932373047,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.495310062424397,
+            "val_rollout_nrmse": 1.5370170027752579
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.495310062424863,
+            "val_rollout_nrmse": 1.5370170124620035
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.4953100624244808,
+            "val_rollout_nrmse": 1.5370170064983235
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.4953100624243971,
+            "val_rollout_nrmse": 1.537017002799761
+          }
+        ]
+      },
+      "momentum_smoothing": {
+        "params": {
+          "arm_vel_gain": 2.141261607725509,
+          "arm_alpha": 0.6019116666086607,
+          "finger_alpha": 0.00021215999824580317
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.4980961181534496,
+        "val_one_step_nrmse": 0.7437908324427722,
+        "val_rollout_nrmse": 1.537469576234356,
+        "restarts": 4,
+        "nfev": 78,
+        "elapsed_s": 6.1330976486206055,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.4980961181620753,
+            "val_rollout_nrmse": 1.5374695857080793
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.4980961182197479,
+            "val_rollout_nrmse": 1.5374696419508063
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.4980961181534496,
+            "val_rollout_nrmse": 1.537469576234356
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.4980961181647419,
+            "val_rollout_nrmse": 1.5374695885683043
+          }
+        ]
+      },
+      "saturated_tanh": {
+        "params": {
+          "arm_gain_x": 0.03197161767578275,
+          "arm_gain_y": 0.03542378641748702,
+          "sat_scale": 25.514199669521958,
+          "finger_coupling": 0.0002083295186187552
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.4953115090159772,
+        "val_one_step_nrmse": 0.7391196543082199,
+        "val_rollout_nrmse": 1.5370178779402635,
+        "restarts": 4,
+        "nfev": 871,
+        "elapsed_s": 112.70833683013916,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.4953108744883519,
+            "val_rollout_nrmse": 1.5370202786644995
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.4953115090159772,
+            "val_rollout_nrmse": 1.5370178779402635
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.4953114162573453,
+            "val_rollout_nrmse": 1.5370178822176936
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.4953114454770051,
+            "val_rollout_nrmse": 1.537023322774741
+          }
+        ]
+      },
+      "fixed_length_finger": {
+        "params": {
+          "arm_gain_x": 0.04237634732905352,
+          "arm_gain_y": 0.020657808192721252,
+          "link_length": 2.5888945100821097
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 237.76147888332656,
+        "val_one_step_nrmse": 20.052375861888066,
+        "val_rollout_nrmse": 19.71171471348289,
+        "restarts": 4,
+        "nfev": 18,
+        "elapsed_s": 2.088484048843384,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 237.76147888332656,
+            "val_rollout_nrmse": 19.71171471348289
+          },
+          {
+            "restart": 1,
+            "train_loss": 237.76147888332656,
+            "val_rollout_nrmse": 19.711714714493834
+          },
+          {
+            "restart": 2,
+            "train_loss": 237.76147888332656,
+            "val_rollout_nrmse": 19.711714715294157
+          },
+          {
+            "restart": 3,
+            "train_loss": 237.76147888332656,
+            "val_rollout_nrmse": 19.711714714476706
+          }
+        ]
+      },
+      "proximity_gate": {
+        "params": {
+          "arm_gain_x": 0.8156622530431021,
+          "arm_gain_y": 0.9033882671728173,
+          "finger_gain": 0.00023373415713731567,
+          "gate_thresh": 0.14740059281285667
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 1.4954906226599338,
+        "val_one_step_nrmse": 0.7390267968553459,
+        "val_rollout_nrmse": 1.5363200634321335,
+        "restarts": 4,
+        "nfev": 86,
+        "elapsed_s": 7.74357008934021,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 1.495085318493698,
+            "val_rollout_nrmse": 1.536624767568042
+          },
+          {
+            "restart": 1,
+            "train_loss": 1.4954906226599338,
+            "val_rollout_nrmse": 1.5363200634321335
+          },
+          {
+            "restart": 2,
+            "train_loss": 1.4953100624903377,
+            "val_rollout_nrmse": 1.5370171919743554
+          },
+          {
+            "restart": 3,
+            "train_loss": 1.4955627862141505,
+            "val_rollout_nrmse": 1.5363428766643554
+          }
+        ]
+      },
+      "two_link_arm": {
+        "params": {
+          "base_gain_x": 0.041882850842071453,
+          "base_gain_y": 0.020710409620521304,
+          "link_length": 2.5889097216684465,
+          "angle_gain": -0.007401084413951644,
+          "angle_offset_gain": 0.4854852457563508
+        },
+        "objective": "multi_step",
+        "rollout_k": 5,
+        "train_loss": 237.7465027510775,
+        "val_one_step_nrmse": 20.053037195249335,
+        "val_rollout_nrmse": 19.71602555424473,
+        "restarts": 4,
+        "nfev": 93,
+        "elapsed_s": 10.223149299621582,
+        "restart_history": [
+          {
+            "restart": 0,
+            "train_loss": 237.74650273551535,
+            "val_rollout_nrmse": 19.71602663499111
+          },
+          {
+            "restart": 1,
+            "train_loss": 237.7465027510775,
+            "val_rollout_nrmse": 19.71602555424473
+          },
+          {
+            "restart": 2,
+            "train_loss": 237.74650273822354,
+            "val_rollout_nrmse": 19.716028659582577
+          },
+          {
+            "restart": 3,
+            "train_loss": 237.7465046415404,
+            "val_rollout_nrmse": 19.716047016731924
+          }
+        ]
+      }
+    }
+  },
+  "selections": {
+    "offline_one_step": {
+      "winner": "momentum_smoothing",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_first_order": 1.5684206141506842,
+        "momentum_smoothing": 1.5562210912428098,
+        "saturated_tanh": 1.5684379684035574,
+        "fixed_length_finger": 19.74510370199319,
+        "proximity_gate": 1.5682057551674582,
+        "two_link_arm": 19.74866285734123
+      }
+    },
+    "active_one_step": {
+      "winner": "momentum_smoothing",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "arm.x",
+        "arm.y",
+        "finger.x",
+        "finger.y"
+      ],
+      "scores": {
+        "linear_first_order": 2.36831049217809,
+        "momentum_smoothing": 2.2092423612737746,
+        "saturated_tanh": 2.3685517786615344,
+        "fixed_length_finger": 61.79546408214875,
+        "proximity_gate": 2.3694714864739215,
+        "two_link_arm": 61.79151924635513
+      },
+      "probes": [
+        {
+          "disagreement": 34.4374448597579,
+          "actions": [
+            [
+              0.698442262169185,
+              0.15868088338769615
+            ],
+            [
+              -0.3184115535795653,
+              -0.45773817950503354
+            ],
+            [
+              0.22638112276764621,
+              -0.4460954655641747
+            ]
+          ],
+          "start": {
+            "arm.x": 5.846,
+            "arm.y": 2.167,
+            "finger.x": 0.09,
+            "finger.y": 0.068,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 1.3556703597726099,
+            "momentum_smoothing": 1.3234074202047932,
+            "saturated_tanh": 1.3559090259254847,
+            "fixed_length_finger": 64.47734291353825,
+            "proximity_gate": 1.354527655927666,
+            "two_link_arm": 64.47306708364633
+          }
+        },
+        {
+          "disagreement": 33.04049335859997,
+          "actions": [
+            [
+              -0.6891723897947938,
+              -0.5827781923076766
+            ],
+            [
+              0.5086621914447038,
+              -0.19832456246354213
+            ],
+            [
+              0.06556527250653899,
+              0.026366298383590614
+            ]
+          ],
+          "start": {
+            "arm.x": 5.669,
+            "arm.y": 2.19,
+            "finger.x": 0.098,
+            "finger.y": 0.051,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 2.3444696538174625,
+            "momentum_smoothing": 2.390178339498811,
+            "saturated_tanh": 2.3445975320756673,
+            "fixed_length_finger": 61.17448554708882,
+            "proximity_gate": 2.342306225865798,
+            "two_link_arm": 61.17416452175353
+          }
+        },
+        {
+          "disagreement": 32.30973505645541,
+          "actions": [
+            [
+              -0.4020793787681463,
+              0.6980514455576351
+            ],
+            [
+              -0.6392922571565085,
+              0.43338757546860573
+            ],
+            [
+              -0.7808321165529934,
+              -0.38295674345440506
+            ]
+          ],
+          "start": {
+            "arm.x": 5.223,
+            "arm.y": 2.703,
+            "finger.x": 0.05,
+            "finger.y": 0.015,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 2.303102306385459,
+            "momentum_smoothing": 1.9188206172882494,
+            "saturated_tanh": 2.3024603841655478,
+            "fixed_length_finger": 61.21817118503715,
+            "proximity_gate": 2.3058884021684345,
+            "two_link_arm": 61.218798474283865
+          }
+        },
+        {
+          "disagreement": 32.16901073784646,
+          "actions": [
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ],
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ],
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ]
+          ],
+          "start": {
+            "arm.x": 5.702,
+            "arm.y": 1.993,
+            "finger.x": 0.119,
+            "finger.y": 0.053,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 2.9013345019906476,
+            "momentum_smoothing": 2.8096417202058466,
+            "saturated_tanh": 2.9016149781116765,
+            "fixed_length_finger": 60.764914396880755,
+            "proximity_gate": 2.9037536413697445,
+            "two_link_arm": 60.74623226111478
+          }
+        },
+        {
+          "disagreement": 31.792517080029416,
+          "actions": [
+            [
+              -0.8024629763570745,
+              0.359825984331002
+            ],
+            [
+              -0.8024629763570745,
+              0.359825984331002
+            ],
+            [
+              -0.8024629763570745,
+              0.359825984331002
+            ]
+          ],
+          "start": {
+            "arm.x": 5.514,
+            "arm.y": 2.065,
+            "finger.x": 0.119,
+            "finger.y": 0.032,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 2.93697563892427,
+            "momentum_smoothing": 2.604163709171174,
+            "saturated_tanh": 2.9381769730292975,
+            "fixed_length_finger": 61.34240636819878,
+            "proximity_gate": 2.9408815070379646,
+            "two_link_arm": 61.345333890977145
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.08810257911682129
+    },
+    "offline_multi_step": {
+      "winner": "proximity_gate",
+      "criterion": "val_rollout_nrmse",
+      "scores": {
+        "linear_first_order": 1.5370170027752579,
+        "momentum_smoothing": 1.537469576234356,
+        "saturated_tanh": 1.5370178779402635,
+        "fixed_length_finger": 19.71171471348289,
+        "proximity_gate": 1.5363200634321335,
+        "two_link_arm": 19.71602555424473
+      }
+    },
+    "active_multi_step": {
+      "winner": "momentum_smoothing",
+      "criterion": "mean_probe_rollout_nrmse",
+      "scored_keys": [
+        "arm.x",
+        "arm.y",
+        "finger.x",
+        "finger.y"
+      ],
+      "scores": {
+        "linear_first_order": 2.236650125091878,
+        "momentum_smoothing": 2.2014639475384827,
+        "saturated_tanh": 2.2366044045259508,
+        "fixed_length_finger": 61.96877452294213,
+        "proximity_gate": 2.233614179155537,
+        "two_link_arm": 61.95892756547205
+      },
+      "probes": [
+        {
+          "disagreement": 34.81497732731393,
+          "actions": [
+            [
+              0.698442262169185,
+              0.15868088338769615
+            ],
+            [
+              -0.3184115535795653,
+              -0.45773817950503354
+            ],
+            [
+              0.22638112276764621,
+              -0.4460954655641747
+            ]
+          ],
+          "start": {
+            "arm.x": 5.846,
+            "arm.y": 2.167,
+            "finger.x": 0.09,
+            "finger.y": 0.068,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 1.2503655254849293,
+            "momentum_smoothing": 1.2477322713473515,
+            "saturated_tanh": 1.2504039045455415,
+            "fixed_length_finger": 65.24344190059735,
+            "proximity_gate": 1.2596537824897767,
+            "two_link_arm": 65.23556954007543
+          }
+        },
+        {
+          "disagreement": 33.04363114512177,
+          "actions": [
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ],
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ],
+            [
+              0.6522578082224173,
+              -0.2667093688187896
+            ]
+          ],
+          "start": {
+            "arm.x": 5.702,
+            "arm.y": 1.993,
+            "finger.x": 0.119,
+            "finger.y": 0.053,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 2.7216219319819737,
+            "momentum_smoothing": 2.723812079721555,
+            "saturated_tanh": 2.721637215068999,
+            "fixed_length_finger": 62.49509506179953,
+            "proximity_gate": 2.6998632412857853,
+            "two_link_arm": 62.46389812911657
+          }
+        },
+        {
+          "disagreement": 32.88647946955447,
+          "actions": [
+            [
+              -0.6891723897947938,
+              -0.5827781923076766
+            ],
+            [
+              0.5086621914447038,
+              -0.19832456246354213
+            ],
+            [
+              0.06556527250653899,
+              0.026366298383590614
+            ]
+          ],
+          "start": {
+            "arm.x": 5.669,
+            "arm.y": 2.19,
+            "finger.x": 0.098,
+            "finger.y": 0.051,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 2.319506748691538,
+            "momentum_smoothing": 2.331438961442682,
+            "saturated_tanh": 2.3195266405333292,
+            "fixed_length_finger": 60.980809718135816,
+            "proximity_gate": 2.3361164172196105,
+            "two_link_arm": 60.97956299842648
+          }
+        },
+        {
+          "disagreement": 31.745795010749962,
+          "actions": [
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ],
+            [
+              0.6277483372827657,
+              0.6788668449542165
+            ]
+          ],
+          "start": {
+            "arm.x": 5.484,
+            "arm.y": 2.122,
+            "finger.x": 0.113,
+            "finger.y": 0.03,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 2.7519637456996264,
+            "momentum_smoothing": 2.650436139088608,
+            "saturated_tanh": 2.751799999152817,
+            "fixed_length_finger": 61.400513872471045,
+            "proximity_gate": 2.7563941668853014,
+            "two_link_arm": 61.38987922888677
+          }
+        },
+        {
+          "disagreement": 31.468090737159983,
+          "actions": [
+            [
+              -0.4020793787681463,
+              0.6980514455576351
+            ],
+            [
+              -0.6392922571565085,
+              0.43338757546860573
+            ],
+            [
+              -0.7808321165529934,
+              -0.38295674345440506
+            ]
+          ],
+          "start": {
+            "arm.x": 5.223,
+            "arm.y": 2.703,
+            "finger.x": 0.05,
+            "finger.y": 0.015,
+            "target.x": 0.012,
+            "target.y": 0.144
+          },
+          "errors": {
+            "linear_first_order": 2.139792673601322,
+            "momentum_smoothing": 2.0539002860922175,
+            "saturated_tanh": 2.1396542633290663,
+            "fixed_length_finger": 59.7240120617069,
+            "proximity_gate": 2.11604328789721,
+            "two_link_arm": 59.725727930854966
+          }
+        }
+      ],
+      "sim_resets": 5,
+      "sim_steps": 75,
+      "elapsed_s": 0.03520011901855469
+    }
+  },
+  "args": {
+    "env": "reacher",
+    "data_dir": "/home/comp/baijiaxin/le-wm-code/artifacts/visualpatchworld/data",
+    "train_file": null,
+    "val_file": null,
+    "max_train_episodes": null,
+    "max_val_episodes": null,
+    "output_dir": "artifacts/visualpatchworld/llm_family/v1_reacher_gptoss_s0",
+    "num_hypotheses": 6,
+    "model": "openai/gpt-oss-120b",
+    "seed": 0,
+    "prompt_version": "scene_graph",
+    "objectives": "one_step,multi_step",
+    "rollout_k": 5,
+    "restarts": 4,
+    "max_nfev": 400,
+    "num_probes": 5,
+    "probe_len": 3,
+    "no_active": false,
+    "bank_file": null,
+    "experience_runs": [],
+    "bank_no_snippets": false
+  },
+  "elapsed_s": 385.34396409988403
+}
