@@ -237,6 +237,41 @@ def step(state, action, p, meta):
 '''
 
 
+def control_period(episodes: Sequence[Episode]) -> Optional[float]:
+    """Least-squares T in x' - x = T * (v + v')/2 over every object with x/vx fields."""
+    keys = sorted(episodes[0].transitions[0].state)
+    objs = [o for o in _objects(keys) if f"{o}.vx" in keys and f"{o}.x" in keys]
+    num = den = 0.0
+    for ep in episodes:
+        for t in ep.transitions:
+            for o in objs:
+                for ax in ("x", "y"):
+                    if f"{o}.v{ax}" in t.next_state:
+                        v = 0.5 * (t.state[f"{o}.v{ax}"] + t.next_state[f"{o}.v{ax}"])
+                        num += (t.next_state[f"{o}.{ax}"] - t.state[f"{o}.{ax}"]) * v
+                        den += v * v
+    return num / den if den > 0 else None
+
+
+def analyze_interactions(episodes: Sequence[Episode], log=print) -> Dict[str, object]:
+    """Derived static metadata from traces alone: the contact shape of every detected
+    pusher/body pair and the control period. Empty when nothing applies."""
+    meta: Dict[str, object] = {}
+    T = control_period(episodes)
+    if T is not None:
+        meta["estimated_control_period"] = {"seconds_per_transition": round(T, 4),
+                                            "identified_from": "x' - x = T * mean velocity, least squares"}
+    pairs = find_pairs(episodes)
+    for i, (pusher, body) in enumerate(pairs):
+        shape = identify_shape(episodes, pusher, body)
+        if shape is None:
+            continue
+        key = "contact_shape" if i == 0 else f"contact_shape_{body}_{pusher}"
+        meta[key] = {**shape.to_meta(), "body": body}
+        log(f"[analyze] {pusher}->{body}: K={shape.k} boxes={meta[key]['boxes_u_min_u_max_v_min_v_max']}")
+    return meta
+
+
 def with_meta(episodes, meta):
     from types import SimpleNamespace
 

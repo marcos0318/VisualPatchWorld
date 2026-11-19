@@ -44,6 +44,8 @@ MODEL_SETS: Dict[str, Dict[str, Path]] = {
     "qwen35_tooltrace": {e: ART / f"llm_family/tooltrace_{e}_qwen35_s0/models/offline_multi_step.py" for e in ENVS},
     "contact": {"pusht": ART / "contact_models/pusht_contact_textbook.py"},
     "sysid": {"pusht": ART / "sysid_models/pusht_sysid.py"},
+    **{f"{tag}_qwen35_s{s}": {e: ART / f"llm_family/{tag}_{e}_qwen35_s{s}/models/offline_multi_step.py" for e in ENVS}
+       for tag in ("v2", "refine_v2") for s in (0, 1, 2)},
     **{f"contact_{a}": {"pusht": ART / f"contact_models/pusht_contact_{a}.py"}
        for a in ("one_substep", "no_rotation", "pivot_at_origin", "square_block")},
     **{f"{tag}_{m}": {"pusht": ART / f"llm_family/{tag}_pusht_{m}/models/offline_multi_step.py"}

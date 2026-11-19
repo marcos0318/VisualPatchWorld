@@ -38,6 +38,7 @@ def main() -> None:
     p.add_argument("--restarts", type=int, default=2)
     p.add_argument("--max_nfev", type=int, default=200)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--structured_fit", action="store_true")
     args = p.parse_args()
 
     fam = json.loads((Path(args.run_dir) / "family.json").read_text())
@@ -46,6 +47,13 @@ def main() -> None:
     data = Path(fa["data_dir"])
     train = load_episodes(Path(fa["train_file"] or data / f"{fa['env']}_oracle_traj_train.jsonl"), max_episodes=fa["max_train_episodes"])
     val = load_episodes(Path(fa["val_file"] or data / f"{fa['env']}_oracle_traj_val.jsonl"), max_episodes=fa["max_val_episodes"])
+    if fa.get("analyze"):
+        from visualpatchworld.llm_family import sysid
+
+        derived = sysid.analyze_interactions(load_episodes(Path(fa["train_file"] or data / f"{fa['env']}_oracle_traj_train.jsonl")), log=lambda m: None)
+        for ep in list(train) + list(val):
+            for t in ep.transitions:
+                t.meta.update(derived)
     keys = state_keys(train)
     scales = state_scales(train, keys)
     schema = schema_summary(train)
@@ -74,7 +82,8 @@ def main() -> None:
         print(f"[refine] round {rnd}: {len(revs)} valid revisions", flush=True)
         for c in revs:
             fr = fit_candidate(c, train, val, keys, scales, objective=args.objective, rollout_k=k,
-                               restarts=args.restarts, max_nfev=args.max_nfev, seed=args.seed)
+                               restarts=args.restarts, max_nfev=args.max_nfev, seed=args.seed,
+                               structured=args.structured_fit)
             v = finite(fr.val_rollout)
             history.append({"round": rnd, "name": c.name, "mechanism": c.mechanism, "val_rollout_nrmse": v,
                             "val_one_step_nrmse": fr.val_one_step, "params": fr.params, "code": c.code,

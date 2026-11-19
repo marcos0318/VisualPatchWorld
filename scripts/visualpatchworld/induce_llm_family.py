@@ -55,6 +55,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--experience_runs", nargs="*", default=[],
                    help="run dirs of OTHER environments whose selected programs join the bank")
     p.add_argument("--bank_no_snippets", action="store_true")
+    p.add_argument("--analyze", action="store_true",
+                   help="add metadata derived from the full training split (contact shapes, control period) to every transition")
+    p.add_argument("--structured_fit", action="store_true", help="identification-style refit of every candidate")
     p.add_argument("--sysid", action="store_true",
                    help="identify a pusher/body contact program from the full training split and add it to the family")
     return p.parse_args()
@@ -70,6 +73,15 @@ def main() -> None:
     stride = train[0].transitions[0].stride
     keys = state_keys(train)
     scales = state_scales(train, keys)
+    if args.analyze:
+        from visualpatchworld.llm_family import sysid as _sysid
+
+        derived = _sysid.analyze_interactions(load_episodes(Path(args.train_file or data / f"{args.env}_oracle_traj_train.jsonl")),
+                                              log=lambda m: print(m, flush=True))
+        for ep in list(train) + list(val):
+            for t in ep.transitions:
+                t.meta.update(derived)
+        print(f"[llm-family] derived metadata: {sorted(derived)}", flush=True)
     schema = schema_summary(train)
     metas = [t.meta for ep in train for t in ep.transitions]
     static_meta = {k: v for k, v in (metas[0] if metas else {}).items() if all(m.get(k) == v for m in metas)}
@@ -138,7 +150,7 @@ def main() -> None:
                 fr = fit_candidate(
                     cand, train, val, keys, scales,
                     objective=objective, rollout_k=args.rollout_k,
-                    restarts=args.restarts, max_nfev=args.max_nfev, seed=args.seed,
+                    restarts=args.restarts, max_nfev=args.max_nfev, seed=args.seed, structured=args.structured_fit,
                 )
                 fits[name] = fr
                 print(f"[llm-family] {objective:10s} {name:40s} val1={fr.val_one_step:.4f} val{args.rollout_k}={fr.val_rollout:.4f} ({fr.elapsed_s:.1f}s)", flush=True)

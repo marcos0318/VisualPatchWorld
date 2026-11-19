@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.optimize import least_squares
@@ -100,6 +100,105 @@ def nrmse(cand, params, episodes, keys, scales, *, k: int) -> float:
     return float(np.sqrt(np.mean(np.minimum(r * r, _BAD * _BAD)))) if r.size else float("nan")
 
 
+def _objects(keys: Sequence[str]) -> List[str]:
+    return sorted({k.split(".", 1)[0] for k in keys})
+
+
+def coverage_subset(episodes: Sequence[Episode], keys: Sequence[str], scales: Mapping[str, float], n: int,
+                    tol: float = 1e-3) -> List[Episode]:
+    """The ``n`` episodes in which the most rarely moving object moves most often, so that
+    interaction-driven constants are identifiable from a small fitting subset."""
+    objs = _objects(keys)
+
+    def moves(ep, o):
+        return sum(any(abs(t.next_state[k] - t.state[k]) / scales[k] > tol for k in keys
+                       if k.startswith(o + ".") and k in t.next_state) for t in ep.transitions)
+
+    counts = {o: sum(moves(ep, o) for ep in episodes) for o in objs}
+    moving = [o for o in objs if counts[o] > 0]
+    if not moving:
+        return list(episodes[:n])
+    rare = min(moving, key=lambda o: counts[o])
+    return sorted(episodes, key=lambda ep: moves(ep, rare), reverse=True)[:n]
+
+
+def param_dependencies(cand: Candidate, params: Mapping[str, float], episodes: Sequence[Episode],
+                       keys: Sequence[str], n: int = 64) -> Dict[str, List[str]]:
+    """Object -> constants whose perturbation changes that object's one-step prediction."""
+    ts = [t for ep in episodes for t in ep.transitions][:n]
+    base = [_safe_step(cand, t.state, t.action, dict(params), t.meta) or {} for t in ts]
+    deps = {o: [] for o in _objects(keys)}
+    for name, v in params.items():
+        q = dict(params)
+        q[name] = v * 1.1 + (1e-2 if abs(v) < 1e-6 else 0.0)
+        pert = [_safe_step(cand, t.state, t.action, q, t.meta) or {} for t in ts]
+        for o in deps:
+            ok = [k for k in keys if k.startswith(o + ".")]
+            if any(abs(float(a.get(k, 0.0)) - float(b.get(k, 0.0))) > 1e-9 for a, b in zip(base, pert) for k in ok):
+                deps[o].append(name)
+    return deps
+
+
+def _grid(v: float) -> List[float]:
+    if abs(v - round(v)) < 1e-9 and 1 <= v <= 50:
+        return sorted({1.0, 2.0, 3.0, 5.0, 8.0, 10.0, 15.0, 20.0, float(v)})
+    if abs(v) < 1e-6:
+        return [-1.0, -0.1, 0.0, 0.1, 1.0]
+    return [v * m for m in (0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)]
+
+
+def structured_refit(
+    cand: Candidate,
+    params: Mapping[str, float],
+    train: Sequence[Episode],
+    val: Sequence[Episode],
+    keys: Sequence[str],
+    scales: Mapping[str, float],
+    *,
+    rollout_k: int = 5,
+    subset: int = 10,
+    max_nfev: int = 60,
+) -> Tuple[Dict[str, float], Dict[str, Any]]:
+    """Identification-style refit: coverage subset, per-object staging by dependency,
+    1-D grid search per constant (non-smooth losses such as contact switching), local
+    least squares per stage, then a joint polish."""
+    sub = coverage_subset(train, keys, scales, subset)
+    p = dict(params)
+    deps = param_dependencies(cand, p, sub, keys)
+    order = sorted(deps, key=lambda o: len(deps[o]))
+    done: List[str] = []
+    stages = []
+    for o in order:
+        names = [n for n in deps[o] if n not in done]
+        ok = [k for k in keys if k.startswith(o + ".")]
+        if not names or not ok:
+            continue
+        for n in names:
+            vals = _grid(p[n])
+            losses = [nrmse(cand, {**p, n: g}, sub, ok, scales, k=rollout_k) for g in vals]
+            if np.isfinite(min(losses)):
+                p[n] = float(vals[int(np.nanargmin(losses))])
+
+        def fun(x, names=names, ok=ok):
+            return residuals(cand, {**p, **dict(zip(names, x))}, sub, ok, scales, k=rollout_k)
+
+        try:
+            sol = least_squares(fun, np.asarray([p[n] for n in names]), method="trf", max_nfev=max_nfev)
+            p.update(dict(zip(names, map(float, sol.x))))
+        except Exception:  # noqa: BLE001
+            pass
+        done += names
+        stages.append({"object": o, "params": names})
+    names = list(p)
+    try:
+        sol = least_squares(lambda x: residuals(cand, dict(zip(names, x)), sub, keys, scales, k=rollout_k),
+                            np.asarray([p[n] for n in names]), method="trf", max_nfev=max_nfev)
+        p = dict(zip(names, map(float, sol.x)))
+    except Exception:  # noqa: BLE001
+        pass
+    return p, {"dependencies": deps, "stages": stages}
+
+
 def fit_candidate(
     cand: Candidate,
     train: Sequence[Episode],
@@ -112,7 +211,10 @@ def fit_candidate(
     restarts: int = 4,
     max_nfev: int = 400,
     seed: int = 0,
+    structured: bool = False,
 ) -> FitResult:
+    """``structured``: also run :func:`structured_refit` from the best restart and keep it
+    if it has lower held-out rollout error."""
     names = list(cand.params)
     x0 = np.asarray([cand.params[n] for n in names], dtype=np.float64)
     k_fit = 1 if objective == "one_step" else rollout_k
@@ -145,6 +247,17 @@ def fit_candidate(
         if best is None or (math.isfinite(val_roll) and val_roll < best[2]):
             best = (params, loss, val_roll)
     params, loss, val_roll = best
+    if structured and names:
+        for start_name, start in (("fitted", params), ("initial", dict(cand.params))):
+            try:
+                sp, info = structured_refit(cand, start, train, val, keys, scales, rollout_k=rollout_k)
+                sv = nrmse(cand, sp, val, keys, scales, k=rollout_k)
+                history.append({"restart": f"structured_from_{start_name}", "val_rollout_nrmse": sv, **info})
+                if math.isfinite(sv) and sv < val_roll:
+                    params, val_roll = sp, sv
+                    loss = float(np.mean(residuals(cand, sp, train, keys, scales, k=k_fit) ** 2))
+            except Exception as exc:  # noqa: BLE001
+                history.append({"restart": f"structured_from_{start_name}", "error": f"{type(exc).__name__}: {exc}"})
     return FitResult(
         params=params,
         objective=objective,

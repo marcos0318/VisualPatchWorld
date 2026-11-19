@@ -1,0 +1,336 @@
+{
+  "action_block": 5,
+  "beam_width": null,
+  "cem_iters": 15,
+  "dynamics": "vpw",
+  "elapsed_s": 361.3108584880829,
+  "elite_frac": 0.1,
+  "env": "pusht",
+  "episode_successes": [
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0
+  ],
+  "eval_budget": 50,
+  "failed_model_rollouts": 0,
+  "frameskip": 5,
+  "horizon": 5,
+  "mean_goal_distance": 47.90902869540882,
+  "mean_planner_model_distance": 11.272833700988874,
+  "mode": "oracle_induced",
+  "model_path": "/home/comp/baijiaxin/VisualPatchWorld-marcos0318/artifacts/visualpatchworld/llm_family/refine_v2_pusht_qwen35_s1/models/offline_multi_step.py",
+  "model_rollout_horizon": 5,
+  "model_set": "refine_v2_qwen35_s1",
+  "model_type": "vpw_program",
+  "num_eval": 50,
+  "num_samples": 600,
+  "num_workers": 8,
+  "observation_mode": "oracle",
+  "planner": "cem_mpc",
+  "receding_horizon": 5,
+  "seed": 45,
+  "sim_verify_frac": 0.0,
+  "starts": [
+    {
+      "episode_index": 858,
+      "row_index": 103854,
+      "start_step": 68
+    },
+    {
+      "episode_index": 891,
+      "row_index": 109981,
+      "start_step": 90
+    },
+    {
+      "episode_index": 1035,
+      "row_index": 128492,
+      "start_step": 24
+    },
+    {
+      "episode_index": 2382,
+      "row_index": 283170,
+      "start_step": 10
+    },
+    {
+      "episode_index": 2391,
+      "row_index": 283903,
+      "start_step": 41
+    },
+    {
+      "episode_index": 5187,
+      "row_index": 656210,
+      "start_step": 96
+    },
+    {
+      "episode_index": 5440,
+      "row_index": 689121,
+      "start_step": 11
+    },
+    {
+      "episode_index": 6356,
+      "row_index": 795571,
+      "start_step": 46
+    },
+    {
+      "episode_index": 6835,
+      "row_index": 847289,
+      "start_step": 54
+    },
+    {
+      "episode_index": 7710,
+      "row_index": 956618,
+      "start_step": 12
+    },
+    {
+      "episode_index": 7801,
+      "row_index": 965194,
+      "start_step": 17
+    },
+    {
+      "episode_index": 7933,
+      "row_index": 975926,
+      "start_step": 46
+    },
+    {
+      "episode_index": 7951,
+      "row_index": 977841,
+      "start_step": 71
+    },
+    {
+      "episode_index": 8077,
+      "row_index": 994345,
+      "start_step": 111
+    },
+    {
+      "episode_index": 8142,
+      "row_index": 1002118,
+      "start_step": 92
+    },
+    {
+      "episode_index": 8875,
+      "row_index": 1098254,
+      "start_step": 30
+    },
+    {
+      "episode_index": 9278,
+      "row_index": 1143245,
+      "start_step": 62
+    },
+    {
+      "episode_index": 9809,
+      "row_index": 1199134,
+      "start_step": 53
+    },
+    {
+      "episode_index": 9864,
+      "row_index": 1206164,
+      "start_step": 98
+    },
+    {
+      "episode_index": 10141,
+      "row_index": 1241573,
+      "start_step": 30
+    },
+    {
+      "episode_index": 10147,
+      "row_index": 1242721,
+      "start_step": 62
+    },
+    {
+      "episode_index": 10179,
+      "row_index": 1248766,
+      "start_step": 155
+    },
+    {
+      "episode_index": 10248,
+      "row_index": 1260012,
+      "start_step": 24
+    },
+    {
+      "episode_index": 10670,
+      "row_index": 1318622,
+      "start_step": 114
+    },
+    {
+      "episode_index": 10742,
+      "row_index": 1327444,
+      "start_step": 8
+    },
+    {
+      "episode_index": 10850,
+      "row_index": 1341290,
+      "start_step": 131
+    },
+    {
+      "episode_index": 10860,
+      "row_index": 1343003,
+      "start_step": 134
+    },
+    {
+      "episode_index": 11217,
+      "row_index": 1392365,
+      "start_step": 52
+    },
+    {
+      "episode_index": 11688,
+      "row_index": 1465303,
+      "start_step": 1
+    },
+    {
+      "episode_index": 11741,
+      "row_index": 1471078,
+      "start_step": 19
+    },
+    {
+      "episode_index": 12520,
+      "row_index": 1568005,
+      "start_step": 9
+    },
+    {
+      "episode_index": 13022,
+      "row_index": 1634664,
+      "start_step": 56
+    },
+    {
+      "episode_index": 13064,
+      "row_index": 1639642,
+      "start_step": 50
+    },
+    {
+      "episode_index": 13135,
+      "row_index": 1648308,
+      "start_step": 36
+    },
+    {
+      "episode_index": 13387,
+      "row_index": 1688561,
+      "start_step": 14
+    },
+    {
+      "episode_index": 13503,
+      "row_index": 1705365,
+      "start_step": 2
+    },
+    {
+      "episode_index": 14155,
+      "row_index": 1781570,
+      "start_step": 114
+    },
+    {
+      "episode_index": 14205,
+      "row_index": 1790682,
+      "start_step": 76
+    },
+    {
+      "episode_index": 14385,
+      "row_index": 1811098,
+      "start_step": 54
+    },
+    {
+      "episode_index": 14448,
+      "row_index": 1818232,
+      "start_step": 110
+    },
+    {
+      "episode_index": 14692,
+      "row_index": 1855693,
+      "start_step": 61
+    },
+    {
+      "episode_index": 15091,
+      "row_index": 1893714,
+      "start_step": 60
+    },
+    {
+      "episode_index": 15100,
+      "row_index": 1895015,
+      "start_step": 83
+    },
+    {
+      "episode_index": 15234,
+      "row_index": 1915075,
+      "start_step": 107
+    },
+    {
+      "episode_index": 15704,
+      "row_index": 1963205,
+      "start_step": 123
+    },
+    {
+      "episode_index": 15751,
+      "row_index": 1972770,
+      "start_step": 53
+    },
+    {
+      "episode_index": 16096,
+      "row_index": 2020119,
+      "start_step": 102
+    },
+    {
+      "episode_index": 17222,
+      "row_index": 2159020,
+      "start_step": 57
+    },
+    {
+      "episode_index": 17429,
+      "row_index": 2191611,
+      "start_step": 56
+    },
+    {
+      "episode_index": 17844,
+      "row_index": 2248508,
+      "start_step": 52
+    }
+  ],
+  "success": true,
+  "success_rate": 44.0,
+  "tag": "cem_ab5_h5_r5_600x15",
+  "wall_s": 364.2816467285156
+}
