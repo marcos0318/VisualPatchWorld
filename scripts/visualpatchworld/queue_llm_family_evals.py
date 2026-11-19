@@ -25,7 +25,7 @@ def _digest(path: Path) -> str:
     return hashlib.sha1(path.read_bytes()).hexdigest()[:12]
 
 
-def collect(runs, seeds):
+def collect(runs, seeds, selections=SELECTIONS):
     jobs = []
     for run in runs:
         d = FAMILY_ROOT / run
@@ -34,7 +34,7 @@ def collect(runs, seeds):
             continue
         env = json.loads((d / "family.json").read_text())["env"]
         seen = {}
-        for sel in SELECTIONS:
+        for sel in selections:
             m = d / "models" / f"{sel}.py"
             if not m.is_file():
                 continue
@@ -52,9 +52,10 @@ def main() -> None:
     p.add_argument("--runs", nargs="+", required=True)
     p.add_argument("--seeds", default="42")
     p.add_argument("--max_parallel", type=int, default=8)
+    p.add_argument("--selections", default=",".join(SELECTIONS))
     args = p.parse_args()
     seeds = [int(s) for s in args.seeds.split(",")]
-    jobs = [j for j in collect(args.runs, seeds) if not j["out"].is_file()]
+    jobs = [j for j in collect(args.runs, seeds, args.selections.split(",")) if not j["out"].is_file()]
     print(f"[queue] {len(jobs)} evaluations", flush=True)
     env = {**os.environ, "PYTHONPATH": f"{ROOT / 'src'}:{ROOT}", "MUJOCO_GL": "egl", "PYOPENGL_PLATFORM": "egl", "OMP_NUM_THREADS": "2"}
     running = []

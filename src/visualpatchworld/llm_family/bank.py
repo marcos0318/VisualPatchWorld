@@ -84,8 +84,13 @@ def _parse_json_list(text: str) -> List[Dict[str, Any]]:
     return json.loads(text[start : end + 1])
 
 
-def build_general_bank(model: Optional[str], *, log: Optional[List[Dict[str, Any]]] = None) -> List[BankEntry]:
-    prompt = BANK_PROMPT.format(topics="\n".join(f"  - {t}" for t in TOPICS))
+def build_general_bank(
+    model: Optional[str],
+    *,
+    log: Optional[List[Dict[str, Any]]] = None,
+    topics: Sequence[str] = TOPICS,
+) -> List[BankEntry]:
+    prompt = BANK_PROMPT.format(topics="\n".join(f"  - {t}" for t in topics))
     reply = chat(prompt, model=model, temperature=0.3, max_tokens=32000)
     if log is not None:
         log.append({"kind": "bank", "prompt": prompt, **reply})

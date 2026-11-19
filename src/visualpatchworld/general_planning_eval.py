@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -200,6 +201,26 @@ def _object_float(obj: Mapping[str, Any], key: str, default: float) -> float:
         return float(default)
 
 
+def _random_shortlist() -> bool:
+    return os.environ.get("VPW_SIM_VERIFY_ORDER", "model") == "random"
+
+
+def _verify_order(scores: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Hybrid shortlist order: by model score, or uniformly at random (control)."""
+    if _random_shortlist():
+        return rng.permutation(len(scores))
+    return np.argsort(scores)
+
+
+def _mask_unverified(scores: np.ndarray, verified: np.ndarray) -> None:
+    """Under the random-shortlist control only simulator-scored candidates are eligible."""
+    if not _random_shortlist():
+        return
+    keep = np.zeros(len(scores), dtype=bool)
+    keep[np.asarray(verified, dtype=int)] = True
+    scores[~keep] = np.inf
+
+
 def plan_cem_general(
     model: Any,
     observation_text: str,
@@ -234,6 +255,7 @@ def plan_cem_general(
     best_values = mean.copy()
     failed = 0
     verify_count = max(0, int(math.ceil(num_samples * sim_verify_frac))) if sim_verify_frac > 0 else 0
+    verify_rng = np.random.default_rng(seed + 7919)
 
     for _ in range(max(1, cem_iters)):
         candidates = rng.normal(loc=mean, scale=std, size=(num_samples, horizon, action_dim))
@@ -247,7 +269,7 @@ def plan_cem_general(
             except Exception:
                 failed += 1
         if verify_count > 0 and sim_env is not None and sim_start_row is not None:
-            ranked = np.argsort(scores)
+            ranked = _verify_order(scores, verify_rng)
             for sample_idx in ranked[:verify_count]:
                 if not np.isfinite(scores[sample_idx]):
                     continue
@@ -265,6 +287,7 @@ def plan_cem_general(
                     scores[sample_idx] = goal_distance(spec.name, goal_row, cur_row, metric=metric)
                 except Exception:
                     failed += 1
+            _mask_unverified(scores, ranked[:verify_count])
         finite = np.isfinite(scores)
         if not finite.any():
             continue
@@ -1031,7 +1054,7 @@ def plan_library_shoot_general(
             continue
     verify_count = max(0, int(math.ceil(n * sim_verify_frac))) if sim_verify_frac > 0 else 0
     if verify_count > 0 and sim_env is not None and sim_start_row is not None:
-        ranked = np.argsort(scores)
+        ranked = _verify_order(scores, np.random.default_rng(seed + 7919))
         for sample_idx in ranked[:verify_count]:
             if not np.isfinite(scores[sample_idx]):
                 continue
@@ -1053,6 +1076,7 @@ def plan_library_shoot_general(
                 scores[sample_idx] = goal_distance(spec.name, goal_row, cur_row, metric=metric)
             except Exception:
                 failed += 1
+        _mask_unverified(scores, ranked[:verify_count])
     best_idx = int(np.argmin(scores)) if np.isfinite(scores).any() else 0
     return candidates[best_idx], float(scores[best_idx]), failed
 

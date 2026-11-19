@@ -40,11 +40,16 @@ MODEL_SETS: Dict[str, Dict[str, Path]] = {
         "pusht": ART / "lewm_pusht_program_results/generated_models/pusht_patchworld_program_induced_best.py",
     },
     "qwen35": {e: ART / f"llm_family/v1_{e}_qwen35_s0/models/offline_multi_step.py" for e in ENVS},
+    "null": {e: ART / f"null_models/{e}_null.py" for e in ENVS},
+    "qwen35_tooltrace": {e: ART / f"llm_family/tooltrace_{e}_qwen35_s0/models/offline_multi_step.py" for e in ENVS},
 }
 MODES = {
+    "oracle_induced": ("oracle", 0.0),
     "tool_induced": ("tool_live", 0.0),
     "oracle_hybrid": ("oracle", 0.3),
     "tool_hybrid": ("tool_live", 0.3),
+    # Simulator scores a uniformly random 30% of candidates; only those are eligible.
+    "oracle_hybrid_random": ("oracle", 0.3),
 }
 
 
@@ -56,6 +61,7 @@ def _job(payload: Dict[str, Any]) -> Dict[str, Any]:
     out_path = Path(payload["out"])
     env, seed, mode = payload["env"], int(payload["seed"]), payload["mode"]
     t0 = time.time()
+    os.environ["VPW_SIM_VERIFY_ORDER"] = "random" if mode.endswith("_random") else "model"
     try:
         if mode == "mujoco":
             report = _run_mujoco(env, 50, seed, int(payload["workers"]))

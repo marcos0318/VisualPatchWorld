@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -543,6 +544,7 @@ def plan_cem(
     best_values = mean.copy()
     failed_rollouts = 0
     verify_count = max(0, int(math.ceil(num_samples * sim_verify_frac))) if sim_verify_frac > 0 else 0
+    verify_rng = np.random.default_rng(seed + 7919)
 
     for _ in range(max(1, cem_iters)):
         candidates = rng.normal(loc=mean, scale=std, size=(num_samples, horizon, 2))
@@ -563,7 +565,11 @@ def plan_cem(
         if verify_count > 0 and sim_env is not None and sim_start_state is not None:
             finite = np.isfinite(scores)
             if finite.any():
-                ranked = np.argsort(scores)
+                random_order = os.environ.get("VPW_SIM_VERIFY_ORDER", "model") == "random"
+                ranked = verify_rng.permutation(num_samples) if random_order else np.argsort(scores)
+                if random_order:
+                    unverified = np.ones(num_samples, dtype=bool)
+                    unverified[ranked[:verify_count]] = False
                 for sample_idx in ranked[:verify_count]:
                     if not finite[sample_idx]:
                         continue
@@ -577,6 +583,8 @@ def plan_cem(
                         scores[sample_idx] = pusht_goal_distance(goal_state, sim_state)
                     except Exception:
                         failed_rollouts += 1
+                if random_order:
+                    scores[unverified] = np.inf
         finite = np.isfinite(scores)
         if not finite.any():
             continue

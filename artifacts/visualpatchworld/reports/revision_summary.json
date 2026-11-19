@@ -1,0 +1,616 @@
+{
+  "null_floor": {
+    "tworoom": {
+      "n": 5,
+      "mean": 5.2,
+      "sd": 1.8,
+      "per_seed": [
+        6.0,
+        4.0,
+        8.0,
+        4.0,
+        4.0
+      ]
+    },
+    "reacher": {
+      "n": 5,
+      "mean": 16.4,
+      "sd": 4.8,
+      "per_seed": [
+        20.0,
+        22.0,
+        10.0,
+        14.000000000000002,
+        16.0
+      ]
+    },
+    "cube": {
+      "n": 5,
+      "mean": 69.2,
+      "sd": 7.3,
+      "per_seed": [
+        66.0,
+        82.0,
+        64.0,
+        66.0,
+        68.0
+      ]
+    },
+    "pusht": {
+      "n": 5,
+      "mean": 0.0,
+      "sd": 0.0,
+      "per_seed": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "random_shortlist": {
+    "tworoom": {
+      "n": 5,
+      "mean": 100.0,
+      "sd": 0.0,
+      "per_seed": [
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ]
+    },
+    "reacher": {
+      "n": 5,
+      "mean": 100.0,
+      "sd": 0.0,
+      "per_seed": [
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ]
+    },
+    "cube": {
+      "n": 5,
+      "mean": 86.0,
+      "sd": 4.9,
+      "per_seed": [
+        88.0,
+        92.0,
+        80.0,
+        82.0,
+        88.0
+      ]
+    },
+    "pusht": {
+      "n": 5,
+      "mean": 92.8,
+      "sd": 3.6,
+      "per_seed": [
+        88.0,
+        92.0,
+        94.0,
+        98.0,
+        92.0
+      ]
+    }
+  },
+  "tooltrace_oracle_replan": {
+    "tworoom": {
+      "n": 5,
+      "mean": 93.6,
+      "sd": 2.2,
+      "per_seed": [
+        94.0,
+        90.0,
+        94.0,
+        96.0,
+        94.0
+      ]
+    },
+    "reacher": {
+      "n": 5,
+      "mean": 84.4,
+      "sd": 2.6,
+      "per_seed": [
+        80.0,
+        86.0,
+        86.0,
+        86.0,
+        84.0
+      ]
+    },
+    "cube": {
+      "n": 5,
+      "mean": 62.4,
+      "sd": 9.2,
+      "per_seed": [
+        70.0,
+        74.0,
+        52.0,
+        57.99999999999999,
+        57.99999999999999
+      ]
+    }
+  },
+  "tooltrace_tool_replan": {
+    "tworoom": {
+      "n": 5,
+      "mean": 94.0,
+      "sd": 2.4,
+      "per_seed": [
+        94.0,
+        92.0,
+        92.0,
+        98.0,
+        94.0
+      ]
+    },
+    "reacher": {
+      "n": 5,
+      "mean": 54.8,
+      "sd": 3.6,
+      "per_seed": [
+        56.00000000000001,
+        50.0,
+        52.0,
+        57.99999999999999,
+        57.99999999999999
+      ]
+    },
+    "cube": {
+      "n": 5,
+      "mean": 60.8,
+      "sd": 5.0,
+      "per_seed": [
+        62.0,
+        68.0,
+        54.0,
+        60.0,
+        60.0
+      ]
+    }
+  },
+  "tooltrace_winner": {
+    "tworoom": {
+      "winner": "distance_dependent_speed",
+      "params": {
+        "base_speed": 20.389003300119292,
+        "distance_gain": 0.029791592830433637,
+        "min_speed": 2.6501545049084156
+      },
+      "val5": 0.10362677149616253
+    },
+    "reacher": {
+      "winner": "kinematic_forward",
+      "params": {
+        "joint_gain": 0.5051839491104858,
+        "link1_len": 0.1168553026069403,
+        "link2_len": 0.11430322015047253,
+        "base_x": -0.0008303287438385676,
+        "base_y": 0.0013630620645033993
+      },
+      "val5": 1.052656852007827
+    },
+    "cube": {
+      "winner": "direct_kinematic_contact",
+      "params": {
+        "effector_speed": -0.005852485327626968,
+        "contact_threshold_z": 0.1584407525518736,
+        "contact_threshold_xy": 0.16360323212300956,
+        "block_push_gain": -11.297731825898737,
+        "gripper_z_offset": 0.22716804564203685
+      },
+      "val5": 1.386548910979541
+    }
+  },
+  "bank_nochain": {
+    "coder": {
+      "offline_multi_step": {
+        "n": 5,
+        "mean": 84.8,
+        "sd": 2.7,
+        "per_seed": [
+          82.0,
+          88.0,
+          86.0,
+          86.0,
+          82.0
+        ]
+      },
+      "offline_one_step": {
+        "n": 5,
+        "mean": 84.0,
+        "sd": 4.0,
+        "per_seed": [
+          78.0,
+          86.0,
+          86.0,
+          88.0,
+          82.0
+        ]
+      },
+      "winner": {
+        "winner": "coupled_joint_dynamics",
+        "params": {
+          "link_length": 0.11829036695352177,
+          "joint_gain": 0.8160916739546824
+        },
+        "val5": 0.7189299526270644
+      }
+    },
+    "gptoss": {
+      "offline_multi_step": {
+        "n": 5,
+        "mean": 44.0,
+        "sd": 4.2,
+        "per_seed": [
+          40.0,
+          50.0,
+          44.0,
+          46.0,
+          40.0
+        ]
+      },
+      "offline_one_step": {
+        "n": 5,
+        "mean": 43.6,
+        "sd": 4.1,
+        "per_seed": [
+          40.0,
+          50.0,
+          44.0,
+          44.0,
+          40.0
+        ]
+      },
+      "winner": {
+        "winner": "potential_field_finger",
+        "params": {
+          "dt": 0.8524091108484362,
+          "k_att": 0.023259674321875954,
+          "action_scale": -0.00034788462698480063
+        },
+        "val5": 1.4934102363576351
+      }
+    }
+  },
+  "proposal_seeds": {
+    "tworoom": {
+      "s0": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 94.0,
+          "sd": 3.7,
+          "per_seed": [
+            96.0,
+            88.0,
+            94.0,
+            98.0,
+            94.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 94.0,
+          "sd": 2.8,
+          "per_seed": [
+            96.0,
+            90.0,
+            96.0,
+            96.0,
+            92.0
+          ]
+        },
+        "winner": "saturating_nonlinear_response"
+      },
+      "s1": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 94.0,
+          "sd": 3.2,
+          "per_seed": [
+            96.0,
+            94.0,
+            92.0,
+            98.0,
+            90.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 92.8,
+          "sd": 4.6,
+          "per_seed": [
+            96.0,
+            86.0,
+            92.0,
+            98.0,
+            92.0
+          ]
+        },
+        "winner": "door_gated"
+      },
+      "s2": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 94.8,
+          "sd": 2.7,
+          "per_seed": [
+            96.0,
+            92.0,
+            96.0,
+            98.0,
+            92.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 93.6,
+          "sd": 2.6,
+          "per_seed": [
+            96.0,
+            94.0,
+            92.0,
+            96.0,
+            90.0
+          ]
+        },
+        "winner": "goal_direction_bias"
+      }
+    },
+    "reacher": {
+      "s0": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 83.6,
+          "sd": 3.6,
+          "per_seed": [
+            80.0,
+            88.0,
+            84.0,
+            86.0,
+            80.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 79.6,
+          "sd": 4.8,
+          "per_seed": [
+            74.0,
+            86.0,
+            80.0,
+            82.0,
+            76.0
+          ]
+        },
+        "winner": "forward_kinematics"
+      },
+      "s1": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 83.6,
+          "sd": 3.6,
+          "per_seed": [
+            80.0,
+            88.0,
+            84.0,
+            86.0,
+            80.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 79.6,
+          "sd": 4.8,
+          "per_seed": [
+            74.0,
+            86.0,
+            80.0,
+            82.0,
+            76.0
+          ]
+        },
+        "winner": "arm_driven_fk"
+      },
+      "s2": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 98.4,
+          "sd": 2.2,
+          "per_seed": [
+            96.0,
+            100.0,
+            100.0,
+            100.0,
+            96.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 80.0,
+          "sd": 4.2,
+          "per_seed": [
+            76.0,
+            86.0,
+            80.0,
+            82.0,
+            76.0
+          ]
+        },
+        "winner": "saturated_joint_limits"
+      }
+    },
+    "cube": {
+      "s0": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 82.4,
+          "sd": 7.7,
+          "per_seed": [
+            86.0,
+            92.0,
+            72.0,
+            78.0,
+            84.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 82.0,
+          "sd": 8.0,
+          "per_seed": [
+            86.0,
+            92.0,
+            72.0,
+            76.0,
+            84.0
+          ]
+        },
+        "winner": "action_grip_controlled"
+      },
+      "s1": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 80.0,
+          "sd": 8.1,
+          "per_seed": [
+            84.0,
+            92.0,
+            72.0,
+            74.0,
+            78.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 80.0,
+          "sd": 8.1,
+          "per_seed": [
+            84.0,
+            92.0,
+            72.0,
+            74.0,
+            78.0
+          ]
+        },
+        "winner": "gripper_state_grasp"
+      },
+      "s2": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 80.8,
+          "sd": 8.6,
+          "per_seed": [
+            86.0,
+            92.0,
+            70.0,
+            76.0,
+            80.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 80.4,
+          "sd": 8.6,
+          "per_seed": [
+            86.0,
+            92.0,
+            70.0,
+            76.0,
+            78.0
+          ]
+        },
+        "winner": "kinematic_binary_grasp"
+      }
+    },
+    "pusht": {
+      "s0": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 0.0,
+          "sd": 0.0,
+          "per_seed": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 20.0,
+          "sd": 7.1,
+          "per_seed": [
+            24.0,
+            22.0,
+            8.0,
+            20.0,
+            26.0
+          ]
+        },
+        "winner": "hard_contact_push"
+      },
+      "s1": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 1.6,
+          "sd": 2.6,
+          "per_seed": [
+            0.0,
+            2.0,
+            0.0,
+            6.0,
+            0.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 0.8,
+          "sd": 1.1,
+          "per_seed": [
+            0.0,
+            2.0,
+            0.0,
+            2.0,
+            0.0
+          ]
+        },
+        "winner": "contact_push_saturation"
+      },
+      "s2": {
+        "offline_multi_step": {
+          "n": 5,
+          "mean": 0.8,
+          "sd": 1.8,
+          "per_seed": [
+            0.0,
+            0.0,
+            0.0,
+            4.0,
+            0.0
+          ]
+        },
+        "offline_one_step": {
+          "n": 5,
+          "mean": 1.2,
+          "sd": 1.8,
+          "per_seed": [
+            0.0,
+            2.0,
+            0.0,
+            4.0,
+            0.0
+          ]
+        },
+        "winner": "saturated_nonlinear_dynamics"
+      }
+    }
+  }
+}
