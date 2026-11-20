@@ -1,0 +1,1031 @@
+[
+ {
+  "name": "euler_integration",
+  "mechanism": "Updates position based on current velocity over a time step.",
+  "equations": "pos_new = pos_old + vel * dt",
+  "snippet": "def step(pos, vel, dt):\n    return pos + vel * dt",
+  "params": [
+   {
+    "name": "pos",
+    "meaning": "current position coordinate"
+   },
+   {
+    "name": "vel",
+    "meaning": "current velocity coordinate"
+   },
+   {
+    "name": "dt",
+    "meaning": "time step size"
+   }
+  ],
+  "tags": [
+   "kinematics",
+   "integration",
+   "discrete",
+   "position",
+   "velocity",
+   "time",
+   "update",
+   "generic",
+   "simulation",
+   "step"
+  ],
+  "topic": "kinematics",
+  "source": "general"
+ },
+ {
+  "name": "velocity_clamp",
+  "mechanism": "Limits velocity magnitude to a maximum threshold.",
+  "equations": "vel_new = clamp(vel, -max_vel, max_vel)",
+  "snippet": "def step(vel, max_vel, dt):\n    if vel > max_vel: return max_vel\n    if vel < -max_vel: return -max_vel\n    return vel",
+  "params": [
+   {
+    "name": "vel",
+    "meaning": "current velocity"
+   },
+   {
+    "name": "max_vel",
+    "meaning": "maximum allowed speed"
+   },
+   {
+    "name": "dt",
+    "meaning": "time step size"
+   }
+  ],
+  "tags": [
+   "kinematics",
+   "clamp",
+   "limit",
+   "velocity",
+   "bound",
+   "constraint",
+   "generic",
+   "simulation",
+   "control",
+   "step"
+  ],
+  "topic": "kinematics",
+  "source": "general"
+ },
+ {
+  "name": "newton_acceleration",
+  "mechanism": "Computes acceleration from net force and mass.",
+  "equations": "acc = force / mass",
+  "snippet": "def step(force, mass, dt):\n    if mass <= 0: return 0.0\n    return force / mass",
+  "params": [
+   {
+    "name": "force",
+    "meaning": "net applied force"
+   },
+   {
+    "name": "mass",
+    "meaning": "object inertia mass"
+   },
+   {
+    "name": "acc",
+    "meaning": "resulting acceleration"
+   }
+  ],
+  "tags": [
+   "dynamics",
+   "newton",
+   "force",
+   "mass",
+   "acceleration",
+   "inertia",
+   "generic",
+   "physics",
+   "simulation",
+   "step"
+  ],
+  "topic": "dynamics",
+  "source": "general"
+ },
+ {
+  "name": "linear_drag",
+  "mechanism": "Applies resistive force proportional to velocity.",
+  "equations": "force_drag = -drag_coeff * vel",
+  "snippet": "def step(vel, drag_coeff, dt):\n    return -drag_coeff * vel",
+  "params": [
+   {
+    "name": "vel",
+    "meaning": "current velocity"
+   },
+   {
+    "name": "drag_coeff",
+    "meaning": "damping coefficient"
+   },
+   {
+    "name": "force",
+    "meaning": "resulting drag force"
+   }
+  ],
+  "tags": [
+   "dynamics",
+   "drag",
+   "damping",
+   "resistance",
+   "velocity",
+   "force",
+   "generic",
+   "physics",
+   "fluid",
+   "step"
+  ],
+  "topic": "dynamics",
+  "source": "general"
+ },
+ {
+  "name": "forward_kinematics_2d",
+  "mechanism": "Computes end-effector position from joint angles.",
+  "equations": "x = l1*cos(a1) + l2*cos(a1+a2)",
+  "snippet": "import math\ndef step(angle_1, angle_2, len_1, len_2, dt):\n    x = len_1*math.cos(angle_1) + len_2*math.cos(angle_1+angle_2)\n    return x",
+  "params": [
+   {
+    "name": "angle_1",
+    "meaning": "first joint angle"
+   },
+   {
+    "name": "angle_2",
+    "meaning": "second joint angle"
+   },
+   {
+    "name": "len_1",
+    "meaning": "first link length"
+   },
+   {
+    "name": "len_2",
+    "meaning": "second link length"
+   }
+  ],
+  "tags": [
+   "kinematics",
+   "robotics",
+   "forward",
+   "angles",
+   "position",
+   "chain",
+   "generic",
+   "geometry",
+   "trigonometry",
+   "step"
+  ],
+  "topic": "articulated_chains",
+  "source": "general"
+ },
+ {
+  "name": "joint_limit_clamp",
+  "mechanism": "Constrains joint angle within physical limits.",
+  "equations": "angle = clamp(angle, min_lim, max_lim)",
+  "snippet": "def step(angle, min_lim, max_lim, dt):\n    if angle < min_lim: return min_lim\n    if angle > max_lim: return max_lim\n    return angle",
+  "params": [
+   {
+    "name": "angle",
+    "meaning": "current joint angle"
+   },
+   {
+    "name": "min_lim",
+    "meaning": "lower joint limit"
+   },
+   {
+    "name": "max_lim",
+    "meaning": "upper joint limit"
+   }
+  ],
+  "tags": [
+   "constraints",
+   "joint",
+   "limits",
+   "angle",
+   "clamp",
+   "robotics",
+   "generic",
+   "safety",
+   "bounds",
+   "step"
+  ],
+  "topic": "articulated_chains",
+  "source": "general"
+ },
+ {
+  "name": "pd_control",
+  "mechanism": "Generates command based on position error and velocity.",
+  "equations": "cmd = kp*(target - pos) - kd*vel",
+  "snippet": "def step(pos, target, vel, kp, kd, dt):\n    err = target - pos\n    return kp * err - kd * vel",
+  "params": [
+   {
+    "name": "pos",
+    "meaning": "current position"
+   },
+   {
+    "name": "target",
+    "meaning": "desired position"
+   },
+   {
+    "name": "vel",
+    "meaning": "current velocity"
+   },
+   {
+    "name": "kp",
+    "meaning": "proportional gain"
+   },
+   {
+    "name": "kd",
+    "meaning": "derivative gain"
+   }
+  ],
+  "tags": [
+   "control",
+   "feedback",
+   "pd",
+   "gain",
+   "error",
+   "actuation",
+   "generic",
+   "tracking",
+   "controller",
+   "step"
+  ],
+  "topic": "actuation",
+  "source": "general"
+ },
+ {
+  "name": "actuator_saturation",
+  "mechanism": "Limits control command to actuator capacity.",
+  "equations": "cmd_out = clamp(cmd_in, -max_act, max_act)",
+  "snippet": "def step(cmd_in, max_act, dt):\n    if cmd_in > max_act: return max_act\n    if cmd_in < -max_act: return -max_act\n    return cmd_in",
+  "params": [
+   {
+    "name": "cmd_in",
+    "meaning": "requested command"
+   },
+   {
+    "name": "max_act",
+    "meaning": "maximum actuator output"
+   }
+  ],
+  "tags": [
+   "actuation",
+   "saturation",
+   "limit",
+   "command",
+   "clamp",
+   "hardware",
+   "generic",
+   "control",
+   "bounds",
+   "step"
+  ],
+  "topic": "actuation",
+  "source": "general"
+ },
+ {
+  "name": "position_bounds",
+  "mechanism": "Hard constraints on spatial coordinate range.",
+  "equations": "pos = clamp(pos, lower, upper)",
+  "snippet": "def step(pos, lower, upper, dt):\n    if pos < lower: return lower\n    if pos > upper: return upper\n    return pos",
+  "params": [
+   {
+    "name": "pos",
+    "meaning": "current position"
+   },
+   {
+    "name": "lower",
+    "meaning": "minimum bound"
+   },
+   {
+    "name": "upper",
+    "meaning": "maximum bound"
+   }
+  ],
+  "tags": [
+   "constraints",
+   "bounds",
+   "position",
+   "clamp",
+   "geometry",
+   "limits",
+   "generic",
+   "space",
+   "validation",
+   "step"
+  ],
+  "topic": "constraints",
+  "source": "general"
+ },
+ {
+  "name": "soft_barrier",
+  "mechanism": "Applies repulsive force when crossing boundary.",
+  "equations": "force = k * max(0, boundary - pos)",
+  "snippet": "def step(pos, boundary, k, dt):\n    penetration = boundary - pos\n    if penetration > 0: return k * penetration\n    return 0.0",
+  "params": [
+   {
+    "name": "pos",
+    "meaning": "current position"
+   },
+   {
+    "name": "boundary",
+    "meaning": "constraint limit"
+   },
+   {
+    "name": "k",
+    "meaning": "stiffness coefficient"
+   }
+  ],
+  "tags": [
+   "constraints",
+   "barrier",
+   "force",
+   "soft",
+   "penalty",
+   "geometry",
+   "generic",
+   "collision",
+   "potential",
+   "step"
+  ],
+  "topic": "constraints",
+  "source": "general"
+ },
+ {
+  "name": "elastic_collision",
+  "mechanism": "Reverses velocity upon impact with restitution.",
+  "equations": "vel_new = -restitution * vel_old",
+  "snippet": "def step(vel, restitution, dt):\n    return -restitution * vel",
+  "params": [
+   {
+    "name": "vel",
+    "meaning": "impact velocity"
+   },
+   {
+    "name": "restitution",
+    "meaning": "bounce coefficient (0-1)"
+   }
+  ],
+  "tags": [
+   "contact",
+   "collision",
+   "elastic",
+   "velocity",
+   "bounce",
+   "restitution",
+   "generic",
+   "impact",
+   "physics",
+   "step"
+  ],
+  "topic": "contact",
+  "source": "general"
+ },
+ {
+  "name": "impulse_resolution",
+  "mechanism": "Updates velocity from instantaneous impulse.",
+  "equations": "vel_new = vel_old + impulse / mass",
+  "snippet": "def step(vel, impulse, mass, dt):\n    if mass <= 0: return vel\n    return vel + impulse / mass",
+  "params": [
+   {
+    "name": "vel",
+    "meaning": "current velocity"
+   },
+   {
+    "name": "impulse",
+    "meaning": "applied impulse"
+   },
+   {
+    "name": "mass",
+    "meaning": "object mass"
+   }
+  ],
+  "tags": [
+   "contact",
+   "impulse",
+   "momentum",
+   "velocity",
+   "mass",
+   "collision",
+   "generic",
+   "physics",
+   "discrete",
+   "step"
+  ],
+  "topic": "contact",
+  "source": "general"
+ },
+ {
+  "name": "coulomb_friction",
+  "mechanism": "Constant resistive force opposing motion direction.",
+  "equations": "force = -mu * normal * sign(vel)",
+  "snippet": "def step(vel, mu, normal, dt):\n    if vel == 0: return 0.0\n    sign = 1 if vel > 0 else -1\n    return -mu * normal * sign",
+  "params": [
+   {
+    "name": "vel",
+    "meaning": "current velocity"
+   },
+   {
+    "name": "mu",
+    "meaning": "friction coefficient"
+   },
+   {
+    "name": "normal",
+    "meaning": "normal force magnitude"
+   }
+  ],
+  "tags": [
+   "friction",
+   "coulomb",
+   "dry",
+   "force",
+   "velocity",
+   "resistance",
+   "generic",
+   "physics",
+   "contact",
+   "step"
+  ],
+  "topic": "friction",
+  "source": "general"
+ },
+ {
+  "name": "static_friction_lock",
+  "mechanism": "Prevents motion if applied force is below threshold.",
+  "equations": "if abs(force) < thresh: vel = 0",
+  "snippet": "def step(vel, force, thresh, dt):\n    if abs(force) < thresh:\n        return 0.0\n    return vel",
+  "params": [
+   {
+    "name": "force",
+    "meaning": "applied tangential force"
+   },
+   {
+    "name": "thresh",
+    "meaning": "static friction threshold"
+   },
+   {
+    "name": "vel",
+    "meaning": "current velocity"
+   }
+  ],
+  "tags": [
+   "friction",
+   "static",
+   "lock",
+   "threshold",
+   "force",
+   "velocity",
+   "generic",
+   "stiction",
+   "physics",
+   "step"
+  ],
+  "topic": "friction",
+  "source": "general"
+ },
+ {
+  "name": "angular_acceleration",
+  "mechanism": "Updates angular velocity from torque and inertia.",
+  "equations": "ang_acc = torque / inertia",
+  "snippet": "def step(torque, inertia, dt):\n    if inertia <= 0: return 0.0\n    return torque / inertia",
+  "params": [
+   {
+    "name": "torque",
+    "meaning": "applied torque"
+   },
+   {
+    "name": "inertia",
+    "meaning": "moment of inertia"
+   },
+   {
+    "name": "ang_vel",
+    "meaning": "angular velocity"
+   }
+  ],
+  "tags": [
+   "rotation",
+   "torque",
+   "inertia",
+   "angular",
+   "acceleration",
+   "dynamics",
+   "generic",
+   "physics",
+   "rigid_body",
+   "step"
+  ],
+  "topic": "rotation",
+  "source": "general"
+ },
+ {
+  "name": "tangential_velocity",
+  "mechanism": "Computes linear velocity from angular rate and radius.",
+  "equations": "vel_tan = ang_vel * radius",
+  "snippet": "def step(ang_vel, radius, dt):\n    return ang_vel * radius",
+  "params": [
+   {
+    "name": "ang_vel",
+    "meaning": "angular velocity"
+   },
+   {
+    "name": "radius",
+    "meaning": "distance from center"
+   }
+  ],
+  "tags": [
+   "rotation",
+   "velocity",
+   "tangential",
+   "radius",
+   "kinematics",
+   "angular",
+   "generic",
+   "physics",
+   "linear",
+   "step"
+  ],
+  "topic": "rotation",
+  "source": "general"
+ },
+ {
+  "name": "gravity_force",
+  "mechanism": "Applies constant downward force based on mass.",
+  "equations": "force_y = mass * gravity_const",
+  "snippet": "def step(mass, gravity_const, dt):\n    return mass * gravity_const",
+  "params": [
+   {
+    "name": "mass",
+    "meaning": "object mass"
+   },
+   {
+    "name": "gravity_const",
+    "meaning": "gravitational acceleration"
+   }
+  ],
+  "tags": [
+   "gravity",
+   "force",
+   "mass",
+   "weight",
+   "vertical",
+   "field",
+   "generic",
+   "physics",
+   "constant",
+   "step"
+  ],
+  "topic": "gravity",
+  "source": "general"
+ },
+ {
+  "name": "normal_support",
+  "mechanism": "Counteracts gravity when resting on surface.",
+  "equations": "if pos < ground: force_normal = -force_gravity",
+  "snippet": "def step(pos, ground, force_g, dt):\n    if pos <= ground: return -force_g\n    return 0.0",
+  "params": [
+   {
+    "name": "pos",
+    "meaning": "vertical position"
+   },
+   {
+    "name": "ground",
+    "meaning": "surface height"
+   },
+   {
+    "name": "force_g",
+    "meaning": "gravity force"
+   }
+  ],
+  "tags": [
+   "gravity",
+   "support",
+   "normal",
+   "contact",
+   "ground",
+   "force",
+   "generic",
+   "resting",
+   "physics",
+   "step"
+  ],
+  "topic": "gravity",
+  "source": "general"
+ },
+ {
+  "name": "kinematic_attach",
+  "mechanism": "Sets object position relative to anchor point.",
+  "equations": "pos_obj = pos_anchor + offset",
+  "snippet": "def step(pos_anchor, offset, dt):\n    return pos_anchor + offset",
+  "params": [
+   {
+    "name": "pos_anchor",
+    "meaning": "anchor position"
+   },
+   {
+    "name": "offset",
+    "meaning": "relative offset vector"
+   }
+  ],
+  "tags": [
+   "attachment",
+   "kinematic",
+   "anchor",
+   "position",
+   "offset",
+   "link",
+   "generic",
+   "grasp",
+   "transform",
+   "step"
+  ],
+  "topic": "attachment",
+  "source": "general"
+ },
+ {
+  "name": "force_release",
+  "mechanism": "Detaches body if interaction force exceeds limit.",
+  "equations": "if force > thresh: attached = False",
+  "snippet": "def step(force, thresh, attached, dt):\n    if attached and force > thresh:\n        return False\n    return attached",
+  "params": [
+   {
+    "name": "force",
+    "meaning": "interaction force"
+   },
+   {
+    "name": "thresh",
+    "meaning": "release threshold"
+   },
+   {
+    "name": "attached",
+    "meaning": "current attachment state"
+   }
+  ],
+  "tags": [
+   "attachment",
+   "release",
+   "force",
+   "threshold",
+   "state",
+   "detach",
+   "generic",
+   "grasp",
+   "logic",
+   "step"
+  ],
+  "topic": "attachment",
+  "source": "general"
+ },
+ {
+  "name": "hookean_spring",
+  "mechanism": "Applies force proportional to displacement from rest.",
+  "equations": "force = -stiffness * (pos - rest_pos)",
+  "snippet": "def step(pos, rest_pos, stiffness, dt):\n    disp = pos - rest_pos\n    return -stiffness * disp",
+  "params": [
+   {
+    "name": "pos",
+    "meaning": "current position"
+   },
+   {
+    "name": "rest_pos",
+    "meaning": "equilibrium position"
+   },
+   {
+    "name": "stiffness",
+    "meaning": "spring constant k"
+   }
+  ],
+  "tags": [
+   "springs",
+   "elastic",
+   "hooke",
+   "force",
+   "displacement",
+   "stiffness",
+   "generic",
+   "potential",
+   "physics",
+   "step"
+  ],
+  "topic": "springs",
+  "source": "general"
+ },
+ {
+  "name": "spring_damper",
+  "mechanism": "Combines spring force with velocity damping.",
+  "equations": "force = -k * disp - c * vel",
+  "snippet": "def step(disp, vel, k, c, dt):\n    return -k * disp - c * vel",
+  "params": [
+   {
+    "name": "disp",
+    "meaning": "displacement from rest"
+   },
+   {
+    "name": "vel",
+    "meaning": "relative velocity"
+   },
+   {
+    "name": "k",
+    "meaning": "spring stiffness"
+   },
+   {
+    "name": "c",
+    "meaning": "damping coefficient"
+   }
+  ],
+  "tags": [
+   "springs",
+   "damper",
+   "elastic",
+   "damping",
+   "force",
+   "velocity",
+   "generic",
+   "oscillation",
+   "physics",
+   "step"
+  ],
+  "topic": "springs",
+  "source": "general"
+ },
+ {
+  "name": "velocity_mode_switch",
+  "mechanism": "Changes dynamics mode based on velocity threshold.",
+  "equations": "if vel > thresh: mode = 1 else mode = 0",
+  "snippet": "def step(vel, thresh, mode, dt):\n    if vel > thresh: return 1\n    return 0",
+  "params": [
+   {
+    "name": "vel",
+    "meaning": "current velocity"
+   },
+   {
+    "name": "thresh",
+    "meaning": "switching threshold"
+   },
+   {
+    "name": "mode",
+    "meaning": "current dynamics mode"
+   }
+  ],
+  "tags": [
+   "gated",
+   "switch",
+   "mode",
+   "velocity",
+   "threshold",
+   "logic",
+   "generic",
+   "regime",
+   "hybrid",
+   "step"
+  ],
+  "topic": "gated_dynamics",
+  "source": "general"
+ },
+ {
+  "name": "hysteresis_switch",
+  "mechanism": "Switches state with different thresholds for on/off.",
+  "equations": "if val > high: on; elif val < low: off",
+  "snippet": "def step(val, high, low, state, dt):\n    if val > high: return 1\n    if val < low: return 0\n    return state",
+  "params": [
+   {
+    "name": "val",
+    "meaning": "input signal value"
+   },
+   {
+    "name": "high",
+    "meaning": "upper threshold"
+   },
+   {
+    "name": "low",
+    "meaning": "lower threshold"
+   },
+   {
+    "name": "state",
+    "meaning": "current binary state"
+   }
+  ],
+  "tags": [
+   "gated",
+   "hysteresis",
+   "switch",
+   "threshold",
+   "state",
+   "logic",
+   "generic",
+   "bistable",
+   "control",
+   "step"
+  ],
+  "topic": "gated_dynamics",
+  "source": "general"
+ },
+ {
+  "name": "body_frame_transform",
+  "mechanism": "Express a world point in a rigid body's frame (and back) from the body pose (x, y, angle).",
+  "equations": "u = c*(px-x) + s*(py-y); v = -s*(px-x) + c*(py-y); world = (x + c*u - s*v, y + s*u + c*v), c=cos(angle), s=sin(angle)",
+  "snippet": "def to_body(px, py, x, y, ang):\n    c, s = math.cos(ang), math.sin(ang)\n    dx, dy = px - x, py - y\n    return c*dx + s*dy, -s*dx + c*dy\n\ndef to_world(u, v, x, y, ang):\n    c, s = math.cos(ang), math.sin(ang)\n    return x + c*u - s*v, y + s*u + c*v",
+  "params": [],
+  "tags": [
+   "geometry",
+   "rigid_body",
+   "pose",
+   "frame",
+   "rotation"
+  ],
+  "topic": "contact_mechanics_kit",
+  "source": "general"
+ },
+ {
+  "name": "disc_rectangle_contact",
+  "mechanism": "Contact between a disc and an axis-aligned rectangle in the rectangle's body frame: closest point, outward normal, penetration depth.",
+  "equations": "q = clamp(center, rect); d = |center - q|; contact if d < radius; n = (center - q)/d; depth = radius - d",
+  "snippet": "def disc_rect(u, v, radius, u0, u1, v0, v1):\n    qu, qv = min(max(u, u0), u1), min(max(v, v0), v1)\n    eu, ev = u - qu, v - qv\n    d = math.hypot(eu, ev)\n    if d >= radius or d < 1e-9:\n        return None\n    return qu, qv, eu / d, ev / d, radius - d",
+  "params": [
+   {
+    "name": "radius",
+    "meaning": "disc radius"
+   }
+  ],
+  "tags": [
+   "contact",
+   "collision",
+   "geometry",
+   "polygon",
+   "shape",
+   "disc"
+  ],
+  "topic": "contact_mechanics_kit",
+  "source": "general"
+ },
+ {
+  "name": "rigid_body_normal_impulse",
+  "mechanism": "Frictionless inelastic contact impulse on a planar rigid body hit by a kinematic pusher; the impulse acts at the contact point and also produces rotation about the centre of mass.",
+  "equations": "r = contact - com; rn = r_x n_y - r_y n_x; k = 1/m + rn^2/I; vrel = (v_pusher - (v_body + w x r)).n; j = max(0, (bias - vrel)/k); v_body -= j n/m; w -= j rn/I",
+  "snippet": "def normal_impulse(vb, w, v_push, r, n, m, I, bias=0.0):\n    rn = r[0]*n[1] - r[1]*n[0]\n    k = 1.0/m + rn*rn/I\n    vp = (vb[0] - w*r[1], vb[1] + w*r[0])\n    vrel = (v_push[0]-vp[0])*n[0] + (v_push[1]-vp[1])*n[1]\n    j = max(0.0, (bias - vrel)/k)\n    return (vb[0] - j*n[0]/m, vb[1] - j*n[1]/m), w - j*rn/I",
+  "params": [
+   {
+    "name": "m",
+    "meaning": "body mass"
+   },
+   {
+    "name": "I",
+    "meaning": "moment of inertia about the centre of mass"
+   }
+  ],
+  "tags": [
+   "contact",
+   "impulse",
+   "rigid_body",
+   "rotation",
+   "torque",
+   "pushing"
+  ],
+  "topic": "contact_mechanics_kit",
+  "source": "general"
+ },
+ {
+  "name": "pd_tracking_substeps",
+  "mechanism": "An actuator tracks a target set by the action with a PD law, integrated with several small substeps per control step.",
+  "equations": "target = pos + scale*action; for each substep: vel += (kp*(target-pos) - kv*vel)*dt; pos += vel*dt",
+  "snippet": "def pd_track(pos, vel, target, kp, kv, dt, n):\n    for _ in range(n):\n        vel += (kp*(target - pos) - kv*vel)*dt\n        pos += vel*dt\n    return pos, vel",
+  "params": [
+   {
+    "name": "kp",
+    "meaning": "stiffness"
+   },
+   {
+    "name": "kv",
+    "meaning": "damping"
+   },
+   {
+    "name": "dt",
+    "meaning": "substep"
+   },
+   {
+    "name": "n",
+    "meaning": "substeps per control step"
+   }
+  ],
+  "tags": [
+   "actuation",
+   "control",
+   "pd",
+   "integration",
+   "substeps"
+  ],
+  "topic": "contact_mechanics_kit",
+  "source": "general"
+ },
+ {
+  "name": "quasi_static_pushing",
+  "mechanism": "A pushed object with high damping has no momentum: it moves only during contact, by the contact impulse of that substep, and stops when contact ends.",
+  "equations": "each substep: v_body = 0; apply contact impulses; pos += v_body*dt; angle += w*dt",
+  "snippet": "def quasi_static_update(com, ang, impulses_v, impulses_w, dt):\n    return (com[0] + impulses_v[0]*dt, com[1] + impulses_v[1]*dt), ang + impulses_w*dt",
+  "params": [],
+  "tags": [
+   "contact",
+   "pushing",
+   "quasi_static",
+   "damping",
+   "manipulation"
+  ],
+  "topic": "contact_mechanics_kit",
+  "source": "general"
+ },
+ {
+  "name": "rotation_about_centre_of_mass",
+  "mechanism": "A rigid body reported by a reference point (x, y, angle) rotates about its centre of mass, which is offset from the reference point by an unknown body-frame vector (fit it); update the centre of mass and angle, then recover the reference point.",
+  "equations": "g = (x, y) + R(angle) c; g' = g + v dt; angle' = angle + w dt; (x', y') = g' - R(angle') c",
+  "snippet": "def move_about_com(x, y, ang, cu, cv, vx, vy, w, dt):\n    c, s = math.cos(ang), math.sin(ang)\n    gx, gy = x + c*cu - s*cv + vx*dt, y + s*cu + c*cv + vy*dt\n    ang2 = ang + w*dt\n    c2, s2 = math.cos(ang2), math.sin(ang2)\n    return gx - (c2*cu - s2*cv), gy - (s2*cu + c2*cv), ang2",
+  "params": [
+   {
+    "name": "cu",
+    "meaning": "centre-of-mass body-frame u offset"
+   },
+   {
+    "name": "cv",
+    "meaning": "centre-of-mass body-frame v offset"
+   }
+  ],
+  "tags": [
+   "rigid_body",
+   "rotation",
+   "centre_of_mass",
+   "pivot",
+   "pose"
+  ],
+  "topic": "rigid_body_skills",
+  "source": "general"
+ },
+ {
+  "name": "substep_integration",
+  "mechanism": "One recorded transition spans a control period much longer than the dynamics' time scale (stiff PD tracking, contact). Integrate the whole step function with n small substeps (n ~ 5-10) holding the action fixed; explicit single-step updates of stiff contact are unstable.",
+  "equations": "for i in 1..n: (state) <- substep(state, action, dt = T/n)",
+  "snippet": "for _ in range(n):\n    vel += (kp*(target - pos) - kv*vel)*dt\n    # ... contact detection and impulses at the current positions ...\n    pos += vel*dt",
+  "params": [
+   {
+    "name": "n",
+    "meaning": "substeps"
+   },
+   {
+    "name": "dt",
+    "meaning": "substep length"
+   }
+  ],
+  "tags": [
+   "integration",
+   "substeps",
+   "stiff",
+   "contact",
+   "stability"
+  ],
+  "topic": "rigid_body_skills",
+  "source": "general"
+ },
+ {
+  "name": "point_pusher_vs_identified_shape",
+  "mechanism": "If meta carries an identified contact shape (union of body-frame boxes grown by the pusher radius), the pusher touches the body when its centre enters a box; push it out along the nearest face normal with penetration = distance to that face.",
+  "equations": "inside if u0<u<u1 and v0<v<v1; (g, n) = min over faces of (distance, outward normal)",
+  "snippet": "for u0, u1, v0, v1 in meta['contact_shape']['boxes_u_min_u_max_v_min_v_max']:\n    if u0 < u < u1 and v0 < v < v1:\n        g, nu, nv = min((u-u0,-1.0,0.0),(u1-u,1.0,0.0),(v-v0,0.0,-1.0),(v1-v,0.0,1.0))",
+  "params": [],
+  "tags": [
+   "contact",
+   "geometry",
+   "identified_shape",
+   "pushing"
+  ],
+  "topic": "rigid_body_skills",
+  "source": "general"
+ },
+ {
+  "name": "quasi_static_position_contact",
+  "mechanism": "Complete contact solver for a kinematic pusher (contact does not slow it) and a passive rigid body without momentum (it moves only while pushed). Call once per substep AFTER moving the pusher: if the pusher centre is inside the grown shape, translate the body and rotate it about its centre of mass so the pusher returns toward the boundary, splitting the correction between translation and rotation by effective mass. Use with the identified pusher free-space dynamics (meta.pusher_free_dynamics) integrated over the same substeps, and the identified grown shape (meta.contact_shape). Fit com_uv, inertia_over_mass, beta (fraction of penetration corrected per substep) and slop.",
+  "equations": "g = beta*max(depth - slop, 0); n = outward face normal; r = pusher - com; rn = r_x n_y - r_y n_x; lam = g / (1 + rn^2/(I/m)); com -= lam*n; angle -= lam*rn/(I/m)",
+  "snippet": "def quasi_static_contact(pusher_xy, body_xy, body_angle, boxes, com_uv, inertia_over_mass, beta=1.0, slop=0.0, iters=2):\n    import math\n    (ax, ay), (bx, by), th, (cu, cv) = pusher_xy, body_xy, body_angle, com_uv\n    for _ in range(iters):\n        c, s = math.cos(th), math.sin(th)\n        u, v = c * (ax - bx) + s * (ay - by), -s * (ax - bx) + c * (ay - by)\n        hits = [min((u - u0, -1.0, 0.0), (u1 - u, 1.0, 0.0), (v - v0, 0.0, -1.0), (v1 - v, 0.0, 1.0))\n                for u0, u1, v0, v1 in boxes if u0 < u < u1 and v0 < v < v1]\n        if not hits:\n            break\n        g, nu, nv = min(hits)\n        g = beta * max(g - slop, 0.0)\n        nx, ny = c * nu - s * nv, s * nu + c * nv              # outward face normal, world frame\n        gx, gy = bx + c * cu - s * cv, by + s * cu + c * cv    # centre of mass, world frame\n        rn = (ax - gx) * ny - (ay - gy) * nx                    # lever arm x normal\n        lam = g / (1.0 + rn * rn / inertia_over_mass)           # split by effective mass\n        gx, gy, th = gx - lam * nx, gy - lam * ny, th - lam * rn / inertia_over_mass\n        c, s = math.cos(th), math.sin(th)\n        bx, by = gx - (c * cu - s * cv), gy - (s * cu + c * cv)\n    return bx, by, th",
+  "params": [
+   {
+    "name": "com_uv",
+    "meaning": "centre of mass in the body frame"
+   },
+   {
+    "name": "inertia_over_mass",
+    "meaning": "I/m about the centre of mass"
+   },
+   {
+    "name": "beta",
+    "meaning": "fraction of penetration corrected per substep (0-1)"
+   },
+   {
+    "name": "slop",
+    "meaning": "allowed penetration before correcting"
+   }
+  ],
+  "tags": [
+   "contact",
+   "pushing",
+   "quasi_static",
+   "rigid_body",
+   "rotation",
+   "position_based",
+   "manipulation"
+  ],
+  "topic": "contact_mechanics_kit",
+  "source": "general"
+ }
+]
