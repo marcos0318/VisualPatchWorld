@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from visualpatchworld.llm_family.bank import load_bank, render_bank  # noqa: E402
-from visualpatchworld.llm_family.fit import fit_candidate  # noqa: E402
+from visualpatchworld.llm_family.fit import FitTimeout, fit_candidate, time_budget  # noqa: E402
+from visualpatchworld.llm_family.modes import balanced_score, per_mode_errors  # noqa: E402
 from visualpatchworld.llm_family.propose import compile_candidate  # noqa: E402
 from visualpatchworld.llm_family.refine import finite, propose_revisions, residual_report  # noqa: E402
 from visualpatchworld.llm_family.render import render_model  # noqa: E402
@@ -39,6 +40,17 @@ def main() -> None:
     p.add_argument("--max_nfev", type=int, default=200)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--structured_fit", action="store_true")
+    p.add_argument("--balance_modes", action="store_true",
+                   help="weight fitting residuals so each contact mode counts comparably")
+    p.add_argument("--mode_feedback", action="store_true",
+                   help="report per-contact-mode h-step error and the worst transition of each mode")
+    p.add_argument("--select", choices=("rollout", "balanced"), default="rollout",
+                   help="keep revisions by held-out k-step nRMSE, or by its mean over contact modes at --select_h")
+    p.add_argument("--select_h", type=int, default=25)
+    p.add_argument("--cover_modes", action="store_true",
+                   help="choose the fitting/validation episodes from the full files so every contact mode is represented")
+    p.add_argument("--val_episodes", type=int, default=0, help="with --cover_modes: number of validation episodes")
+    p.add_argument("--fit_timeout", type=float, default=1800, help="seconds per revision (fit + score); 0 = none")
     args = p.parse_args()
 
     fam = json.loads((Path(args.run_dir) / "family.json").read_text())
@@ -56,42 +68,79 @@ def main() -> None:
                 t.meta.update(derived)
     keys = state_keys(train)
     scales = state_scales(train, keys)
+    if args.cover_modes:
+        from visualpatchworld.llm_family.modes import covering_episodes, label_episodes
+
+        pool_tr = load_episodes(Path(fa["train_file"] or data / f"{fa['env']}_oracle_traj_train.jsonl"))
+        pool_va = load_episodes(Path(fa["val_file"] or data / f"{fa['env']}_oracle_traj_val.jsonl"))
+        if fa.get("analyze"):
+            for ep in list(pool_tr) + list(pool_va):
+                for t in ep.transitions:
+                    t.meta.update(derived)
+        train = covering_episodes(pool_tr, keys, scales, len(train))
+        val = covering_episodes(pool_va, keys, scales, args.val_episodes or len(val))
+        from collections import Counter
+
+        for name, eps in (("train", train), ("val", val)):
+            print(f"[refine] mode-covering {name} ({len(eps)} episodes): "
+                  f"{dict(Counter(label_episodes(eps, keys, scales).values()))}", flush=True)
     schema = schema_summary(train)
     metas = [t.meta for ep in train for t in ep.transitions]
     static_meta = {k: v for k, v in (metas[0] if metas else {}).items() if all(m.get(k) == v for m in metas)}
     bank_text = render_bank(load_bank(Path(args.bank_file))) if args.bank_file else ""
     check_set = [t for ep in train[:4] for t in ep.transitions][:32]
-    feedback = train[: args.feedback_episodes]
+    feedback = covering_episodes(train, keys, scales, args.feedback_episodes) if args.cover_modes else train[: args.feedback_episodes]
     k = int(fa.get("rollout_k", 5))
 
     sel = fam["selections"][f"offline_{args.objective}"]["winner"]
     start = next(c for c in fam["candidates"] if c["name"] == sel)
     best_cand = compile_candidate(start["code"])
     fr0 = fam["fits"][args.objective][sel]
-    best = {"cand": best_cand, "params": fr0["params"], "val": fr0["val_rollout_nrmse"], "round": 0}
     out = Path(args.output_dir)
     (out / "models").mkdir(parents=True, exist_ok=True)
     log: list = []
-    history = [{"round": 0, "name": sel, "val_rollout_nrmse": best["val"], "code": start["code"]}]
-    print(f"[refine] start {sel} val{k}={best['val']:.4f} ({model})", flush=True)
     t0 = time.time()
+    tag = f"val{k}" if args.select == "rollout" else f"balanced@{args.select_h}"
+    score_label = (f"held-out {k}-step normalized RMSE" if args.select == "rollout" else
+                   f"held-out {args.select_h}-step normalized RMSE averaged over interaction modes")
+
+    def score(c, params, fr_val):
+        if args.select == "rollout":
+            return finite(fr_val), None
+        pm = per_mode_errors(c, params, val, keys, scales, horizons=(1, 5, args.select_h))
+        return finite(balanced_score(pm, args.select_h)), pm
+
+    s0, pm0 = score(best_cand, fr0["params"], fr0["val_rollout_nrmse"])
+    best = {"cand": best_cand, "params": fr0["params"], "val": s0, "round": 0}
+    history = [{"round": 0, "name": sel, "val_rollout_nrmse": fr0["val_rollout_nrmse"], "score": s0, "val_per_mode": pm0,
+                "code": start["code"]}]
+    print(f"[refine] start {sel} {tag}={best['val']:.4f} ({model})", flush=True)
     for rnd in range(1, args.rounds + 1):
-        report, stats = residual_report(best["cand"], best["params"], feedback, keys, scales)
+        report, stats = residual_report(best["cand"], best["params"], feedback, keys, scales, per_mode=args.mode_feedback,
+                                        horizons=(1, 5, args.select_h))
         revs = propose_revisions(best["cand"], best["params"], best["val"], report, static_meta, check_set,
-                                 num_revisions=args.num_revisions, model=model, bank_text=bank_text, log=log)
+                                 num_revisions=args.num_revisions, model=model, bank_text=bank_text, log=log,
+                                 score_label=score_label)
         print(f"[refine] round {rnd}: {len(revs)} valid revisions", flush=True)
         for c in revs:
-            fr = fit_candidate(c, train, val, keys, scales, objective=args.objective, rollout_k=k,
-                               restarts=args.restarts, max_nfev=args.max_nfev, seed=args.seed,
-                               structured=args.structured_fit)
-            v = finite(fr.val_rollout)
-            history.append({"round": rnd, "name": c.name, "mechanism": c.mechanism, "val_rollout_nrmse": v,
-                            "val_one_step_nrmse": fr.val_one_step, "params": fr.params, "code": c.code,
-                            "feedback_stats": stats})
-            print(f"[refine]   {c.name:44s} val1={fr.val_one_step:.4f} val{k}={v:.4f} ({fr.elapsed_s:.0f}s)", flush=True)
+            try:
+                with time_budget(args.fit_timeout):
+                    fr = fit_candidate(c, train, val, keys, scales, objective=args.objective, rollout_k=k,
+                                       restarts=args.restarts, max_nfev=args.max_nfev, seed=args.seed,
+                                       structured=args.structured_fit, balance_modes=args.balance_modes)
+                    v, pm = score(c, fr.params, fr.val_rollout)
+            except FitTimeout as exc:
+                history.append({"round": rnd, "name": c.name, "mechanism": c.mechanism, "timeout": str(exc), "code": c.code})
+                print(f"[refine]   {c.name:44s} skipped: fit {exc}", flush=True)
+                continue
+            history.append({"round": rnd, "name": c.name, "mechanism": c.mechanism, "val_rollout_nrmse": finite(fr.val_rollout),
+                            "score": v, "val_per_mode": pm, "val_one_step_nrmse": fr.val_one_step, "params": fr.params,
+                            "code": c.code, "feedback_stats": stats})
+            print(f"[refine]   {c.name:44s} val1={fr.val_one_step:.4f} val{k}={fr.val_rollout:.4f} {tag}={v:.4f} "
+                  f"({fr.elapsed_s:.0f}s)", flush=True)
             if v < best["val"]:
                 best = {"cand": c, "params": fr.params, "val": v, "round": rnd}
-        print(f"[refine] best after round {rnd}: {best['cand'].name} val{k}={best['val']:.4f}", flush=True)
+        print(f"[refine] best after round {rnd}: {best['cand'].name} {tag}={best['val']:.4f}", flush=True)
         (out / "llm_log.json").write_text(json.dumps(log, indent=2), encoding="utf-8")
         (out / "refine.json").write_text(json.dumps({"args": vars(args), "model": model, "start": sel, "history": history,
                                                      "best": {"name": best["cand"].name, "round": best["round"], "val_rollout_nrmse": best["val"],
@@ -100,7 +149,7 @@ def main() -> None:
         code = render_model(best["cand"], best["params"], env=fa["env"], action_dim=schema["action_dim"], state_keys=keys,
                             objective=args.objective, static_meta=static_meta)
         (out / "models" / f"offline_{args.objective}.py").write_text(code, encoding="utf-8")
-    print(f"[refine] done: {best['cand'].name} val{k}={best['val']:.4f} round={best['round']} ({time.time() - t0:.0f}s)", flush=True)
+    print(f"[refine] done: {best['cand'].name} {tag}={best['val']:.4f} round={best['round']} ({time.time() - t0:.0f}s)", flush=True)
 
 
 if __name__ == "__main__":

@@ -26,9 +26,12 @@ def residual_report(
     *,
     worst: int = 6,
     move_tol: float = 1e-3,
+    per_mode: bool = False,
+    horizons: Sequence[int] = (1, 5, 25),
 ) -> Tuple[str, Dict[str, Any]]:
     """One-step residual summary on ``episodes``: per-field normalized RMSE, split by
-    whether each object's state changed, plus the worst transitions."""
+    whether each object's state changed, plus the worst transitions. ``per_mode`` adds
+    h-step error per contact mode and shows the worst transition of each mode."""
     rows = []
     for ep in episodes:
         for t in ep.transitions:
@@ -54,10 +57,35 @@ def residual_report(
              "Split by whether each object's state changed in the transition:"]
     for name, d in stats["by_motion"].items():
         lines.append(f"  {name}: " + ", ".join(f"{k}={v:.3f}" for k, v in d.items()))
-    lines.append(f"The {worst} worst transitions (state, action, true next_state, your predicted next_state):")
-    for t, pred, _, _ in rows[:worst]:
+    picked = rows[:worst]
+    if per_mode:
+        from .modes import label_episodes, per_mode_errors
+
+        pm = per_mode_errors(cand, params, episodes, keys, scales, horizons=horizons)
+        stats["per_mode"] = pm
+        hs = sorted({int(c.split("@")[1]) for d in pm.values() for c in d if c.startswith("nrmse@")})
+        lines.append("Error by interaction mode. 'free' = the body did not move, 'onset' = first transition of a "
+                     "contact, 'boxI.FACE' = sustained contact on that face of meta.contact_shape (u_min/u_max/"
+                     "v_min/v_max). nrmse@h = normalized error of the state after rolling your program h steps "
+                     "from a transition of that mode. Planning relies on every mode, including rare ones:")
+        for m, d in sorted(pm.items(), key=lambda kv: -kv[1].get("n", 0)):
+            lines.append(f"  {m:14s} n={d.get('n', 0):5d}  " + "  ".join(f"nrmse@{h}={d[f'nrmse@{h}']:.3f}" for h in hs if f"nrmse@{h}" in d))
+        # Worst example per mode (worst modes first) instead of the globally worst, so
+        # rare modes are shown even when common modes dominate the total error.
+        labels = label_episodes(episodes, keys, scales)
+        best_of: Dict[str, Any] = {}
+        for r in rows:
+            m = labels.get(id(r[0]), "unlabelled")
+            best_of.setdefault(m, r)
+        h0 = f"nrmse@{hs[-1]}" if hs else "nrmse@1"
+        order = sorted(best_of, key=lambda m: -pm.get(m, {}).get(h0, 0.0))
+        picked = [best_of[m] for m in order][:worst]
+        picked_modes = order[:worst]
+    lines.append(f"{len(picked)} worst transitions (state, action, true next_state, your predicted next_state):")
+    for i, (t, pred, _, _) in enumerate(picked):
         act = "[" + ", ".join(f"{a:.3f}" for a in t.action) + "]"
-        lines.append(f"- state={fmt(t.state)}\n  action={act}\n  true_next={fmt(t.next_state)}\n  predicted={fmt(pred)}")
+        tag = f" [mode {picked_modes[i]}]" if per_mode else ""
+        lines.append(f"-{tag} state={fmt(t.state)}\n  action={act}\n  true_next={fmt(t.next_state)}\n  predicted={fmt(pred)}")
     return "\n".join(lines), stats
 
 
@@ -70,6 +98,7 @@ def build_refine_prompt(
     *,
     num_revisions: int,
     bank_text: str = "",
+    score_label: str = "held-out 5-step normalized RMSE",
 ) -> str:
     return f"""You are improving an executable world model (a simulator written as code) for an
 unknown control environment, from recorded transitions. Below is the current best program,
@@ -78,7 +107,7 @@ its constants after least-squares fitting, and where it fails.
 Static scene metadata passed to `step` as `meta` (use it if relevant):
 {json.dumps(dict(meta), sort_keys=True)}
 
-Current program (held-out 5-step normalized RMSE = {val_rollout:.4f}):
+Current program ({score_label} = {val_rollout:.4f}):
 ```python
 {cand.code}
 ```
@@ -110,8 +139,10 @@ def propose_revisions(
     bank_text: str = "",
     temperature: float = 0.7,
     log: Optional[List[Dict[str, Any]]] = None,
+    score_label: str = "held-out 5-step normalized RMSE",
 ) -> List[Candidate]:
-    prompt = build_refine_prompt(cand, params, val_rollout, report, meta, num_revisions=num_revisions, bank_text=bank_text)
+    prompt = build_refine_prompt(cand, params, val_rollout, report, meta, num_revisions=num_revisions, bank_text=bank_text,
+                                 score_label=score_label)
     reply = chat(prompt, model=model, temperature=temperature, max_tokens=24000)
     if log is not None:
         log.append({"kind": "refine", "prompt": prompt, **reply})

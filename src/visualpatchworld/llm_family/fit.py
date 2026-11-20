@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
+import signal
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.optimize import least_squares
@@ -14,6 +16,32 @@ from .propose import Candidate
 from .traces import Episode
 
 _BAD = 1e3
+
+
+class FitTimeout(BaseException):
+    """Raised by :func:`time_budget`. A BaseException so the ``except Exception`` guards
+    around optimizer calls do not swallow it."""
+
+
+@contextlib.contextmanager
+def time_budget(seconds: float):
+    """Abort the enclosed block after ``seconds`` (main thread, Unix). Candidate programs
+    may loop over a fitted constant (e.g. ``range(int(p["substeps"]))``) that the
+    optimizer can drive arbitrarily large."""
+    if not seconds or seconds <= 0:
+        yield
+        return
+
+    def _raise(signum, frame):
+        raise FitTimeout(f"exceeded {seconds:.0f}s")
+
+    old = signal.signal(signal.SIGALRM, _raise)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
 
 
 @dataclass
@@ -71,16 +99,19 @@ def residuals(
     scales: Mapping[str, float],
     *,
     k: int,
+    weight_fn: Optional[Callable[[Sequence[Any]], float]] = None,
 ) -> np.ndarray:
-    """Normalized prediction residuals over all length-``k`` rollout windows."""
+    """Normalized prediction residuals over all length-``k`` rollout windows, each
+    window scaled by sqrt(weight_fn(window)) when given."""
     p = dict(params)
     out: List[float] = []
     for win in _windows(episodes, k):
         state = dict(win[0].state)
+        sw = math.sqrt(weight_fn(win)) if weight_fn is not None else 1.0
         for t in win:
             pred = _safe_step(cand, state, t.action, p, t.meta)
             if pred is None:
-                out.extend([_BAD] * len(keys))
+                out.extend([_BAD * sw] * len(keys))
                 break
             for key in keys:
                 if key not in t.next_state:
@@ -90,13 +121,13 @@ def residuals(
                 except (TypeError, ValueError):
                     v = float("nan")
                 r = (v - t.next_state[key]) / scales[key]
-                out.append(r if math.isfinite(r) else _BAD)
+                out.append(r * sw if math.isfinite(r) else _BAD * sw)
             state = {key: float(pred.get(key, state.get(key, 0.0))) for key in state}
     return np.asarray(out, dtype=np.float64)
 
 
-def nrmse(cand, params, episodes, keys, scales, *, k: int) -> float:
-    r = residuals(cand, params, episodes, keys, scales, k=k)
+def nrmse(cand, params, episodes, keys, scales, *, k: int, weight_fn=None) -> float:
+    r = residuals(cand, params, episodes, keys, scales, k=k, weight_fn=weight_fn)
     return float(np.sqrt(np.mean(np.minimum(r * r, _BAD * _BAD)))) if r.size else float("nan")
 
 
@@ -158,11 +189,17 @@ def structured_refit(
     rollout_k: int = 5,
     subset: int = 10,
     max_nfev: int = 60,
+    balance_modes: bool = False,
 ) -> Tuple[Dict[str, float], Dict[str, Any]]:
     """Identification-style refit: coverage subset, per-object staging by dependency,
     1-D grid search per constant (non-smooth losses such as contact switching), local
     least squares per stage, then a joint polish."""
     sub = coverage_subset(train, keys, scales, subset)
+    wf = None
+    if balance_modes:
+        from .modes import balanced_weights
+
+        wf, _ = balanced_weights(sub, keys, scales, rollout_k)
     p = dict(params)
     deps = param_dependencies(cand, p, sub, keys)
     order = sorted(deps, key=lambda o: len(deps[o]))
@@ -175,12 +212,12 @@ def structured_refit(
             continue
         for n in names:
             vals = _grid(p[n])
-            losses = [nrmse(cand, {**p, n: g}, sub, ok, scales, k=rollout_k) for g in vals]
+            losses = [nrmse(cand, {**p, n: g}, sub, ok, scales, k=rollout_k, weight_fn=wf) for g in vals]
             if np.isfinite(min(losses)):
                 p[n] = float(vals[int(np.nanargmin(losses))])
 
         def fun(x, names=names, ok=ok):
-            return residuals(cand, {**p, **dict(zip(names, x))}, sub, ok, scales, k=rollout_k)
+            return residuals(cand, {**p, **dict(zip(names, x))}, sub, ok, scales, k=rollout_k, weight_fn=wf)
 
         try:
             sol = least_squares(fun, np.asarray([p[n] for n in names]), method="trf", max_nfev=max_nfev)
@@ -191,7 +228,7 @@ def structured_refit(
         stages.append({"object": o, "params": names})
     names = list(p)
     try:
-        sol = least_squares(lambda x: residuals(cand, dict(zip(names, x)), sub, keys, scales, k=rollout_k),
+        sol = least_squares(lambda x: residuals(cand, dict(zip(names, x)), sub, keys, scales, k=rollout_k, weight_fn=wf),
                             np.asarray([p[n] for n in names]), method="trf", max_nfev=max_nfev)
         p = dict(zip(names, map(float, sol.x)))
     except Exception:  # noqa: BLE001
@@ -212,14 +249,22 @@ def fit_candidate(
     max_nfev: int = 400,
     seed: int = 0,
     structured: bool = False,
+    balance_modes: bool = False,
 ) -> FitResult:
     """``structured``: also run :func:`structured_refit` from the best restart and keep it
-    if it has lower held-out rollout error."""
+    if it has lower held-out rollout error. ``balance_modes``: weight training and
+    held-out windows so each contact mode (see :mod:`.modes`) counts comparably."""
     names = list(cand.params)
     x0 = np.asarray([cand.params[n] for n in names], dtype=np.float64)
     k_fit = 1 if objective == "one_step" else rollout_k
     rng = np.random.default_rng(seed)
     t0 = time.time()
+    wtr = wva = None
+    if balance_modes:
+        from .modes import balanced_weights
+
+        wtr, _ = balanced_weights(train, keys, scales, k_fit)
+        wva, _ = balanced_weights(val, keys, scales, rollout_k)
     best = None
     history = []
     nfev = 0
@@ -230,7 +275,7 @@ def fit_candidate(
             init = x0 * np.exp(rng.normal(0.0, 0.5, size=x0.shape)) + rng.normal(0.0, 0.1, size=x0.shape)
 
         def fun(x: np.ndarray) -> np.ndarray:
-            return residuals(cand, dict(zip(names, x)), train, keys, scales, k=k_fit)
+            return residuals(cand, dict(zip(names, x)), train, keys, scales, k=k_fit, weight_fn=wtr)
 
         if names:
             try:
@@ -242,7 +287,7 @@ def fit_candidate(
             x, loss, used = init, float(np.mean(fun(init) ** 2)), 1
         nfev += used
         params = dict(zip(names, map(float, x)))
-        val_roll = nrmse(cand, params, val, keys, scales, k=rollout_k)
+        val_roll = nrmse(cand, params, val, keys, scales, k=rollout_k, weight_fn=wva)
         history.append({"restart": r, "train_loss": loss, "val_rollout_nrmse": val_roll})
         if best is None or (math.isfinite(val_roll) and val_roll < best[2]):
             best = (params, loss, val_roll)
@@ -250,12 +295,13 @@ def fit_candidate(
     if structured and names:
         for start_name, start in (("fitted", params), ("initial", dict(cand.params))):
             try:
-                sp, info = structured_refit(cand, start, train, val, keys, scales, rollout_k=rollout_k)
-                sv = nrmse(cand, sp, val, keys, scales, k=rollout_k)
+                sp, info = structured_refit(cand, start, train, val, keys, scales, rollout_k=rollout_k,
+                                            balance_modes=balance_modes)
+                sv = nrmse(cand, sp, val, keys, scales, k=rollout_k, weight_fn=wva)
                 history.append({"restart": f"structured_from_{start_name}", "val_rollout_nrmse": sv, **info})
                 if math.isfinite(sv) and sv < val_roll:
                     params, val_roll = sp, sv
-                    loss = float(np.mean(residuals(cand, sp, train, keys, scales, k=k_fit) ** 2))
+                    loss = float(np.mean(residuals(cand, sp, train, keys, scales, k=k_fit, weight_fn=wtr) ** 2))
             except Exception as exc:  # noqa: BLE001
                 history.append({"restart": f"structured_from_{start_name}", "error": f"{type(exc).__name__}: {exc}"})
     return FitResult(

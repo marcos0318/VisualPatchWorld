@@ -50,7 +50,8 @@ MODEL_SETS: Dict[str, Dict[str, Path]] = {
        for a in ("one_substep", "no_rotation", "pivot_at_origin", "square_block")},
     **{f"{tag}_{m}": {"pusht": ART / f"llm_family/{tag}_pusht_{m}/models/offline_multi_step.py"}
        for tag in ("geom", "geombank", "geomkit", "kit", "refine_geomkit", "refine_geom", "refine_v1",
-                   "sysidskill", "sysidlib", "refine_sysidskill", "refine_sysidlib", "sysidfam")
+                   "sysidskill", "sysidlib", "refine_sysidskill", "refine_sysidlib", "sysidfam",
+                   "refine_modes_v2", "refine_modes_sysidskill")
        for m in ("qwen35_s0", "qwen35_s1", "qwen35_s2", "coder_s0", "gptoss_s0")},
 }
 MODES = {
