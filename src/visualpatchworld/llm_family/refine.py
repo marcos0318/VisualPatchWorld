@@ -89,6 +89,33 @@ def residual_report(
     return "\n".join(lines), stats
 
 
+def constant_report(initial: Mapping[str, float], fitted: Mapping[str, float], *, collapse: float = 0.02,
+                    ratio: float = 10.0) -> str:
+    """Flag fitted constants that collapsed, flipped sign or moved by more than ``ratio``x
+    from the program's own initial guess. Such fits usually mean the term is compensating
+    for a missing or wrong mechanism rather than measuring a physical quantity."""
+    rows = []
+    for k, v0 in initial.items():
+        if k not in fitted:
+            continue
+        v0, v = float(v0), float(fitted[k])
+        if abs(v0) < 1e-9:
+            continue
+        r = v / v0
+        if abs(r) < collapse:
+            rows.append(f"  {k}: {v0:g} -> {v:.4g} (collapsed to ~0: the data switched this term off)")
+        elif r < 0:
+            rows.append(f"  {k}: {v0:g} -> {v:.4g} (sign flipped)")
+        elif r > ratio or r < 1 / ratio:
+            rows.append(f"  {k}: {v0:g} -> {v:.4g} ({r:.3g}x the initial guess)")
+    if not rows:
+        return ""
+    return ("Suspicious fitted constants (initial guess -> fitted). A constant that collapses, flips sign, or "
+            "takes a physically implausible value (e.g. a negative mass, damping factor or restitution, a "
+            "velocity multiplier outside [0, 1]) is usually absorbing the error of a missing or wrong "
+            "mechanism; fix the mechanism instead of keeping the fudge term:\n" + "\n".join(rows))
+
+
 def build_refine_prompt(
     cand: Candidate,
     params: Mapping[str, float],
@@ -99,6 +126,7 @@ def build_refine_prompt(
     num_revisions: int,
     bank_text: str = "",
     score_label: str = "held-out 5-step normalized RMSE",
+    constants_text: str = "",
 ) -> str:
     return f"""You are improving an executable world model (a simulator written as code) for an
 unknown control environment, from recorded transitions. Below is the current best program,
@@ -112,6 +140,7 @@ Current program ({score_label} = {val_rollout:.4f}):
 {cand.code}
 ```
 Fitted constants: {json.dumps({k: round(float(v), 5) for k, v in params.items()})}
+{constants_text}
 
 Diagnostics on training transitions:
 {report}
@@ -140,9 +169,11 @@ def propose_revisions(
     temperature: float = 0.7,
     log: Optional[List[Dict[str, Any]]] = None,
     score_label: str = "held-out 5-step normalized RMSE",
+    constants_feedback: bool = False,
 ) -> List[Candidate]:
+    ct = constant_report(cand.params, params) if constants_feedback else ""
     prompt = build_refine_prompt(cand, params, val_rollout, report, meta, num_revisions=num_revisions, bank_text=bank_text,
-                                 score_label=score_label)
+                                 score_label=score_label, constants_text=ct)
     reply = chat(prompt, model=model, temperature=temperature, max_tokens=24000)
     if log is not None:
         log.append({"kind": "refine", "prompt": prompt, **reply})

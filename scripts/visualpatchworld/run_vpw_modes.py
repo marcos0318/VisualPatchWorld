@@ -43,6 +43,7 @@ MODEL_SETS: Dict[str, Dict[str, Path]] = {
     "null": {e: ART / f"null_models/{e}_null.py" for e in ENVS},
     "qwen35_tooltrace": {e: ART / f"llm_family/tooltrace_{e}_qwen35_s0/models/offline_multi_step.py" for e in ENVS},
     "contact": {"pusht": ART / "contact_models/pusht_contact_textbook.py"},
+    "pbd_identified": {"pusht": ART / "contact_models/pusht_pbd_identified.py"},
     "sysid": {"pusht": ART / "sysid_models/pusht_sysid.py"},
     **{f"{tag}_qwen35_s{s}": {e: ART / f"llm_family/{tag}_{e}_qwen35_s{s}/models/offline_multi_step.py" for e in ENVS}
        for tag in ("v2", "refine_v2") for s in (0, 1, 2)},
@@ -51,7 +52,7 @@ MODEL_SETS: Dict[str, Dict[str, Path]] = {
     **{f"{tag}_{m}": {"pusht": ART / f"llm_family/{tag}_pusht_{m}/models/offline_multi_step.py"}
        for tag in ("geom", "geombank", "geomkit", "kit", "refine_geomkit", "refine_geom", "refine_v1",
                    "sysidskill", "sysidlib", "refine_sysidskill", "refine_sysidlib", "sysidfam",
-                   "refine_modes_v2", "refine_modes_sysidskill")
+                   "refine_modes_v2", "refine_modes_sysidskill", "refine_const", "refine_v3", "refine_pdyn", "refine_qsc")
        for m in ("qwen35_s0", "qwen35_s1", "qwen35_s2", "coder_s0", "gptoss_s0")},
 }
 MODES = {

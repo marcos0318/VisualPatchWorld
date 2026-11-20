@@ -237,6 +237,107 @@ def step(state, action, p, meta):
 '''
 
 
+# Free-space pusher models, per axis, integrated over ``substeps`` steps of ``dt`` within one
+# transition; the action is held. Each is (update text, initial constants, step function).
+def _pd_servo(x, v, a, p, n):
+    t = x + p["action_scale"] * a
+    for _ in range(n):
+        v += (p["kp"] * (t - x) - p["kv"] * v) * p["dt"]
+        x += v * p["dt"]
+    return x, v
+
+
+def _velocity_lag(x, v, a, p, n):
+    for _ in range(n):
+        v += (p["gain"] * a - v) * p["rate"] * p["dt"]
+        x += v * p["dt"]
+    return x, v
+
+
+def _direct_velocity(x, v, a, p, n):
+    v2 = p["gain"] * a
+    return x + 0.5 * (v + v2) * p["dt"] * n, v2
+
+
+PUSHER_MODELS = {
+    "pd_position_servo": ("target = pos + action_scale*action (held for the transition); each substep: "
+                          "vel += (kp*(target - pos) - kv*vel)*dt; pos += vel*dt",
+                          {"action_scale": 10.0, "kp": 10.0, "kv": 1.0, "dt": 0.01}, _pd_servo),
+    "first_order_velocity_lag": ("each substep: vel += (gain*action - vel)*rate*dt; pos += vel*dt",
+                                 {"gain": 100.0, "rate": 10.0, "dt": 0.01}, _velocity_lag),
+    "direct_velocity_command": ("vel_next = gain*action; pos += 0.5*(vel + vel_next)*dt*substeps",
+                                {"gain": 100.0, "dt": 0.01}, _direct_velocity),
+}
+
+
+def identify_pusher_free(episodes: Sequence[Episode], pusher: str, body: str, *, substeps: int = 10,
+                         max_transitions: int = 4000, seed: int = 0, log=print) -> Optional[Dict[str, object]]:
+    """Identify the pusher's free-space dynamics from transitions where ``body`` did not move:
+    fit each model in :data:`PUSHER_MODELS` by least squares on a training split, keep the
+    best on held-out free transitions, and report its error on contact transitions too (a
+    pusher that contact does not slow has similar error there)."""
+    keys = sorted(episodes[0].transitions[0].state)
+    if not {f"{pusher}.vx", f"{pusher}.vy"} <= set(keys) or not {f"{body}.x", f"{body}.angle"} <= set(keys):
+        return None
+    free, cont = [], []
+    for ep in episodes:
+        for t in ep.transitions:
+            (cont if _moved(t.state, t.next_state, body, 0.05) else free).append(t)
+    rng = np.random.default_rng(seed)
+    free = [free[i] for i in rng.permutation(len(free))[:max_transitions]]
+    cont = [cont[i] for i in rng.permutation(len(cont))[: max_transitions // 4]]
+    if len(free) < 50:
+        return None
+    tr, te = free[: len(free) * 4 // 5], free[len(free) * 4 // 5 :]
+    sx = np.std([t.next_state[f"{pusher}.x"] - t.state[f"{pusher}.x"] for t in free]) + 1e-9
+    sv = np.std([t.next_state[f"{pusher}.vx"] for t in free]) + 1e-9
+
+    def resid(fn, p, ts):
+        out = []
+        for t in ts:
+            for ax, i in (("x", 0), ("y", 1)):
+                a = t.action[i] if len(t.action) > i else 0.0
+                x, v = fn(t.state[f"{pusher}.{ax}"], t.state[f"{pusher}.v{ax}"], max(-1.0, min(1.0, a)), p, substeps)
+                out += [(x - t.next_state[f"{pusher}.{ax}"]) / sx, (v - t.next_state[f"{pusher}.v{ax}"]) / sv]
+        r = np.asarray(out)
+        return np.where(np.isfinite(r), r, 1e3)
+
+    def rms(fn, p, ts):
+        return float(np.sqrt(np.mean(resid(fn, p, ts) ** 2))) if ts else float("nan")
+
+    fits = []
+    for name, (text, init, fn) in PUSHER_MODELS.items():
+        names = list(init)
+        best = None
+        for r in range(4):
+            x0 = np.asarray([init[k] for k in names]) * (1.0 if r == 0 else np.exp(rng.normal(0, 1.0, len(names))))
+            try:
+                sol = least_squares(lambda x: resid(fn, dict(zip(names, x)), tr), x0, method="trf", max_nfev=300)
+            except Exception:  # noqa: BLE001
+                continue
+            p = dict(zip(names, map(float, sol.x)))
+            e = rms(fn, p, te)
+            if best is None or e < best[1]:
+                best = (p, e)
+        if best is None:
+            continue
+        fits.append({"model": name, "update": text, "constants": {k: round(v, 5) for k, v in best[0].items()},
+                     "substeps": substeps, "heldout_free_nrmse": round(best[1], 4),
+                     "contact_transition_nrmse": round(rms(fn, best[0], cont), 4)})
+        log(f"[analyze] pusher {pusher} {name}: held-out free nRMSE={best[1]:.4f} "
+            f"on contact transitions={fits[-1]['contact_transition_nrmse']:.4f} constants={fits[-1]['constants']}")
+    if not fits:
+        return None
+    b = min(fits, key=lambda f: f["heldout_free_nrmse"])
+    return {"pusher": pusher, "identified_from": f"{len(free)} transitions where {body} did not move",
+            "model": b["model"], "update": b["update"], "substeps": substeps, "constants": b["constants"],
+            "heldout_free_nrmse": b["heldout_free_nrmse"], "contact_transition_nrmse": b["contact_transition_nrmse"],
+            "note": ("nRMSE is per field over pusher position and velocity, normalized by their spread. If the error "
+                     "on contact transitions is close to the free-space error, contact does not slow the pusher "
+                     "(it is effectively kinematic / much heavier than the body)."),
+            "alternatives": {f["model"]: f["heldout_free_nrmse"] for f in fits}}
+
+
 def control_period(episodes: Sequence[Episode]) -> Optional[float]:
     """Least-squares T in x' - x = T * (v + v')/2 over every object with x/vx fields."""
     keys = sorted(episodes[0].transitions[0].state)
@@ -253,9 +354,10 @@ def control_period(episodes: Sequence[Episode]) -> Optional[float]:
     return num / den if den > 0 else None
 
 
-def analyze_interactions(episodes: Sequence[Episode], log=print) -> Dict[str, object]:
+def analyze_interactions(episodes: Sequence[Episode], log=print, *, pusher_dynamics: bool = False) -> Dict[str, object]:
     """Derived static metadata from traces alone: the contact shape of every detected
-    pusher/body pair and the control period. Empty when nothing applies."""
+    pusher/body pair and the control period; with ``pusher_dynamics`` also the identified
+    free-space dynamics of the first pair's pusher. Empty when nothing applies."""
     meta: Dict[str, object] = {}
     T = control_period(episodes)
     if T is not None:
@@ -269,6 +371,10 @@ def analyze_interactions(episodes: Sequence[Episode], log=print) -> Dict[str, ob
         key = "contact_shape" if i == 0 else f"contact_shape_{body}_{pusher}"
         meta[key] = {**shape.to_meta(), "body": body}
         log(f"[analyze] {pusher}->{body}: K={shape.k} boxes={meta[key]['boxes_u_min_u_max_v_min_v_max']}")
+        if pusher_dynamics and i == 0:
+            pd = identify_pusher_free(episodes, pusher, body, log=log)
+            if pd is not None:
+                meta["pusher_free_dynamics"] = pd
     return meta
 
 

@@ -177,14 +177,24 @@ def _client():
 
 
 def chat(prompt: str, *, model: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 16000) -> Dict[str, Any]:
+    import openai
+
     model = model or os.environ.get("PATCHWORLD_MODEL", "Qwen/Qwen3.5-397B-A17B")
     t0 = time.time()
-    resp = _client().chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    # Shared providers return 429 "engine_overloaded" for minutes at a time.
+    for attempt in range(12):
+        try:
+            resp = _client().chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            break
+        except (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError, openai.InternalServerError):
+            if attempt == 11:
+                raise
+            time.sleep(min(600.0, 15.0 * 2 ** attempt))
     usage = getattr(resp, "usage", None)
     return {
         "model": model,
