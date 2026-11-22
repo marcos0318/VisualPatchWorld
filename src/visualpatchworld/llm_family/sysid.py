@@ -270,6 +270,52 @@ PUSHER_MODELS = {
 }
 
 
+# Appended to candidate programs by ``refine_llm_family.py --pusher_helper`` so the identified
+# pusher model is used verbatim and the program only has to model the interaction.
+PUSHER_HELPER_SOURCE = r'''
+
+def pusher_path(state, action, meta):
+    """Identified free-space pusher motion for this transition (contact does not slow it).
+    Returns (path, dt): path[i] = (x, y, vx, vy) of the pusher after substep i."""
+    pd = meta["pusher_free_dynamics"]
+    c, n, P, model = pd["constants"], int(pd["substeps"]), pd["pusher"], pd["model"]
+    x, y = state[P + ".x"], state[P + ".y"]
+    vx, vy = state.get(P + ".vx", 0.0), state.get(P + ".vy", 0.0)
+    a0 = max(-1.0, min(1.0, action[0])) if len(action) > 0 else 0.0
+    a1 = max(-1.0, min(1.0, action[1])) if len(action) > 1 else 0.0
+    dt = c["dt"]
+    path = []
+    if model == "pd_position_servo":
+        tx, ty = x + c["action_scale"] * a0, y + c["action_scale"] * a1
+        for _ in range(n):
+            vx += (c["kp"] * (tx - x) - c["kv"] * vx) * dt
+            vy += (c["kp"] * (ty - y) - c["kv"] * vy) * dt
+            x, y = x + vx * dt, y + vy * dt
+            path.append((x, y, vx, vy))
+    elif model == "first_order_velocity_lag":
+        for _ in range(n):
+            vx += (c["gain"] * a0 - vx) * c["rate"] * dt
+            vy += (c["gain"] * a1 - vy) * c["rate"] * dt
+            x, y = x + vx * dt, y + vy * dt
+            path.append((x, y, vx, vy))
+    else:
+        nvx, nvy = c["gain"] * a0, c["gain"] * a1
+        for i in range(1, n + 1):
+            f = i / n
+            path.append((x + 0.5 * (vx + nvx) * dt * n * f, y + 0.5 * (vy + nvy) * dt * n * f, nvx, nvy))
+    return path, dt
+'''
+
+PUSHER_HELPER_DOC = """
+A helper is predefined in your program's namespace (do not redefine it):
+    pusher_path(state, action, meta) -> (path, dt)
+It returns the identified motion of the pusher meta["pusher_free_dynamics"]["pusher"] over this
+transition: path[i] = (x, y, vx, vy) after substep i, each substep lasting dt. It is exact in free
+space and contact does not change it. Use it for the pusher (do not write your own pusher dynamics)
+and spend your effort on how the other objects respond, iterating over the same substeps.
+"""
+
+
 def identify_pusher_free(episodes: Sequence[Episode], pusher: str, body: str, *, substeps: int = 10,
                          max_transitions: int = 4000, seed: int = 0, log=print) -> Optional[Dict[str, object]]:
     """Identify the pusher's free-space dynamics from transitions where ``body`` did not move:

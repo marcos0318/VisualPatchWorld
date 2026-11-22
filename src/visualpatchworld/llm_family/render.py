@@ -168,8 +168,9 @@ def render_model(
 ) -> str:
     """``static_meta``: scene metadata constant across the training traces, merged
     under the planner observation's metadata so static facts (e.g. shapes) survive
-    planning-time observations that omit them."""
-    return _TEMPLATE.format(
+    planning-time observations that omit them. The output is ASCII-only because the
+    planner's model loader encodes source as latin-1."""
+    return to_ascii(_TEMPLATE.format(
         static_meta=json.dumps(dict(static_meta or {}), sort_keys=True),
         name=cand.name,
         mechanism=cand.mechanism.replace('"""', "'''"),
@@ -179,4 +180,10 @@ def render_model(
         env=env,
         action_dim=int(action_dim),
         state_keys=json.dumps(list(state_keys)),
-    )
+    ))
+
+
+
+
+def to_ascii(text: str) -> str:
+    return text.encode("ascii", "backslashreplace").decode("ascii")

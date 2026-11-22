@@ -170,6 +170,7 @@ def propose_revisions(
     log: Optional[List[Dict[str, Any]]] = None,
     score_label: str = "held-out 5-step normalized RMSE",
     constants_feedback: bool = False,
+    code_suffix: str = "",
 ) -> List[Candidate]:
     ct = constant_report(cand.params, params) if constants_feedback else ""
     prompt = build_refine_prompt(cand, params, val_rollout, report, meta, num_revisions=num_revisions, bank_text=bank_text,
@@ -180,7 +181,7 @@ def propose_revisions(
     out = []
     for code in extract_blocks(reply["text"]):
         try:
-            c = compile_candidate(code)
+            c = compile_candidate(code + code_suffix)
             check_candidate(c, check_set)
         except Exception as exc:  # noqa: BLE001
             if log is not None:

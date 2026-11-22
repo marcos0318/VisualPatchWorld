@@ -52,7 +52,7 @@ MODEL_SETS: Dict[str, Dict[str, Path]] = {
     **{f"{tag}_{m}": {"pusht": ART / f"llm_family/{tag}_pusht_{m}/models/offline_multi_step.py"}
        for tag in ("geom", "geombank", "geomkit", "kit", "refine_geomkit", "refine_geom", "refine_v1",
                    "sysidskill", "sysidlib", "refine_sysidskill", "refine_sysidlib", "sysidfam",
-                   "refine_modes_v2", "refine_modes_sysidskill", "refine_const", "refine_v3", "refine_pdyn", "refine_qsc")
+                   "refine_modes_v2", "refine_modes_sysidskill", "refine_const", "refine_v3", "refine_pdyn", "refine_qsc", "refine_qsch", "refine_qsconly")
        for m in ("qwen35_s0", "qwen35_s1", "qwen35_s2", "coder_s0", "gptoss_s0")},
 }
 MODES = {
@@ -123,7 +123,14 @@ def main() -> None:
                     out = OUT / f"{s}_{mode}_{env}_n50_seed{seed}.json" if mode != "mujoco" else OUT / f"mujoco_{env}_n50_seed{seed}.json"
                     if out.is_file() and not args.force and json.loads(out.read_text()).get("success"):
                         continue
-                    model = "" if mode == "mujoco" else str(MODEL_SETS[s][env])
+                    if mode == "mujoco":
+                        model = ""
+                    elif s in MODEL_SETS:
+                        model = str(MODEL_SETS[s][env])
+                    else:  # a family directory name under llm_family/, e.g. v1_cube_qwen35_s1
+                        model = str(ART / "llm_family" / s / "models/offline_multi_step.py")
+                        if env not in s or not Path(model).is_file():
+                            continue
                     jobs.append({"set": s, "mode": mode, "env": env, "seed": seed, "model": model,
                                  "out": str(out), "workers": args.workers})
     # Longest cells first so the pool drains evenly.

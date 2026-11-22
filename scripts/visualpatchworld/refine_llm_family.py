@@ -57,6 +57,9 @@ def main() -> None:
     p.add_argument("--beam", type=int, default=1, help="keep the best N programs and revise them in turn")
     p.add_argument("--pusher_dynamics", action="store_true",
                    help="with an --analyze family: also identify the pusher's free-space dynamics into meta")
+    p.add_argument("--pusher_helper", action="store_true",
+                   help="with --pusher_dynamics: append a pusher_path() helper implementing the identified pusher "
+                        "model to every revision and tell the LLM to use it")
     args = p.parse_args()
 
     fam = json.loads((Path(args.run_dir) / "family.json").read_text())
@@ -95,6 +98,13 @@ def main() -> None:
     metas = [t.meta for ep in train for t in ep.transitions]
     static_meta = {k: v for k, v in (metas[0] if metas else {}).items() if all(m.get(k) == v for m in metas)}
     bank_text = render_bank(load_bank(Path(args.bank_file))) if args.bank_file else ""
+    helper_src = helper_doc = ""
+    if args.pusher_helper:
+        from visualpatchworld.llm_family import sysid as _sysid
+
+        if "pusher_free_dynamics" not in static_meta:
+            raise SystemExit("--pusher_helper needs --pusher_dynamics on an --analyze family")
+        helper_src, helper_doc = _sysid.PUSHER_HELPER_SOURCE, _sysid.PUSHER_HELPER_DOC
     check_set = [t for ep in train[:4] for t in ep.transitions][:32]
     feedback = covering_episodes(train, keys, scales, args.feedback_episodes) if args.cover_modes else train[: args.feedback_episodes]
     k = int(fa.get("rollout_k", 5))
@@ -129,8 +139,9 @@ def main() -> None:
         report, stats = residual_report(parent["cand"], parent["params"], feedback, keys, scales, per_mode=args.mode_feedback,
                                         horizons=(1, 5, args.select_h))
         revs = propose_revisions(parent["cand"], parent["params"], parent["val"], report, static_meta, check_set,
-                                 num_revisions=args.num_revisions, model=model, bank_text=bank_text, log=log,
-                                 score_label=score_label, constants_feedback=args.constants_feedback)
+                                 num_revisions=args.num_revisions, model=model, bank_text=bank_text + helper_doc, log=log,
+                                 score_label=score_label, constants_feedback=args.constants_feedback,
+                                 code_suffix=helper_src)
         print(f"[refine] round {rnd}: {len(revs)} valid revisions of {parent['cand'].name}", flush=True)
         print(f"[refine] round {rnd}: {len(revs)} valid revisions", flush=True)
         for c in revs:

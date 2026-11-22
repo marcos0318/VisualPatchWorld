@@ -1,7 +1,7 @@
 
 """LLM-proposed, data-fitted world model: elastic_coupling_finger
 
-Mechanism (as stated by the proposing LLM): Arm joints move by saturated velocity commands; finger is a separate mass attracted toward the arm’s end‑effector by a linear spring.
+Mechanism (as stated by the proposing LLM): Arm joints move by saturated velocity commands; finger is a separate mass attracted toward the arm\u2019s end\u2011effector by a linear spring.
 Fit objective: multi_step; fitted constants are in FITTED_PARAMS.
 """
 from patchworld.worldmodel_base import BaseWorldModel
@@ -10,7 +10,7 @@ import json
 import math
 import re
 
-CANDIDATE_SOURCE = '# HYPOTHESIS: elastic_coupling_finger\n# MECHANISM: Arm joints move by saturated velocity commands; finger is a separate mass attracted toward the arm’s end‑effector by a linear spring.\nPARAMS = {"v_max": 2.0, "dt": 0.05, "L1": 0.15, "L2": 0.15, "k_s": 4.0}\n\ndef step(state, action, p, meta):\n    # joint velocity update (same as H1)\n    def sat(v):\n        if v > p["v_max"]: return p["v_max"]\n        if v < -p["v_max"]: return -p["v_max"]\n        return v\n    v0 = sat(action[0])\n    v1 = sat(action[1])\n    th0 = state["arm.x"] + v0 * p["dt"]\n    th1 = state["arm.y"] + v1 * p["dt"]\n    # arm end‑effector position (rest length = 0)\n    arm_x = p["L1"] * math.cos(th0) + p["L2"] * math.cos(th0 + th1)\n    arm_y = p["L1"] * math.sin(th0) + p["L2"] * math.sin(th0 + th1)\n    # spring pulling finger toward arm end\n    dx = arm_x - state["finger.x"]\n    dy = arm_y - state["finger.y"]\n    new_finger_x = state["finger.x"] + p["k_s"] * dx * p["dt"]\n    new_finger_y = state["finger.y"] + p["k_s"] * dy * p["dt"]\n    new_state = {\n        "arm.x": th0,\n        "arm.y": th1,\n        "finger.x": new_finger_x,\n        "finger.y": new_finger_y,\n        "target.x": state["target.x"],\n        "target.y": state["target.y"],\n    }\n    return new_state'
+CANDIDATE_SOURCE = '# HYPOTHESIS: elastic_coupling_finger\n# MECHANISM: Arm joints move by saturated velocity commands; finger is a separate mass attracted toward the arm\u2019s end\u2011effector by a linear spring.\nPARAMS = {"v_max": 2.0, "dt": 0.05, "L1": 0.15, "L2": 0.15, "k_s": 4.0}\n\ndef step(state, action, p, meta):\n    # joint velocity update (same as H1)\n    def sat(v):\n        if v > p["v_max"]: return p["v_max"]\n        if v < -p["v_max"]: return -p["v_max"]\n        return v\n    v0 = sat(action[0])\n    v1 = sat(action[1])\n    th0 = state["arm.x"] + v0 * p["dt"]\n    th1 = state["arm.y"] + v1 * p["dt"]\n    # arm end\u2011effector position (rest length = 0)\n    arm_x = p["L1"] * math.cos(th0) + p["L2"] * math.cos(th0 + th1)\n    arm_y = p["L1"] * math.sin(th0) + p["L2"] * math.sin(th0 + th1)\n    # spring pulling finger toward arm end\n    dx = arm_x - state["finger.x"]\n    dy = arm_y - state["finger.y"]\n    new_finger_x = state["finger.x"] + p["k_s"] * dx * p["dt"]\n    new_finger_y = state["finger.y"] + p["k_s"] * dy * p["dt"]\n    new_state = {\n        "arm.x": th0,\n        "arm.y": th1,\n        "finger.x": new_finger_x,\n        "finger.y": new_finger_y,\n        "target.x": state["target.x"],\n        "target.y": state["target.y"],\n    }\n    return new_state'
 FITTED_PARAMS = {"L1": 0.12151481354663762, "L2": 0.11844416466792258, "dt": 0.8845079634083918, "k_s": 0.7759866458309519, "v_max": 1.3912674973482382}
 ENV = 'reacher'
 ACTION_DIM = 2

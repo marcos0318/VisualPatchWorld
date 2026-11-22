@@ -10,7 +10,7 @@ import json
 import math
 import re
 
-CANDIDATE_SOURCE = '# HYPOTHESIS: momentum\n# MECHANISM: the agent has hidden velocity that integrates the action as acceleration and decays with damping.\nPARAMS = {"accel_gain": 0.8, "damping": 0.1}\n    \ndef step(state, action, p, meta):\n    """First‑order dynamics with hidden velocity (stored in state if present)."""\n    vx = state.get("agent.vx", 0.0) + p["accel_gain"] * action[0]\n    vy = state.get("agent.vy", 0.0) + p["accel_gain"] * action[1]\n    # apply damping\n    vx *= (1.0 - p["damping"])\n    vy *= (1.0 - p["damping"])\n    nx = state["agent.x"] + vx\n    ny = state["agent.y"] + vy\n    return {\n        "agent.x": nx,\n        "agent.y": ny,\n        "agent.vx": vx,\n        "agent.vy": vy,\n        "target.x": state["target.x"],\n        "target.y": state["target.y"],\n    }'
+CANDIDATE_SOURCE = '# HYPOTHESIS: momentum\n# MECHANISM: the agent has hidden velocity that integrates the action as acceleration and decays with damping.\nPARAMS = {"accel_gain": 0.8, "damping": 0.1}\n    \ndef step(state, action, p, meta):\n    """First\u2011order dynamics with hidden velocity (stored in state if present)."""\n    vx = state.get("agent.vx", 0.0) + p["accel_gain"] * action[0]\n    vy = state.get("agent.vy", 0.0) + p["accel_gain"] * action[1]\n    # apply damping\n    vx *= (1.0 - p["damping"])\n    vy *= (1.0 - p["damping"])\n    nx = state["agent.x"] + vx\n    ny = state["agent.y"] + vy\n    return {\n        "agent.x": nx,\n        "agent.y": ny,\n        "agent.vx": vx,\n        "agent.vy": vy,\n        "target.x": state["target.x"],\n        "target.y": state["target.y"],\n    }'
 FITTED_PARAMS = {"accel_gain": 5.816743267100173, "damping": -3.0394993047614074}
 ENV = 'tworoom'
 ACTION_DIM = 2

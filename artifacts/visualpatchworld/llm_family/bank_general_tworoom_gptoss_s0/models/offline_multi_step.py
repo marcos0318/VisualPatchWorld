@@ -1,7 +1,7 @@
 
 """LLM-proposed, data-fitted world model: mode_controller
 
-Mechanism (as stated by the proposing LLM): Gain switches between “far” and “near” modes based on distance to target.
+Mechanism (as stated by the proposing LLM): Gain switches between \u201cfar\u201d and \u201cnear\u201d modes based on distance to target.
 Fit objective: multi_step; fitted constants are in FITTED_PARAMS.
 """
 from patchworld.worldmodel_base import BaseWorldModel
@@ -10,7 +10,7 @@ import json
 import math
 import re
 
-CANDIDATE_SOURCE = '# HYPOTHESIS: mode_controller\n# MECHANISM: Gain switches between “far” and “near” modes based on distance to target.\nPARAMS = {"thr_dist": 30.0, "k_near": 10.0, "k_far": 30.0, "scale": 1.0}\n\ndef step(state, action, p, meta):\n    """Apply a higher gain when far from the goal, lower gain when close."""\n    sx, sy = state["agent.x"], state["agent.y"]\n    tx, ty = state["target.x"], state["target.y"]\n    ax, ay = action[0], action[1]\n    thr, k_near, k_far, scale = p["thr_dist"], p["k_near"], p["k_far"], p["scale"]\n    # Euclidean distance to target\n    dist = ((sx - tx) ** 2 + (sy - ty) ** 2) ** 0.5\n    gain = k_near if dist < thr else k_far\n    dx = scale * gain * ax\n    dy = scale * gain * ay\n    new_state = {\n        "agent.x": sx + dx,\n        "agent.y": sy + dy,\n        "target.x": tx,\n        "target.y": ty,\n    }\n    return new_state'
+CANDIDATE_SOURCE = '# HYPOTHESIS: mode_controller\n# MECHANISM: Gain switches between \u201cfar\u201d and \u201cnear\u201d modes based on distance to target.\nPARAMS = {"thr_dist": 30.0, "k_near": 10.0, "k_far": 30.0, "scale": 1.0}\n\ndef step(state, action, p, meta):\n    """Apply a higher gain when far from the goal, lower gain when close."""\n    sx, sy = state["agent.x"], state["agent.y"]\n    tx, ty = state["target.x"], state["target.y"]\n    ax, ay = action[0], action[1]\n    thr, k_near, k_far, scale = p["thr_dist"], p["k_near"], p["k_far"], p["scale"]\n    # Euclidean distance to target\n    dist = ((sx - tx) ** 2 + (sy - ty) ** 2) ** 0.5\n    gain = k_near if dist < thr else k_far\n    dx = scale * gain * ax\n    dy = scale * gain * ay\n    new_state = {\n        "agent.x": sx + dx,\n        "agent.y": sy + dy,\n        "target.x": tx,\n        "target.y": ty,\n    }\n    return new_state'
 FITTED_PARAMS = {"k_far": 37.83525093569415, "k_near": 30.42951347211666, "scale": 0.6226657176358266, "thr_dist": 31.89292870364214}
 ENV = 'tworoom'
 ACTION_DIM = 2
