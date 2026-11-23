@@ -113,6 +113,73 @@ def build_general_bank(
     return entries
 
 
+SOLVER_TOPICS = (
+    "rigid-body contact resolution between a moving body and a free planar rigid body of "
+    "arbitrary shape (velocity-level sequential impulses; position-level projection)",
+    "manipulation by pushing (quasi-static and dynamic pushing of planar objects)",
+    "frictional contact and sliding between bodies",
+    "articulated chains with joint limits and task-space outputs",
+    "grasping, carrying and releasing objects",
+)
+
+SOLVER_PROMPT = """You are compiling a reference library of COMPLETE solvers for interactions
+between bodies, as they appear in classical mechanics and in robot simulators. The library
+will later be shown to a modeler who must write transition programs for environments you are
+not told about, so entries must be GENERAL: use generic variable names, not names from any
+particular task.
+
+Earlier libraries of small fragments (a contact test here, an impulse formula there) did not
+work: modelers composed fragments into solvers whose errors compensated each other. Each
+entry must therefore be a complete, self-contained solver for one interaction: a single
+function that advances every involved body by one control step of length dt, including any
+substeps, contact detection, contact resolution, integration, and rotation about the centre
+of mass where it applies. Shapes of free bodies are given as a union of axis-aligned boxes
+[(u0, u1, v0, v1), ...] in the body frame, with a body-frame centre-of-mass offset.
+
+Cover these topics, with 1-3 distinct complete solvers per topic:
+{topics}
+
+For each solver return a JSON object with keys:
+  "name": short_snake_case,
+  "topic": one of the topics above (short form),
+  "mechanism": one or two sentences on the law and the assumptions it makes,
+  "equations": the update in plain text,
+  "params": list of {{"name": ..., "meaning": ...}} (at most 8),
+  "snippet": one Python function (<= 45 lines, only `math`, helpers nested inside),
+  "tags": 5-10 lowercase keywords describing when it applies.
+
+Return ONLY a JSON list of these objects, no prose."""
+
+
+def build_solver_bank(
+    model: Optional[str],
+    *,
+    log: Optional[List[Dict[str, Any]]] = None,
+    topics: Sequence[str] = SOLVER_TOPICS,
+) -> List[BankEntry]:
+    prompt = SOLVER_PROMPT.format(topics="\n".join(f"  - {t}" for t in topics))
+    reply = chat(prompt, model=model, temperature=0.3, max_tokens=32000)
+    if log is not None:
+        log.append({"kind": "solver_bank", "prompt": prompt, **reply})
+    entries = []
+    for obj in _parse_json_list(reply["text"]):
+        if not isinstance(obj, dict) or not obj.get("name"):
+            continue
+        entries.append(
+            BankEntry(
+                name=str(obj["name"]),
+                mechanism=str(obj.get("mechanism", "")),
+                equations=str(obj.get("equations", "")),
+                snippet=str(obj.get("snippet", "")),
+                params=[p for p in obj.get("params", []) if isinstance(p, dict)],
+                tags=[str(t).lower() for t in obj.get("tags", [])],
+                topic=str(obj.get("topic", "")),
+                source="general_solver",
+            )
+        )
+    return entries
+
+
 def experience_entries(run_dirs: Sequence[Path], *, selection: str = "offline_multi_step") -> List[BankEntry]:
     """Winning programs from previously modeled environments."""
     out = []

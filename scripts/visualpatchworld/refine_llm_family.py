@@ -63,6 +63,9 @@ def main() -> None:
     p.add_argument("--pusher_helper", action="store_true",
                    help="with --pusher_dynamics: append a pusher_path() helper implementing the identified pusher "
                         "model to every revision and tell the LLM to use it")
+    p.add_argument("--solver_helpers", default=None,
+                   help="bank JSON: append its verified complete solvers (source general_solver) to every revision "
+                        "as callable functions and tell the LLM to call them instead of re-implementing contact")
     args = p.parse_args()
 
     fam = json.loads((Path(args.run_dir) / "family.json").read_text())
@@ -125,6 +128,12 @@ def main() -> None:
         from visualpatchworld.llm_family import sysid as _sysid
 
         helper_doc += _sysid.STATE_LIMITS_DOC
+    if args.solver_helpers:
+        from visualpatchworld.llm_family.solver_tests import solver_helpers
+
+        s_src, s_doc = solver_helpers(load_bank(Path(args.solver_helpers)))
+        helper_src += s_src
+        helper_doc += s_doc
     check_set = [t for ep in train[:4] for t in ep.transitions][:32]
     feedback = covering_episodes(train, keys, scales, args.feedback_episodes) if args.cover_modes else train[: args.feedback_episodes]
     k = int(fa.get("rollout_k", 5))
