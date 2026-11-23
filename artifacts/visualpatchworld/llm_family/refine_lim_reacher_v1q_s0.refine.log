@@ -1,0 +1,27 @@
+[refine] state limits: {"arm.y": {"max": {"value": 2.869, "blocked_pushes": 18, "median_progress_of_predicted": 0.068}, "min": {"value": -2.899, "blocked_pushes": 7, "median_progress_of_predicted": -0.057}, "action_model_r2": 0.958, "observed_range": [-2.899, 2.869]}}
+[refine] start forward_kinematics val5=0.7165 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 3 valid revisions of forward_kinematics
+[refine] round 1: 3 valid revisions
+[refine]   limit_clamp_with_bias                        val1=0.5432 val5=0.7037 val5=0.7037 (8s)
+[refine]   leaky_integration                            val1=0.5387 val5=0.6979 val5=0.6979 (9s)
+[refine]   coulomb_friction                             val1=0.5433 val5=0.7023 val5=0.7023 (13s)
+[refine] best after round 1: leaky_integration val5=0.6979
+[refine] round 2: 3 valid revisions of leaky_integration
+[refine] round 2: 3 valid revisions
+[refine]   affine_bias_dynamics                         val1=0.5434 val5=0.7032 val5=0.7032 (5s)
+[refine]   gravity_compensated_dynamics                 val1=0.5425 val5=0.7062 val5=0.7062 (7s)
+[refine]   substep_pd_tracking                          val1=0.5434 val5=0.7032 val5=0.7032 (48s)
+[refine] best after round 2: leaky_integration val5=0.6979
+[refine] round 3: 3 valid revisions of leaky_integration
+[refine] round 3: 3 valid revisions
+[refine]   affine_bias_integration                      val1=0.5422 val5=0.6987 val5=0.6987 (31s)
+[refine]   gravity_and_bias                             val1=0.5422 val5=0.6988 val5=0.6988 (39s)
+[refine]   coulomb_friction_integration                 val1=0.5394 val5=0.6972 val5=0.6972 (28s)
+[refine] best after round 3: coulomb_friction_integration val5=0.6972
+[refine] round 4: 3 valid revisions of coulomb_friction_integration
+[refine] round 4: 3 valid revisions
+[refine]   velocity_state_integration                   val1=0.5433 val5=0.7030 val5=0.7030 (60s)
+[refine]   inverse_kinematics_cartesian                 val1=0.5433 val5=0.7030 val5=0.7030 (62s)
+[refine]   config_dependent_gain                        val1=0.5394 val5=0.6972 val5=0.6972 (53s)
+[refine] best after round 4: config_dependent_gain val5=0.6972
+[refine] done: config_dependent_gain val5=0.6972 round=4 (1455s)

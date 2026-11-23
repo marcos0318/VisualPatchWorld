@@ -1,0 +1,27 @@
+[refine] state limits: {"arm.y": {"max": {"value": 2.869, "blocked_pushes": 18, "median_progress_of_predicted": 0.068}, "min": {"value": -2.899, "blocked_pushes": 7, "median_progress_of_predicted": -0.057}, "action_model_r2": 0.958, "observed_range": [-2.899, 2.869]}}
+[refine] start arm_driven_fk val5=0.7165 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 3 valid revisions of arm_driven_fk
+[refine] round 1: 3 valid revisions
+[refine]   arm_spring_rest                              val1=0.5422 val5=0.6987 val5=0.6987 (17s)
+[refine]   arm_coulomb_friction                         val1=0.5432 val5=0.7023 val5=0.7023 (12s)
+[refine]   arm_gravity_substeps                         val1=0.5420 val5=0.7057 val5=0.7057 (24s)
+[refine] best after round 1: arm_spring_rest val5=0.6987
+[refine] round 2: 3 valid revisions of arm_spring_rest
+[refine] round 2: 3 valid revisions
+[refine]   pd_tracking_substeps                         val1=0.9078 val5=1.0969 val5=1.0969 (131s)
+[refine]   friction_and_deadzone                        val1=0.5913 val5=0.8411 val5=0.8411 (52s)
+[refine]   absolute_angle_fk                            val1=2.1967 val5=2.2935 val5=2.2935 (213s)
+[refine] best after round 2: arm_spring_rest val5=0.6987
+[refine] round 3: 3 valid revisions of arm_spring_rest
+[refine] round 3: 3 valid revisions
+[refine]   velocity_integration_with_drag               val1=2.3196 val5=2.5040 val5=2.5040 (26s)
+[refine]   substep_pd_tracking                          val1=0.5433 val5=0.7030 val5=0.7030 (98s)
+[refine]   action_sign_inversion_with_friction          val1=0.5421 val5=0.7032 val5=0.7032 (31s)
+[refine] best after round 3: arm_spring_rest val5=0.6987
+[refine] round 4: 3 valid revisions of arm_spring_rest
+[refine] round 4: 3 valid revisions
+[refine]   joint_friction_and_bias                      val1=6.7556 val5=6.9489 val5=6.9489 (26s)
+[refine]   gravitational_torque                         val1=0.5415 val5=0.7038 val5=0.7038 (42s)
+[refine]   saturating_gain                              val1=0.5437 val5=0.7024 val5=0.7024 (29s)
+[refine] best after round 4: arm_spring_rest val5=0.6987
+[refine] done: arm_spring_rest val5=0.6987 round=1 (1719s)

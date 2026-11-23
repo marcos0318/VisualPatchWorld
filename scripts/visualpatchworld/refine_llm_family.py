@@ -57,6 +57,9 @@ def main() -> None:
     p.add_argument("--beam", type=int, default=1, help="keep the best N programs and revise them in turn")
     p.add_argument("--pusher_dynamics", action="store_true",
                    help="with an --analyze family: also identify the pusher's free-space dynamics into meta")
+    p.add_argument("--state_limits", action="store_true",
+                   help="identify hard limits of action-driven state variables into meta['state_limits'] "
+                        "and tell the LLM to enforce them")
     p.add_argument("--pusher_helper", action="store_true",
                    help="with --pusher_dynamics: append a pusher_path() helper implementing the identified pusher "
                         "model to every revision and tell the LLM to use it")
@@ -76,6 +79,15 @@ def main() -> None:
         for ep in list(train) + list(val):
             for t in ep.transitions:
                 t.meta.update(derived)
+    limits = {}
+    if args.state_limits:
+        from visualpatchworld.llm_family import sysid
+
+        limits = sysid.identify_state_limits(load_episodes(Path(fa["train_file"] or data / f"{fa['env']}_oracle_traj_train.jsonl")))
+        print(f"[refine] state limits: {json.dumps(limits)}", flush=True)
+        for ep in list(train) + list(val):
+            for t in ep.transitions:
+                t.meta["state_limits"] = limits
     keys = state_keys(train)
     scales = state_scales(train, keys)
     if args.cover_modes:
@@ -87,6 +99,10 @@ def main() -> None:
             for ep in list(pool_tr) + list(pool_va):
                 for t in ep.transitions:
                     t.meta.update(derived)
+        if args.state_limits:
+            for ep in list(pool_tr) + list(pool_va):
+                for t in ep.transitions:
+                    t.meta["state_limits"] = limits
         train = covering_episodes(pool_tr, keys, scales, len(train))
         val = covering_episodes(pool_va, keys, scales, args.val_episodes or len(val))
         from collections import Counter
@@ -105,6 +121,10 @@ def main() -> None:
         if "pusher_free_dynamics" not in static_meta:
             raise SystemExit("--pusher_helper needs --pusher_dynamics on an --analyze family")
         helper_src, helper_doc = _sysid.PUSHER_HELPER_SOURCE, _sysid.PUSHER_HELPER_DOC
+    if limits:
+        from visualpatchworld.llm_family import sysid as _sysid
+
+        helper_doc += _sysid.STATE_LIMITS_DOC
     check_set = [t for ep in train[:4] for t in ep.transitions][:32]
     feedback = covering_episodes(train, keys, scales, args.feedback_episodes) if args.cover_modes else train[: args.feedback_episodes]
     k = int(fa.get("rollout_k", 5))

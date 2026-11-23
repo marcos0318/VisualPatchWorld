@@ -1,0 +1,23 @@
+[refine] start saturated_joint_limits val5=0.7024 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 3 valid revisions of saturated_joint_limits
+[refine] round 1: 3 valid revisions
+[refine]   cartesian_velocity_kinematics                val1=1.1154 val5=1.9742 val5=1.9742 (13s)
+[refine]   config_dependent_gain                        val1=1.0642 val5=2.0222 val5=2.0222 (22s)
+[refine]   substep_cartesian_kinematics                 val1=1.1115 val5=1.9719 val5=1.9719 (28s)
+[refine] best after round 1: saturated_joint_limits val5=0.7024
+[refine] round 2: 0 valid revisions of saturated_joint_limits
+[refine] round 2: 0 valid revisions
+[refine] best after round 2: saturated_joint_limits val5=0.7024
+[refine] round 3: 3 valid revisions of saturated_joint_limits
+[refine] round 3: 3 valid revisions
+[refine]   gravity_compensated_joints                   val1=0.7376 val5=0.8298 val5=0.8298 (19s)
+[refine]   coupled_gravity_dynamics                     val1=0.7377 val5=0.8361 val5=0.8361 (13s)
+[refine]   friction_gravity_quasi_static                val1=0.7378 val5=0.8380 val5=0.8380 (33s)
+[refine] best after round 3: saturated_joint_limits val5=0.7024
+[refine] round 4: 3 valid revisions of saturated_joint_limits
+[refine] round 4: 3 valid revisions
+[refine]   pd_joint_tracking                            val1=0.7992 val5=1.0063 val5=1.0063 (43s)
+[refine]   velocity_dynamics_with_friction              val1=0.8156 val5=1.0198 val5=1.0198 (48s)
+[refine]   substep_integration_with_drag                val1=0.8504 val5=1.0367 val5=1.0367 (334s)
+[refine] best after round 4: saturated_joint_limits val5=0.7024
+[refine] done: saturated_joint_limits val5=0.7024 round=0 (1687s)

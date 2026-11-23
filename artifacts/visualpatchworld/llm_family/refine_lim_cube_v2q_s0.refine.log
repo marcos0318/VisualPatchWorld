@@ -1,0 +1,26 @@
+[refine] state limits: {"block.z": {"min": {"value": 0.019, "blocked_pushes": 733, "median_progress_of_predicted": 0.0}, "action_model_r2": 0.999, "observed_range": [0.019, 0.335]}}
+[refine] start action_as_target_position val5=0.8875 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 3 valid revisions of action_as_target_position
+[refine] round 1: 3 valid revisions
+[refine]   quasi_static_contact_pushing                 val1=0.6377 val5=1.4424 val5=1.4424 (29s)
+[refine]   gripper_mode_switch                          val1=0.8254 val5=1.1715 val5=1.1715 (43s)
+[refine]   substep_contact_integration                  val1=0.6377 val5=1.4424 val5=1.4424 (39s)
+[refine] best after round 1: action_as_target_position val5=0.8875
+[refine] round 2: 3 valid revisions of action_as_target_position
+[refine] round 2: 3 valid revisions
+[refine]   velocity_control_with_gripper                val1=0.4073 val5=0.9862 val5=0.9862 (41s)
+[refine]   substep_pd_tracking                          val1=0.4739 val5=1.2838 val5=1.2838 (56s)
+[refine]   geometry_based_pushing                       val1=0.5929 val5=1.0787 val5=1.0787 (33s)
+[refine] best after round 2: action_as_target_position val5=0.8875
+[refine] round 3: 3 valid revisions of action_as_target_position
+[refine] round 3: 3 valid revisions
+[refine]   direct_velocity_control                      val1=0.2836 val5=0.6467 val5=0.6467 (51s)
+[refine]   substep_pd_tracking                          val1=0.3489 val5=0.9226 val5=0.9226 (90s)
+[refine]   hysteresis_attachment                        val1=0.2921 val5=0.6481 val5=0.6481 (38s)
+[refine] best after round 3: direct_velocity_control val5=0.6467
+[refine] round 4: 2 valid revisions of direct_velocity_control
+[refine] round 4: 2 valid revisions
+[refine]   config_dependent_velocity                    val1=0.2746 val5=0.6334 val5=0.6334 (39s)
+[refine]   pd_tracking_with_static_friction             val1=0.2828 val5=0.6413 val5=0.6413 (38s)
+[refine] best after round 4: config_dependent_velocity val5=0.6334
+[refine] done: config_dependent_velocity val5=0.6334 round=4 (1442s)

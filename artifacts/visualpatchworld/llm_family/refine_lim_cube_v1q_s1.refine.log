@@ -1,0 +1,27 @@
+[refine] state limits: {"block.z": {"min": {"value": 0.019, "blocked_pushes": 733, "median_progress_of_predicted": 0.0}, "action_model_r2": 0.999, "observed_range": [0.019, 0.335]}}
+[refine] start gripper_state_grasp val5=0.6536 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 3 valid revisions of gripper_state_grasp
+[refine] round 1: 3 valid revisions
+[refine]   limits_deadzone                              val1=0.2543 val5=0.5267 val5=0.5267 (17s)
+[refine]   substep_contact                              val1=0.2779 val5=0.6503 val5=0.6503 (30s)
+[refine]   hysteresis_grasp                             val1=0.2774 val5=0.6573 val5=0.6573 (21s)
+[refine] best after round 1: limits_deadzone val5=0.5267
+[refine] round 2: 3 valid revisions of limits_deadzone
+[refine] round 2: 3 valid revisions
+[refine]   axis_specific_saturation                     val1=0.2822 val5=0.6194 val5=0.6194 (67s)
+[refine]   action_bias_correction                       val1=0.2764 val5=0.6065 val5=0.6065 (59s)
+[refine]   nonlinear_drag_response                      val1=0.2679 val5=0.5668 val5=0.5668 (54s)
+[refine] best after round 2: limits_deadzone val5=0.5267
+[refine] round 3: 3 valid revisions of limits_deadzone
+[refine] round 3: 3 valid revisions
+[refine]   substep_integration                          val1=0.2779 val5=0.6503 val5=0.6503 (63s)
+[refine]   velocity_integration                         val1=0.2784 val5=0.6504 val5=0.6504 (40s)
+[refine]   contact_pushing_model                        val1=0.2764 val5=0.6551 val5=0.6551 (65s)
+[refine] best after round 3: limits_deadzone val5=0.5267
+[refine] round 4: 3 valid revisions of limits_deadzone
+[refine] round 4: 3 valid revisions
+[refine]   axis_specific_gains                          val1=0.2808 val5=0.6360 val5=0.6360 (22s)
+[refine]   pd_effector_tracking                         val1=0.2765 val5=0.6556 val5=0.6556 (32s)
+[refine]   velocity_saturation                          val1=0.2817 val5=0.6227 val5=0.6227 (65s)
+[refine] best after round 4: limits_deadzone val5=0.5267
+[refine] done: limits_deadzone val5=0.5267 round=1 (1499s)

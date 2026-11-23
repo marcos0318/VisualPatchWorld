@@ -1,0 +1,27 @@
+[refine] state limits: {"arm.y": {"max": {"value": 2.869, "blocked_pushes": 18, "median_progress_of_predicted": 0.068}, "min": {"value": -2.899, "blocked_pushes": 7, "median_progress_of_predicted": -0.057}, "action_model_r2": 0.958, "observed_range": [-2.899, 2.869]}}
+[refine] start saturated_joint_limits val5=0.7024 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 3 valid revisions of saturated_joint_limits
+[refine] round 1: 3 valid revisions
+[refine]   gravity_drift                                val1=0.6272 val5=0.8190 val5=0.8190 (31s)
+[refine]   task_space_control                           val1=0.9216 val5=1.8828 val5=1.8828 (15s)
+[refine]   friction_coupled_gain                        val1=0.5496 val5=0.7364 val5=0.7364 (36s)
+[refine] best after round 1: saturated_joint_limits val5=0.7024
+[refine] round 2: 3 valid revisions of saturated_joint_limits
+[refine] round 2: 3 valid revisions
+[refine]   inverted_joint_0_dynamics                    val1=0.5433 val5=0.7024 val5=0.7024 (22s)
+[refine]   cartesian_arm_with_offset                    val1=19.9846 val5=19.5454 val5=19.5454 (19s)
+[refine]   velocity_dynamics_with_drag                  val1=0.9018 val5=1.0987 val5=1.0987 (53s)
+[refine] best after round 2: inverted_joint_0_dynamics val5=0.7024
+[refine] round 3: 3 valid revisions of inverted_joint_0_dynamics
+[refine] round 3: 3 valid revisions
+[refine]   cartesian_arm_with_fixed_offset              val1=6.8917 val5=6.8793 val5=6.8793 (18s)
+[refine]   velocity_based_joint_dynamics                val1=2.1907 val5=2.3577 val5=2.3577 (43s)
+[refine]   configuration_dependent_gain                 val1=2.2046 val5=2.4088 val5=2.4088 (21s)
+[refine] best after round 3: inverted_joint_0_dynamics val5=0.7024
+[refine] round 4: 3 valid revisions of inverted_joint_0_dynamics
+[refine] round 4: 3 valid revisions
+[refine]   gravity_bias_dynamics                        val1=0.5450 val5=0.7072 val5=0.7072 (70s)
+[refine]   coulomb_friction_dynamics                    val1=0.5455 val5=0.7038 val5=0.7038 (57s)
+[refine]   coupled_joint_dynamics                       val1=0.5404 val5=0.7037 val5=0.7037 (41s)
+[refine] best after round 4: inverted_joint_0_dynamics val5=0.7024
+[refine] done: inverted_joint_0_dynamics val5=0.7024 round=2 (1381s)

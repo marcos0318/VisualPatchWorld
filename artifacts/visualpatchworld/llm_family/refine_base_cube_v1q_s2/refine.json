@@ -1,0 +1,995 @@
+{
+  "args": {
+    "run_dir": "artifacts/visualpatchworld/llm_family/v1_cube_qwen35_s2",
+    "output_dir": "artifacts/visualpatchworld/llm_family/refine_base_cube_v1q_s2",
+    "model": null,
+    "rounds": 4,
+    "num_revisions": 3,
+    "objective": "multi_step",
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/qwen35_general_skills.json",
+    "feedback_episodes": 10,
+    "restarts": 2,
+    "max_nfev": 200,
+    "seed": 0,
+    "structured_fit": true,
+    "balance_modes": false,
+    "mode_feedback": false,
+    "select": "rollout",
+    "select_h": 25,
+    "cover_modes": false,
+    "val_episodes": 0,
+    "fit_timeout": 1800.0,
+    "constants_feedback": false,
+    "beam": 1,
+    "pusher_dynamics": false,
+    "state_limits": false,
+    "pusher_helper": false
+  },
+  "model": "Qwen/Qwen3.5-397B-A17B",
+  "start": "kinematic_binary_grasp",
+  "history": [
+    {
+      "round": 0,
+      "name": "kinematic_binary_grasp",
+      "val_rollout_nrmse": 0.6598429458908508,
+      "score": 0.6598429458908508,
+      "val_per_mode": null,
+      "code": "# HYPOTHESIS: kinematic_binary_grasp\n# MECHANISM: Effector moves by action delta; Block snaps to Effector if grasp action exceeds threshold.\nimport math\nPARAMS = {\"eff_gain\": 0.1, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    ns[\"effector.x\"] = s[\"effector.x\"] + a[0] * p[\"eff_gain\"]\n    ns[\"effector.y\"] = s[\"effector.y\"] + a[1] * p[\"eff_gain\"]\n    ns[\"effector.z\"] = s[\"effector.z\"] + a[2] * p[\"eff_gain\"]\n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns"
+    },
+    {
+      "round": 1,
+      "name": "pd_target_tracking_binary",
+      "mechanism": "Effector tracks action[0:3] as absolute target positions using P-control; Block snaps rigidly if grasp action exceeds threshold.",
+      "val_rollout_nrmse": 1.4290086391137637,
+      "score": 1.4290086391137637,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.6528454062372167,
+      "params": {
+        "kp_eff": 0.04568797010246791,
+        "grasp_thresh": 0.29999999985601694,
+        "grasp_x_off": 0.05176811398490531,
+        "grasp_y_off": -0.004170099112539788,
+        "grasp_z_off": -0.0009697758074723831
+      },
+      "code": "# HYPOTHESIS: pd_target_tracking_binary\n# MECHANISM: Effector tracks action[0:3] as absolute target positions using P-control; Block snaps rigidly if grasp action exceeds threshold.\nPARAMS = {\"kp_eff\": 0.5, \"grasp_thresh\": 0.3, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    # Goal is static\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Effector PD Tracking (Action is Target)\n    # Using P-control allows overshoot if kp > 1, fitting the inertia observed\n    tx, ty, tz = a[0], a[1], a[2]\n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    \n    ns[\"effector.x\"] = ex + p[\"kp_eff\"] * (tx - ex)\n    ns[\"effector.y\"] = ey + p[\"kp_eff\"] * (ty - ey)\n    ns[\"effector.z\"] = ez + p[\"kp_eff\"] * (tz - ez)\n    \n    # Binary Grasp\n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "pd_target_tracking_spring",
+      "mechanism": "Effector tracks action targets via P-control; Block attaches via spring when grasped, allowing compliance offsets.",
+      "val_rollout_nrmse": 1.4242582547417098,
+      "score": 1.4242582547417098,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.6389744371092968,
+      "params": {
+        "kp_eff": 0.04663824443604189,
+        "kp_grasp": 0.8809981999151579,
+        "grasp_thresh": 0.29999999836258384,
+        "grasp_x_off": 0.052772728764480144,
+        "grasp_y_off": -0.004514041916990945,
+        "grasp_z_off": -0.00044987634330134437
+      },
+      "code": "# HYPOTHESIS: pd_target_tracking_spring\n# MECHANISM: Effector tracks action targets via P-control; Block attaches via spring when grasped, allowing compliance offsets.\nPARAMS = {\"kp_eff\": 0.5, \"kp_grasp\": 0.8, \"grasp_thresh\": 0.3, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Effector PD Tracking\n    tx, ty, tz = a[0], a[1], a[2]\n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    \n    ns[\"effector.x\"] = ex + p[\"kp_eff\"] * (tx - ex)\n    ns[\"effector.y\"] = ey + p[\"kp_eff\"] * (ty - ey)\n    ns[\"effector.z\"] = ez + p[\"kp_eff\"] * (tz - ez)\n    \n    # Spring Grasp (Hookean)\n    # Block moves towards effector + offset proportional to error\n    if a[4] > p[\"grasp_thresh\"]:\n        bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n        target_bx = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        target_by = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        target_bz = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n        \n        ns[\"block.x\"] = bx + p[\"kp_grasp\"] * (target_bx - bx)\n        ns[\"block.y\"] = by + p[\"kp_grasp\"] * (target_by - by)\n        ns[\"block.z\"] = bz + p[\"kp_grasp\"] * (target_bz - bz)\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "pd_target_substeps",
+      "mechanism": "Effector dynamics integrated via substeps with internal velocity accumulation to model stiff tracking; Block snaps rigidly.",
+      "val_rollout_nrmse": 1.4290039627117992,
+      "score": 1.4290039627117992,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.6528505816364752,
+      "params": {
+        "kp_eff": 0.25805840090907045,
+        "kv_eff": 4.419939615753656,
+        "n_sub": 18.63134882903984,
+        "grasp_thresh": 0.3000001004610539,
+        "grasp_x_off": 0.05176833114664319,
+        "grasp_y_off": -0.004170063562301842,
+        "grasp_z_off": -0.000963667649184024
+      },
+      "code": "# HYPOTHESIS: pd_target_substeps\n# MECHANISM: Effector dynamics integrated via substeps with internal velocity accumulation to model stiff tracking; Block snaps rigidly.\nPARAMS = {\"kp_eff\": 1.0, \"kv_eff\": 0.1, \"n_sub\": 5, \"grasp_thresh\": 0.3, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Substep Integration for Effector\n    # Internal velocity resets each step (models acceleration from command)\n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    tx, ty, tz = a[0], a[1], a[2]\n    \n    vx, vy, vz = 0.0, 0.0, 0.0\n    dt = 1.0 / p[\"n_sub\"]\n    \n    for _ in range(int(p[\"n_sub\"])):\n        # PD Law\n        ax = p[\"kp_eff\"] * (tx - ex) - p[\"kv_eff\"] * vx\n        ay = p[\"kp_eff\"] * (ty - ey) - p[\"kv_eff\"] * vy\n        az = p[\"kp_eff\"] * (tz - ez) - p[\"kv_eff\"] * vz\n        \n        vx += ax * dt\n        vy += ay * dt\n        vz += az * dt\n        \n        ex += vx * dt\n        ey += vy * dt\n        ez += vz * dt\n        \n    ns[\"effector.x\"] = ex\n    ns[\"effector.y\"] = ey\n    ns[\"effector.z\"] = ez\n    \n    # Binary Grasp\n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "anisotropic_effector_gain",
+      "mechanism": "Effector moves by action delta scaled independently per axis; Block snaps to Effector if grasp action exceeds threshold.",
+      "val_rollout_nrmse": 0.6442819271011775,
+      "score": 0.6442819271011775,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.30349636504296734,
+      "params": {
+        "eff_gain_x": 0.07879023863095856,
+        "eff_gain_y": 0.11066727489795848,
+        "eff_gain_z": 0.09786641834065758,
+        "grasp_thresh": 0.2,
+        "grasp_x_off": -0.0017506554494408069,
+        "grasp_y_off": 0.0012066851222242983,
+        "grasp_z_off": -0.01981979144081726
+      },
+      "code": "# HYPOTHESIS: anisotropic_effector_gain\n# MECHANISM: Effector moves by action delta scaled independently per axis; Block snaps to Effector if grasp action exceeds threshold.\nPARAMS = {\"eff_gain_x\": 0.2, \"eff_gain_y\": 0.1, \"eff_gain_z\": 0.1, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    # Effector moves with anisotropic gain to capture axis-specific dynamics\n    ns[\"effector.x\"] = s[\"effector.x\"] + a[0] * p[\"eff_gain_x\"]\n    ns[\"effector.y\"] = s[\"effector.y\"] + a[1] * p[\"eff_gain_y\"]\n    ns[\"effector.z\"] = s[\"effector.z\"] + a[2] * p[\"eff_gain_z\"]\n    # Block snaps to Effector if grasp action is active\n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "effector_velocity_clamp",
+      "mechanism": "Effector velocity is proportional to action but capped at a maximum speed; Block snaps to Effector if grasp action exceeds threshold.",
+      "val_rollout_nrmse": 0.6588944399679176,
+      "score": 0.6588944399679176,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.29442477669731637,
+      "params": {
+        "eff_gain": 0.09508840541920673,
+        "eff_max_vel": 0.1235758930710236,
+        "grasp_thresh": 0.2051112114228028,
+        "grasp_x_off": -0.001170054831444075,
+        "grasp_y_off": -0.0006876584329898512,
+        "grasp_z_off": -0.020527167863533726
+      },
+      "code": "# HYPOTHESIS: effector_velocity_clamp\n# MECHANISM: Effector velocity is proportional to action but capped at a maximum speed; Block snaps to Effector if grasp action exceeds threshold.\nPARAMS = {\"eff_gain\": 0.2, \"eff_max_vel\": 0.08, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    # Effector velocity calculation with saturation clamp\n    def clamp(v, limit):\n        if v > limit: return limit\n        if v < -limit: return -limit\n        return v\n    \n    dx = clamp(a[0] * p[\"eff_gain\"], p[\"eff_max_vel\"])\n    dy = clamp(a[1] * p[\"eff_gain\"], p[\"eff_max_vel\"])\n    dz = clamp(a[2] * p[\"eff_gain\"], p[\"eff_max_vel\"])\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "compliant_grasp_dynamics",
+      "mechanism": "Effector moves by action delta; Block is attached via a spring (lerp) when grasped, allowing slight lag behind Effector.",
+      "val_rollout_nrmse": 0.6378524442708778,
+      "score": 0.6378524442708778,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.3086865989699742,
+      "params": {
+        "eff_gain_x": 0.07981467840615979,
+        "eff_gain_y": 0.11155485043875829,
+        "eff_gain_z": 0.09926041777902353,
+        "grasp_thresh": 0.32553660254802,
+        "grasp_stiffness": 0.9581046774244961,
+        "grasp_x_off": -0.002648103881250394,
+        "grasp_y_off": 0.0020130312301952554,
+        "grasp_z_off": -0.02362197715074418
+      },
+      "code": "# HYPOTHESIS: compliant_grasp_dynamics\n# MECHANISM: Effector moves by action delta; Block is attached via a spring (lerp) when grasped, allowing slight lag behind Effector.\nPARAMS = {\"eff_gain_x\": 0.2, \"eff_gain_y\": 0.1, \"eff_gain_z\": 0.1, \"grasp_thresh\": 0.2, \"grasp_stiffness\": 0.9, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    # Effector moves with anisotropic gain (baseline fix for effector dynamics)\n    ns[\"effector.x\"] = s[\"effector.x\"] + a[0] * p[\"eff_gain_x\"]\n    ns[\"effector.y\"] = s[\"effector.y\"] + a[1] * p[\"eff_gain_y\"]\n    ns[\"effector.z\"] = s[\"effector.z\"] + a[2] * p[\"eff_gain_z\"]\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        # Compliant attachment: block moves towards effector target with stiffness\n        target_x = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        target_y = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        target_z = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n        k = p[\"grasp_stiffness\"]\n        ns[\"block.x\"] = s[\"block.x\"] + k * (target_x - s[\"block.x\"])\n        ns[\"block.y\"] = s[\"block.y\"] + k * (target_y - s[\"block.y\"])\n        ns[\"block.z\"] = s[\"block.z\"] + k * (target_z - s[\"block.z\"])\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "friction_rigid_grasp",
+      "mechanism": "Effector X movement overcomes Coulomb friction before moving; Block is rigidly attached to Effector with a fixed offset when grasped.",
+      "val_rollout_nrmse": 0.5049266514779557,
+      "score": 0.5049266514779557,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2708826340959547,
+      "params": {
+        "eff_gain_x": 0.14377065939463288,
+        "eff_gain_y": 0.10996799225971716,
+        "eff_gain_z": 0.09826856971231474,
+        "eff_friction_x": 0.022848379194614653,
+        "grasp_thresh": 0.29960327959563887,
+        "grasp_x_off": -0.0031212136616701166,
+        "grasp_y_off": 0.0006163922532902196,
+        "grasp_z_off": -0.022139536524697526
+      },
+      "code": "# HYPOTHESIS: friction_rigid_grasp\n# MECHANISM: Effector X movement overcomes Coulomb friction before moving; Block is rigidly attached to Effector with a fixed offset when grasped.\nPARAMS = {\"eff_gain_x\": 0.15, \"eff_gain_y\": 0.11, \"eff_gain_z\": 0.10, \"eff_friction_x\": 0.05, \"grasp_thresh\": 0.33, \"grasp_x_off\": 0.005, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Effector dynamics with Coulomb friction on X\n    def apply_friction(cmd, gain, friction):\n        force = cmd * gain\n        if abs(force) <= friction:\n            return 0.0\n        sign = 1.0 if force > 0 else -1.0\n        return force - sign * friction\n\n    dx = apply_friction(a[0], p[\"eff_gain_x\"], p[\"eff_friction_x\"])\n    dy = a[1] * p[\"eff_gain_y\"]\n    dz = a[2] * p[\"eff_gain_z\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        # Rigid attachment with offset (kinematic)\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6315536352188454,
+          "block.y": 0.246620624934242,
+          "block.z": 0.3120655197565425,
+          "effector.x": 0.4853517699542681,
+          "effector.y": 0.19303141373187122,
+          "effector.z": 0.11763860569258401,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.904529903867779,
+            "block.y": 0.35321739552062187,
+            "block.z": 0.4469495207450132,
+            "effector.x": 0.4975959155225199,
+            "effector.y": 0.20259318435169388,
+            "effector.z": 0.1193683465184786,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.47341110730156283,
+            "effector.y": 0.18347420896052927,
+            "effector.z": 0.11596930208527252,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6315536352188454,
+            "block.y": 0.246620624934242,
+            "block.z": 0.3120655197565425,
+            "effector.x": 0.4853517699542681,
+            "effector.y": 0.19303141373187122,
+            "effector.z": 0.11763860569258401,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6315536352188454,
+            "block.y": 0.246620624934242,
+            "block.z": 0.3120655197565425,
+            "effector.x": 0.4853517699542681,
+            "effector.y": 0.19303141373187122,
+            "effector.z": 0.11763860569258401,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "substep_pd_rigid_grasp",
+      "mechanism": "Effector tracks action target via internal PD controller integrated over substeps; Block is rigidly attached with offset.",
+      "val_rollout_nrmse": 0.6546883141840263,
+      "score": 0.6546883141840263,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2973333630483715,
+      "params": {
+        "eff_scale": 0.2347951117067822,
+        "eff_kp": 0.5409682173388,
+        "eff_dt": 0.36485179443308224,
+        "eff_substeps": 3.0000000000014735,
+        "grasp_thresh": 0.3300000000000001,
+        "grasp_x_off": -0.002159069534063401,
+        "grasp_y_off": -0.00031086511308667166,
+        "grasp_z_off": -0.022592236126964874
+      },
+      "code": "# HYPOTHESIS: substep_pd_rigid_grasp\n# MECHANISM: Effector tracks action target via internal PD controller integrated over substeps; Block is rigidly attached with offset.\nPARAMS = {\"eff_scale\": 0.15, \"eff_kp\": 0.5, \"eff_dt\": 0.2, \"eff_substeps\": 3, \"grasp_thresh\": 0.33, \"grasp_x_off\": 0.005, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # PD Tracking with substeps for each axis\n    def pd_track(pos, cmd, scale, kp, dt, n):\n        target = pos + cmd * scale\n        vel = 0.0\n        for _ in range(n):\n            acc = kp * (target - pos)\n            vel += acc * dt\n            pos += vel * dt\n        return pos\n\n    ns[\"effector.x\"] = pd_track(s[\"effector.x\"], a[0], p[\"eff_scale\"], p[\"eff_kp\"], p[\"eff_dt\"], int(p[\"eff_substeps\"]))\n    ns[\"effector.y\"] = pd_track(s[\"effector.y\"], a[1], p[\"eff_scale\"], p[\"eff_kp\"], p[\"eff_dt\"], int(p[\"eff_substeps\"]))\n    ns[\"effector.z\"] = pd_track(s[\"effector.z\"], a[2], p[\"eff_scale\"], p[\"eff_kp\"], p[\"eff_dt\"], int(p[\"eff_substeps\"]))\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        # Rigid attachment with offset\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6315536352188454,
+          "block.y": 0.246620624934242,
+          "block.z": 0.3120655197565425,
+          "effector.x": 0.4853517699542681,
+          "effector.y": 0.19303141373187122,
+          "effector.z": 0.11763860569258401,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.904529903867779,
+            "block.y": 0.35321739552062187,
+            "block.z": 0.4469495207450132,
+            "effector.x": 0.4975959155225199,
+            "effector.y": 0.20259318435169388,
+            "effector.z": 0.1193683465184786,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.47341110730156283,
+            "effector.y": 0.18347420896052927,
+            "effector.z": 0.11596930208527252,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6315536352188454,
+            "block.y": 0.246620624934242,
+            "block.z": 0.3120655197565425,
+            "effector.x": 0.4853517699542681,
+            "effector.y": 0.19303141373187122,
+            "effector.z": 0.11763860569258401,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6315536352188454,
+            "block.y": 0.246620624934242,
+            "block.z": 0.3120655197565425,
+            "effector.x": 0.4853517699542681,
+            "effector.y": 0.19303141373187122,
+            "effector.z": 0.11763860569258401,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "nonlinear_gain_rigid_grasp",
+      "mechanism": "Effector gain increases with action magnitude (approximating friction breakaway); Block is rigidly attached with offset.",
+      "val_rollout_nrmse": 0.6079878134091221,
+      "score": 0.6079878134091221,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2999167135267162,
+      "params": {
+        "eff_base_gain": 0.059396993103322464,
+        "eff_nl_gain": 0.054470274574978376,
+        "grasp_thresh": 0.33000028602766,
+        "grasp_x_off": -0.0020963482305341083,
+        "grasp_y_off": 0.00024145088327653713,
+        "grasp_z_off": -0.03289641591107268
+      },
+      "code": "# HYPOTHESIS: nonlinear_gain_rigid_grasp\n# MECHANISM: Effector gain increases with action magnitude (approximating friction breakaway); Block is rigidly attached with offset.\nPARAMS = {\"eff_base_gain\": 0.10, \"eff_nl_gain\": 0.10, \"grasp_thresh\": 0.33, \"grasp_x_off\": 0.005, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Non-linear gain: gain = base + nl * abs(action)\n    # This allows larger moves for larger actions without explicit friction branching\n    def move(pos, cmd, base_g, nl_g):\n        gain = base_g + nl_g * abs(cmd)\n        return pos + cmd * gain\n\n    ns[\"effector.x\"] = move(s[\"effector.x\"], a[0], p[\"eff_base_gain\"], p[\"eff_nl_gain\"])\n    ns[\"effector.y\"] = move(s[\"effector.y\"], a[1], p[\"eff_base_gain\"], p[\"eff_nl_gain\"])\n    ns[\"effector.z\"] = move(s[\"effector.z\"], a[2], p[\"eff_base_gain\"], p[\"eff_nl_gain\"])\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        # Rigid attachment with offset\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6315536352188454,
+          "block.y": 0.246620624934242,
+          "block.z": 0.3120655197565425,
+          "effector.x": 0.4853517699542681,
+          "effector.y": 0.19303141373187122,
+          "effector.z": 0.11763860569258401,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.904529903867779,
+            "block.y": 0.35321739552062187,
+            "block.z": 0.4469495207450132,
+            "effector.x": 0.4975959155225199,
+            "effector.y": 0.20259318435169388,
+            "effector.z": 0.1193683465184786,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.47341110730156283,
+            "effector.y": 0.18347420896052927,
+            "effector.z": 0.11596930208527252,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6315536352188454,
+            "block.y": 0.246620624934242,
+            "block.z": 0.3120655197565425,
+            "effector.x": 0.4853517699542681,
+            "effector.y": 0.19303141373187122,
+            "effector.z": 0.11763860569258401,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6315536352188454,
+            "block.y": 0.246620624934242,
+            "block.z": 0.3120655197565425,
+            "effector.x": 0.4853517699542681,
+            "effector.y": 0.19303141373187122,
+            "effector.z": 0.11763860569258401,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "nonlinear_actuator_rigid_grasp",
+      "mechanism": "Effector X velocity follows a saturating non-linear function (tanh) of command, modeling motor saturation; Block is rigidly attached when grasped.",
+      "val_rollout_nrmse": 0.6398299312509543,
+      "score": 0.6398299312509543,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.30699810406565325,
+      "params": {
+        "eff_gain_x": -18.859107452166242,
+        "eff_scale_x": -0.004192244069016234,
+        "eff_gain_y": 0.11064865350571518,
+        "eff_gain_z": 0.09846935183441481,
+        "grasp_thresh": 0.3,
+        "grasp_x_off": -0.002272840466090104,
+        "grasp_y_off": 0.001824209537363994,
+        "grasp_z_off": -0.022403258507836688
+      },
+      "code": "# HYPOTHESIS: nonlinear_actuator_rigid_grasp\n# MECHANISM: Effector X velocity follows a saturating non-linear function (tanh) of command, modeling motor saturation; Block is rigidly attached when grasped.\nPARAMS = {\"eff_gain_x\": 0.2, \"eff_scale_x\": 3.0, \"eff_gain_y\": 0.11, \"eff_gain_z\": 0.10, \"grasp_thresh\": 0.3, \"grasp_x_off\": 0.01, \"grasp_y_off\": 0.0, \"grasp_z_off\": -0.02}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Non-linear effector dynamics (tanh saturation)\n    dx = p[\"eff_gain_x\"] * math.tanh(a[0] * p[\"eff_scale_x\"])\n    dy = a[1] * p[\"eff_gain_y\"]\n    dz = a[2] * p[\"eff_gain_z\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.5662186860748991,
+          "block.y": 0.2472746975006956,
+          "block.z": 0.2866356983768249,
+          "effector.x": 0.4154493793858382,
+          "effector.y": 0.19164078790660383,
+          "effector.z": 0.11711723146876157,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8109552461145991,
+            "block.y": 0.354154177707699,
+            "block.z": 0.41052817407664965,
+            "effector.x": 0.4326305252280314,
+            "effector.y": 0.2009606679108779,
+            "effector.z": 0.117770473034132,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.3984193544973668,
+            "effector.y": 0.18233398164189435,
+            "effector.z": 0.1164924559604877,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.5662186860748991,
+            "block.y": 0.2472746975006956,
+            "block.z": 0.2866356983768249,
+            "effector.x": 0.4154493793858382,
+            "effector.y": 0.19164078790660383,
+            "effector.z": 0.11711723146876157,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.5662186860748991,
+            "block.y": 0.2472746975006956,
+            "block.z": 0.2866356983768249,
+            "effector.x": 0.4154493793858382,
+            "effector.y": 0.19164078790660383,
+            "effector.z": 0.11711723146876157,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "kinematic_coupling_rigid_grasp",
+      "mechanism": "Effector X gain depends on Z height (simulating arm Jacobian kinematics); Block is rigidly attached when grasped.",
+      "val_rollout_nrmse": 0.49981552227869785,
+      "score": 0.49981552227869785,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2512831283743274,
+      "params": {
+        "eff_gain_x_base": -0.013033902384729207,
+        "eff_gain_x_z_dep": 0.4822801301877684,
+        "eff_gain_y": 0.11058198126808745,
+        "eff_gain_z": 0.10013328583660885,
+        "grasp_thresh": 0.24676077964152468,
+        "grasp_x_off": 0.002092129803638586,
+        "grasp_y_off": 0.0013890598315941943,
+        "grasp_z_off": -0.020505950851871353
+      },
+      "code": "# HYPOTHESIS: kinematic_coupling_rigid_grasp\n# MECHANISM: Effector X gain depends on Z height (simulating arm Jacobian kinematics); Block is rigidly attached when grasped.\nPARAMS = {\"eff_gain_x_base\": 0.15, \"eff_gain_x_z_dep\": 0.1, \"eff_gain_y\": 0.11, \"eff_gain_z\": 0.10, \"grasp_thresh\": 0.3, \"grasp_x_off\": 0.01, \"grasp_y_off\": 0.0, \"grasp_z_off\": -0.02}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Z-dependent gain for X movement\n    current_gain_x = p[\"eff_gain_x_base\"] + p[\"eff_gain_x_z_dep\"] * s[\"effector.z\"]\n    dx = a[0] * current_gain_x\n    dy = a[1] * p[\"eff_gain_y\"]\n    dz = a[2] * p[\"eff_gain_z\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.5662186860748991,
+          "block.y": 0.2472746975006956,
+          "block.z": 0.2866356983768249,
+          "effector.x": 0.4154493793858382,
+          "effector.y": 0.19164078790660383,
+          "effector.z": 0.11711723146876157,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8109552461145991,
+            "block.y": 0.354154177707699,
+            "block.z": 0.41052817407664965,
+            "effector.x": 0.4326305252280314,
+            "effector.y": 0.2009606679108779,
+            "effector.z": 0.117770473034132,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.3984193544973668,
+            "effector.y": 0.18233398164189435,
+            "effector.z": 0.1164924559604877,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.5662186860748991,
+            "block.y": 0.2472746975006956,
+            "block.z": 0.2866356983768249,
+            "effector.x": 0.4154493793858382,
+            "effector.y": 0.19164078790660383,
+            "effector.z": 0.11711723146876157,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.5662186860748991,
+            "block.y": 0.2472746975006956,
+            "block.z": 0.2866356983768249,
+            "effector.x": 0.4154493793858382,
+            "effector.y": 0.19164078790660383,
+            "effector.z": 0.11711723146876157,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "nonlinear_actuator_elastic_grasp",
+      "mechanism": "Effector X velocity is non-linear (tanh); Grasped block is attached via a spring (offset depends on pushing force).",
+      "val_rollout_nrmse": 0.6344952069862797,
+      "score": 0.6344952069862797,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.3114514046457056,
+      "params": {
+        "eff_gain_x": 6.762422227889438,
+        "eff_scale_x": 0.011892132979495559,
+        "eff_gain_y": 0.11064865351129594,
+        "eff_gain_z": 0.09846935183578057,
+        "grasp_thresh": 0.30000000000017324,
+        "grasp_x_off": -0.002366582113810219,
+        "grasp_y_off": 0.0018242095377175797,
+        "grasp_z_off": -0.022403258508023847,
+        "grasp_compliance_x": -0.007883969442111182
+      },
+      "code": "# HYPOTHESIS: nonlinear_actuator_elastic_grasp\n# MECHANISM: Effector X velocity is non-linear (tanh); Grasped block is attached via a spring (offset depends on pushing force).\nPARAMS = {\"eff_gain_x\": 0.2, \"eff_scale_x\": 3.0, \"eff_gain_y\": 0.11, \"eff_gain_z\": 0.10, \"grasp_thresh\": 0.3, \"grasp_x_off\": 0.01, \"grasp_y_off\": 0.0, \"grasp_z_off\": -0.02, \"grasp_compliance_x\": -0.01}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Non-linear effector dynamics\n    dx = p[\"eff_gain_x\"] * math.tanh(a[0] * p[\"eff_scale_x\"])\n    dy = a[1] * p[\"eff_gain_y\"]\n    dz = a[2] * p[\"eff_gain_z\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        # Elastic attachment: offset varies with X command (simulating grip compression)\n        dynamic_off_x = p[\"grasp_x_off\"] + p[\"grasp_compliance_x\"] * a[0]\n        ns[\"block.x\"] = ns[\"effector.x\"] + dynamic_off_x\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.5662186860748991,
+          "block.y": 0.2472746975006956,
+          "block.z": 0.2866356983768249,
+          "effector.x": 0.4154493793858382,
+          "effector.y": 0.19164078790660383,
+          "effector.z": 0.11711723146876157,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8109552461145991,
+            "block.y": 0.354154177707699,
+            "block.z": 0.41052817407664965,
+            "effector.x": 0.4326305252280314,
+            "effector.y": 0.2009606679108779,
+            "effector.z": 0.117770473034132,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.3984193544973668,
+            "effector.y": 0.18233398164189435,
+            "effector.z": 0.1164924559604877,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.5662186860748991,
+            "block.y": 0.2472746975006956,
+            "block.z": 0.2866356983768249,
+            "effector.x": 0.4154493793858382,
+            "effector.y": 0.19164078790660383,
+            "effector.z": 0.11711723146876157,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.5662186860748991,
+            "block.y": 0.2472746975006956,
+            "block.z": 0.2866356983768249,
+            "effector.x": 0.4154493793858382,
+            "effector.y": 0.19164078790660383,
+            "effector.z": 0.11711723146876157,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "best": {
+    "name": "kinematic_coupling_rigid_grasp",
+    "round": 4,
+    "val_rollout_nrmse": 0.49981552227869785,
+    "params": {
+      "eff_gain_x_base": -0.013033902384729207,
+      "eff_gain_x_z_dep": 0.4822801301877684,
+      "eff_gain_y": 0.11058198126808745,
+      "eff_gain_z": 0.10013328583660885,
+      "grasp_thresh": 0.24676077964152468,
+      "grasp_x_off": 0.002092129803638586,
+      "grasp_y_off": 0.0013890598315941943,
+      "grasp_z_off": -0.020505950851871353
+    },
+    "code": "# HYPOTHESIS: kinematic_coupling_rigid_grasp\n# MECHANISM: Effector X gain depends on Z height (simulating arm Jacobian kinematics); Block is rigidly attached when grasped.\nPARAMS = {\"eff_gain_x_base\": 0.15, \"eff_gain_x_z_dep\": 0.1, \"eff_gain_y\": 0.11, \"eff_gain_z\": 0.10, \"grasp_thresh\": 0.3, \"grasp_x_off\": 0.01, \"grasp_y_off\": 0.0, \"grasp_z_off\": -0.02}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Z-dependent gain for X movement\n    current_gain_x = p[\"eff_gain_x_base\"] + p[\"eff_gain_x_z_dep\"] * s[\"effector.z\"]\n    dx = a[0] * current_gain_x\n    dy = a[1] * p[\"eff_gain_y\"]\n    dz = a[2] * p[\"eff_gain_z\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns"
+  },
+  "elapsed_s": 1966.8567562103271
+}

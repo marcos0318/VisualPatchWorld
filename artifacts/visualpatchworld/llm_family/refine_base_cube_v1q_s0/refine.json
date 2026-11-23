@@ -1,0 +1,915 @@
+{
+  "args": {
+    "run_dir": "artifacts/visualpatchworld/llm_family/v1_cube_qwen35_s0",
+    "output_dir": "artifacts/visualpatchworld/llm_family/refine_base_cube_v1q_s0",
+    "model": null,
+    "rounds": 4,
+    "num_revisions": 3,
+    "objective": "multi_step",
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/qwen35_general_skills.json",
+    "feedback_episodes": 10,
+    "restarts": 2,
+    "max_nfev": 200,
+    "seed": 0,
+    "structured_fit": true,
+    "balance_modes": false,
+    "mode_feedback": false,
+    "select": "rollout",
+    "select_h": 25,
+    "cover_modes": false,
+    "val_episodes": 0,
+    "fit_timeout": 1800.0,
+    "constants_feedback": false,
+    "beam": 1,
+    "pusher_dynamics": false,
+    "state_limits": false,
+    "pusher_helper": false
+  },
+  "model": "Qwen/Qwen3.5-397B-A17B",
+  "start": "action_grip_controlled",
+  "history": [
+    {
+      "round": 0,
+      "name": "action_grip_controlled",
+      "val_rollout_nrmse": 0.6556061470886734,
+      "score": 0.6556061470886734,
+      "val_per_mode": null,
+      "code": "# HYPOTHESIS: action_grip_controlled\n# MECHANISM: Action[4] explicitly controls grip state; grip determines block-effector coupling strength continuously.\nPARAMS = {\"effector_gain\": 0.5, \"grip_threshold\": 0.0, \"max_coupling\": 1.0, \"min_coupling\": 0.0, \"dist_threshold\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    ex_new = ex + p[\"effector_gain\"] * action[0]\n    ey_new = ey + p[\"effector_gain\"] * action[1]\n    ez_new = max(0.015, min(0.335, ez + p[\"effector_gain\"] * action[2]))\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    \n    grip_signal = (action[4] - p[\"grip_threshold\"]) / 1.0\n    grip_signal = max(0.0, min(1.0, grip_signal))\n    \n    dist_factor = max(0.0, 1.0 - dist / p[\"dist_threshold\"])\n    \n    coupling = p[\"min_coupling\"] + (p[\"max_coupling\"] - p[\"min_coupling\"]) * grip_signal * dist_factor\n    \n    bx_new = bx + coupling * (ex_new - ex)\n    by_new = by + coupling * (ey_new - ey)\n    bz_new = bz + coupling * (ez_new - ez)\n    \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }"
+    },
+    {
+      "round": 1,
+      "name": "load_dependent_gain",
+      "mechanism": "Effector gain reduces when holding block (mass loading); block rigidly follows effector when gripped.",
+      "val_rollout_nrmse": 0.6575846880282451,
+      "score": 0.6575846880282451,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.27605760735706186,
+      "params": {
+        "gain_free": 0.09519055816600679,
+        "gain_loaded": 0.09461595526178,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: load_dependent_gain\n# MECHANISM: Effector gain reduces when holding block (mass loading); block rigidly follows effector when gripped.\nPARAMS = {\"gain_free\": 0.15, \"gain_loaded\": 0.08, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    # Determine grip state based on proximity and action signal\n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # Select effector gain based on load\n    gain = p[\"gain_loaded\"] if is_gripped else p[\"gain_free\"]\n    \n    # Effector kinematics\n    ex_new = ex + gain * action[0]\n    ey_new = ey + gain * action[1]\n    ez_new = max(0.015, min(0.335, ez + gain * action[2]))\n    \n    # Block dynamics\n    if is_gripped:\n        # Rigid attachment\n        dx, dy, dz = ex_new - ex, ey_new - ey, ez_new - ez\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        # Block stationary\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.5747930528116076,
+          "block.y": 0.2734655249816687,
+          "block.z": 0.1519703762769336,
+          "effector.x": 0.48238394534824336,
+          "effector.y": 0.2352998968237272,
+          "effector.z": 0.12375385559283045,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8176012156576876,
+            "block.y": 0.3815450848722538,
+            "block.z": 0.21387268342318488,
+            "effector.x": 0.5126430866744309,
+            "effector.y": 0.21548794854621903,
+            "effector.z": 0.12089559820972762,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.09377790562069852,
+            "block.y": 0.08627551562675125,
+            "block.z": 0.03941033583307364,
+            "effector.x": 0.4517237235758515,
+            "effector.y": 0.2527080708915499,
+            "effector.z": 0.1264127252137127,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.5747930528116076,
+            "block.y": 0.2734655249816687,
+            "block.z": 0.1519703762769336,
+            "effector.x": 0.48238394534824336,
+            "effector.y": 0.2352998968237272,
+            "effector.z": 0.12375385559283045,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.5747930528116076,
+            "block.y": 0.2734655249816687,
+            "block.z": 0.1519703762769336,
+            "effector.x": 0.48238394534824336,
+            "effector.y": 0.2352998968237272,
+            "effector.z": 0.12375385559283045,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "anisotropic_gain_rigid_grip",
+      "mechanism": "Effector has different gains per axis (X is harder to move); block rigidly attaches when gripped.",
+      "val_rollout_nrmse": 0.6374227663705445,
+      "score": 0.6374227663705445,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.28078463764267897,
+      "params": {
+        "gain_x": 0.07869068689846946,
+        "gain_y": 0.10998870056147643,
+        "gain_z": 0.0980532759300301,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: anisotropic_gain_rigid_grip\n# MECHANISM: Effector has different gains per axis (X is harder to move); block rigidly attaches when gripped.\nPARAMS = {\"gain_x\": 0.12, \"gain_y\": 0.12, \"gain_z\": 0.15, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    # Grip logic: Strict contact distance (fixes fitted 0.5 threshold)\n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # Anisotropic effector kinematics (addresses higher X error)\n    ex_new = ex + p[\"gain_x\"] * action[0]\n    ey_new = ey + p[\"gain_y\"] * action[1]\n    ez_new = max(0.015, min(0.335, ez + p[\"gain_z\"] * action[2]))\n    \n    # Block dynamics\n    if is_gripped:\n        # Rigid attachment (fixes max_coupling > 1 issue)\n        dx, dy, dz = ex_new - ex, ey_new - ey, ez_new - ez\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        # Block stationary\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.5747930528116076,
+          "block.y": 0.2734655249816687,
+          "block.z": 0.1519703762769336,
+          "effector.x": 0.48238394534824336,
+          "effector.y": 0.2352998968237272,
+          "effector.z": 0.12375385559283045,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8176012156576876,
+            "block.y": 0.3815450848722538,
+            "block.z": 0.21387268342318488,
+            "effector.x": 0.5126430866744309,
+            "effector.y": 0.21548794854621903,
+            "effector.z": 0.12089559820972762,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.09377790562069852,
+            "block.y": 0.08627551562675125,
+            "block.z": 0.03941033583307364,
+            "effector.x": 0.4517237235758515,
+            "effector.y": 0.2527080708915499,
+            "effector.z": 0.1264127252137127,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.5747930528116076,
+            "block.y": 0.2734655249816687,
+            "block.z": 0.1519703762769336,
+            "effector.x": 0.48238394534824336,
+            "effector.y": 0.2352998968237272,
+            "effector.z": 0.12375385559283045,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.5747930528116076,
+            "block.y": 0.2734655249816687,
+            "block.z": 0.1519703762769336,
+            "effector.x": 0.48238394534824336,
+            "effector.y": 0.2352998968237272,
+            "effector.z": 0.12375385559283045,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "coulomb_friction_anisotropic",
+      "mechanism": "Effector motion is resisted by axis-specific static friction; action must exceed threshold to produce movement.",
+      "val_rollout_nrmse": 0.48384760842230307,
+      "score": 0.48384760842230307,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.24882655769015605,
+      "params": {
+        "gain_x": 0.14223196254348394,
+        "gain_y": 0.12726361484630017,
+        "gain_z": 0.08085116057195851,
+        "fric_x": 0.15919313141793298,
+        "fric_y": 0.0781030706595716,
+        "fric_z": -0.14865774090301337,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: coulomb_friction_anisotropic\n# MECHANISM: Effector motion is resisted by axis-specific static friction; action must exceed threshold to produce movement.\nPARAMS = {\"gain_x\": 0.15, \"gain_y\": 0.12, \"gain_z\": 0.10, \"fric_x\": 0.2, \"fric_y\": 0.1, \"fric_z\": 0.1, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    # Grip logic\n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # Anisotropic friction model: effective_action = sign(a) * max(0, abs(a) - friction)\n    def apply_friction(a, gain, fric):\n        abs_a = abs(a)\n        if abs_a <= fric:\n            return 0.0\n        return gain * (abs_a - fric) * (1.0 if a > 0 else -1.0)\n    \n    ex_new = ex + apply_friction(action[0], p[\"gain_x\"], p[\"fric_x\"])\n    ey_new = ey + apply_friction(action[1], p[\"gain_y\"], p[\"fric_y\"])\n    ez_new = ez + apply_friction(action[2], p[\"gain_z\"], p[\"fric_z\"])\n    \n    # Bounds\n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    # Block dynamics\n    if is_gripped:\n        dx, dy, dz = ex_new - ex, ey_new - ey, ez_new - ez\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.554331873626255,
+          "block.y": 0.24638508119993666,
+          "block.z": 0.19051187203344133,
+          "effector.x": 0.4872663599880995,
+          "effector.y": 0.19165153776806618,
+          "effector.z": 0.11663249706546779,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.7939305997158168,
+            "block.y": 0.35288004277737617,
+            "block.z": 0.2728567704884888,
+            "effector.x": 0.49768864148285474,
+            "effector.y": 0.2009783204616161,
+            "effector.z": 0.1165479668331797,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4771412603510068,
+            "effector.y": 0.18233752057465683,
+            "effector.z": 0.11671284705689138,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.554331873626255,
+            "block.y": 0.24638508119993666,
+            "block.z": 0.19051187203344133,
+            "effector.x": 0.4872663599880995,
+            "effector.y": 0.19165153776806618,
+            "effector.z": 0.11663249706546779,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.554331873626255,
+            "block.y": 0.24638508119993666,
+            "block.z": 0.19051187203344133,
+            "effector.x": 0.4872663599880995,
+            "effector.y": 0.19165153776806618,
+            "effector.z": 0.11663249706546779,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "smooth_friction_tanh",
+      "mechanism": "Friction resistance is smooth and saturates (Stribeck-like), reducing effective gain at low actions without hard discontinuity.",
+      "val_rollout_nrmse": 0.4748577889035273,
+      "score": 0.4748577889035273,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.25196856536651807,
+      "params": {
+        "gain_x": 0.13931555982721774,
+        "gain_y": 0.1301081229192516,
+        "gain_z": 0.07418697243816141,
+        "fric_x": 0.1527468940928572,
+        "fric_y": 0.09181600992874112,
+        "fric_z": -0.22873975607331315,
+        "smooth": 0.09040926413103692,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: smooth_friction_tanh\n# MECHANISM: Friction resistance is smooth and saturates (Stribeck-like), reducing effective gain at low actions without hard discontinuity.\nPARAMS = {\"gain_x\": 0.15, \"gain_y\": 0.12, \"gain_z\": 0.10, \"fric_x\": 0.2, \"fric_y\": 0.1, \"fric_z\": 0.1, \"smooth\": 0.1, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # Smooth friction: friction_force = fric * tanh(action / smooth)\n    # effective_action = action - friction_force\n    def apply_smooth_friction(a, gain, fric, smooth):\n        if smooth < 1e-6: smooth = 1e-6\n        f_force = fric * math.tanh(a / smooth)\n        return gain * (a - f_force)\n    \n    ex_new = ex + apply_smooth_friction(action[0], p[\"gain_x\"], p[\"fric_x\"], p[\"smooth\"])\n    ey_new = ey + apply_smooth_friction(action[1], p[\"gain_y\"], p[\"fric_y\"], p[\"smooth\"])\n    ez_new = ez + apply_smooth_friction(action[2], p[\"gain_z\"], p[\"fric_z\"], p[\"smooth\"])\n    \n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    if is_gripped:\n        dx, dy, dz = ex_new - ex, ey_new - ey, ez_new - ez\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.554331873626255,
+          "block.y": 0.24638508119993666,
+          "block.z": 0.19051187203344133,
+          "effector.x": 0.4872663599880995,
+          "effector.y": 0.19165153776806618,
+          "effector.z": 0.11663249706546779,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.7939305997158168,
+            "block.y": 0.35288004277737617,
+            "block.z": 0.2728567704884888,
+            "effector.x": 0.49768864148285474,
+            "effector.y": 0.2009783204616161,
+            "effector.z": 0.1165479668331797,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4771412603510068,
+            "effector.y": 0.18233752057465683,
+            "effector.z": 0.11671284705689138,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.554331873626255,
+            "block.y": 0.24638508119993666,
+            "block.z": 0.19051187203344133,
+            "effector.x": 0.4872663599880995,
+            "effector.y": 0.19165153776806618,
+            "effector.z": 0.11663249706546779,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.554331873626255,
+            "block.y": 0.24638508119993666,
+            "block.z": 0.19051187203344133,
+            "effector.x": 0.4872663599880995,
+            "effector.y": 0.19165153776806618,
+            "effector.z": 0.11663249706546779,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "substep_friction_integration",
+      "mechanism": "Control step is composed of multiple physical substeps where velocity accumulates from action and is resisted by friction.",
+      "val_rollout_nrmse": 0.48855962005837383,
+      "score": 0.48855962005837383,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.24801971863530586,
+      "params": {
+        "acc_gain_x": 0.14252822854517516,
+        "acc_gain_y": 0.1330687882895329,
+        "acc_gain_z": 0.07881765440138325,
+        "fric_x": 0.020369869211399872,
+        "fric_y": 0.012911606276766805,
+        "fric_z": -0.013266241755556143,
+        "substeps": 1.0,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: substep_friction_integration\n# MECHANISM: Control step is composed of multiple physical substeps where velocity accumulates from action and is resisted by friction.\nPARAMS = {\"acc_gain_x\": 0.3, \"acc_gain_y\": 0.3, \"acc_gain_z\": 0.3, \"fric_x\": 0.05, \"fric_y\": 0.05, \"fric_z\": 0.05, \"substeps\": 5.0, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # Substep integration\n    # Assume action is acceleration command. Velocity accumulates over substeps.\n    # Friction acts on velocity.\n    n_sub = int(max(1, round(p[\"substeps\"])))\n    \n    vx, vy, vz = 0.0, 0.0, 0.0\n    \n    for _ in range(n_sub):\n        # Update velocity from action (acceleration)\n        vx += action[0] * p[\"acc_gain_x\"]\n        vy += action[1] * p[\"acc_gain_y\"]\n        vz += action[2] * p[\"acc_gain_z\"]\n        \n        # Apply friction to velocity (simple damping/threshold)\n        # If velocity is small, friction stops it\n        def damp(v, f):\n            if abs(v) <= f: return 0.0\n            return v - f * (1.0 if v > 0 else -1.0)\n        \n        vx = damp(vx, p[\"fric_x\"])\n        vy = damp(vy, p[\"fric_y\"])\n        vz = damp(vz, p[\"fric_z\"])\n        \n        # Update position\n        ex += vx\n        ey += vy\n        ez += vz\n    \n    ex_new, ey_new, ez_new = ex, ey, ez\n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    if is_gripped:\n        # Block moves with effector displacement over the whole step\n        dx, dy, dz = ex_new - s[\"effector.x\"], ey_new - s[\"effector.y\"], ez_new - s[\"effector.z\"]\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.554331873626255,
+          "block.y": 0.24638508119993666,
+          "block.z": 0.19051187203344133,
+          "effector.x": 0.4872663599880995,
+          "effector.y": 0.19165153776806618,
+          "effector.z": 0.11663249706546779,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.7939305997158168,
+            "block.y": 0.35288004277737617,
+            "block.z": 0.2728567704884888,
+            "effector.x": 0.49768864148285474,
+            "effector.y": 0.2009783204616161,
+            "effector.z": 0.1165479668331797,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4771412603510068,
+            "effector.y": 0.18233752057465683,
+            "effector.z": 0.11671284705689138,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.554331873626255,
+            "block.y": 0.24638508119993666,
+            "block.z": 0.19051187203344133,
+            "effector.x": 0.4872663599880995,
+            "effector.y": 0.19165153776806618,
+            "effector.z": 0.11663249706546779,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.554331873626255,
+            "block.y": 0.24638508119993666,
+            "block.z": 0.19051187203344133,
+            "effector.x": 0.4872663599880995,
+            "effector.y": 0.19165153776806618,
+            "effector.z": 0.11663249706546779,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "saturated_velocity_tanh",
+      "mechanism": "Effector velocity saturates at high action magnitudes (tanh), rather than suffering friction loss; small actions are more efficient than the previous friction model suggested.",
+      "val_rollout_nrmse": 1.014640224085256,
+      "score": 1.014640224085256,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.4712423514929559,
+      "params": {
+        "gain_x": 0.009957592878388152,
+        "gain_y": 738.684827795433,
+        "gain_z": 0.09731628363200913,
+        "sat_x": 0.0,
+        "sat_y": 6716.201671704469,
+        "sat_z": 0.7252673122017217,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: saturated_velocity_tanh\n# MECHANISM: Effector velocity saturates at high action magnitudes (tanh), rather than suffering friction loss; small actions are more efficient than the previous friction model suggested.\nPARAMS = {\"gain_x\": 0.2, \"gain_y\": 0.2, \"gain_z\": 0.2, \"sat_x\": 0.15, \"sat_y\": 0.15, \"sat_z\": 0.15, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # New mechanism: Displacement is saturated tanh of action, not action minus friction.\n    # This matches the observation that small actions have higher effective gain.\n    def apply_saturation(a, gain, sat):\n        if sat < 1e-6: sat = 1e-6\n        return gain * math.tanh(a / sat)\n    \n    dx = apply_saturation(action[0], p[\"gain_x\"], p[\"sat_x\"])\n    dy = apply_saturation(action[1], p[\"gain_y\"], p[\"sat_y\"])\n    dz = apply_saturation(action[2], p[\"gain_z\"], p[\"sat_z\"])\n    \n    ex_new = ex + dx\n    ey_new = ey + dy\n    ez_new = ez + dz\n    \n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    if is_gripped:\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.4863213983215487,
+          "block.y": 0.23427982386753757,
+          "block.z": 0.20165389254014354,
+          "effector.x": 0.4284033447620285,
+          "effector.y": 0.18644015177622922,
+          "effector.z": 0.12605687487714276,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.6965239738034333,
+            "block.y": 0.33554253311776433,
+            "block.z": 0.2888147037118925,
+            "effector.x": 0.43869503648299096,
+            "effector.y": 0.1934436578720225,
+            "effector.z": 0.14735510439225183,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.41837881066948657,
+            "effector.y": 0.17952490916794095,
+            "effector.z": 0.10174086061617572,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "pd_substep_tracking",
+      "mechanism": "The effector is controlled by a PD controller tracking a target offset (action), integrated over multiple substeps to capture actuator dynamics.",
+      "val_rollout_nrmse": 0.6374215644312756,
+      "score": 0.6374215644312756,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2807832905389922,
+      "params": {
+        "kp_x": 0.7672050115306454,
+        "kp_y": 1.0793328061352687,
+        "kp_z": 0.9598097945056855,
+        "kv": 1.8861626227080384,
+        "dt": 0.09356122321875787,
+        "n_substeps": 5.0,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: pd_substep_tracking\n# MECHANISM: The effector is controlled by a PD controller tracking a target offset (action), integrated over multiple substeps to capture actuator dynamics.\nPARAMS = {\"kp_x\": 1.0, \"kp_y\": 1.0, \"kp_z\": 1.0, \"kv\": 0.5, \"dt\": 0.1, \"n_substeps\": 5, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # PD Tracking with substeps\n    # Action is treated as a target offset from current position.\n    tx, ty, tz = ex + action[0], ey + action[1], ez + action[2]\n    \n    vx, vy, vz = 0.0, 0.0, 0.0\n    cx, cy, cz = ex, ey, ez\n    \n    n = int(p[\"n_substeps\"])\n    if n < 1: n = 1\n    dt = p[\"dt\"]\n    \n    for _ in range(n):\n        # X\n        ax = p[\"kp_x\"] * (tx - cx) - p[\"kv\"] * vx\n        vx += ax * dt\n        cx += vx * dt\n        # Y\n        ay = p[\"kp_y\"] * (ty - cy) - p[\"kv\"] * vy\n        vy += ay * dt\n        cy += vy * dt\n        # Z\n        az = p[\"kp_z\"] * (tz - cz) - p[\"kv\"] * vz\n        vz += az * dt\n        cz += vz * dt\n        # Z bounds during integration\n        cz = max(0.015, min(0.335, cz))\n        \n    ex_new, ey_new, ez_new = cx, cy, cz\n    dx, dy, dz = ex_new - ex, ey_new - ey, ez_new - ez\n    \n    if is_gripped:\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.4863213983215487,
+          "block.y": 0.23427982386753757,
+          "block.z": 0.20165389254014354,
+          "effector.x": 0.4284033447620285,
+          "effector.y": 0.18644015177622922,
+          "effector.z": 0.12605687487714276,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.6965239738034333,
+            "block.y": 0.33554253311776433,
+            "block.z": 0.2888147037118925,
+            "effector.x": 0.43869503648299096,
+            "effector.y": 0.1934436578720225,
+            "effector.z": 0.14735510439225183,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.41837881066948657,
+            "effector.y": 0.17952490916794095,
+            "effector.z": 0.10174086061617572,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "grip_mass_scaling",
+      "mechanism": "Gripping the block increases the effective mass of the system, reducing acceleration for the same action force; friction is removed as it was compensating for gain errors.",
+      "val_rollout_nrmse": 0.6321487090367303,
+      "score": 0.6321487090367303,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2819941890621202,
+      "params": {
+        "gain_x": 0.07794302471426605,
+        "gain_y": 0.1088839258201604,
+        "gain_z": 0.09581208204066584,
+        "block_mass_ratio": -0.012004579845744991,
+        "grip_thresh": 0.0,
+        "contact_dist": 0.06404122581894982
+      },
+      "code": "# HYPOTHESIS: grip_mass_scaling\n# MECHANISM: Gripping the block increases the effective mass of the system, reducing acceleration for the same action force; friction is removed as it was compensating for gain errors.\nPARAMS = {\"gain_x\": 0.25, \"gain_y\": 0.25, \"gain_z\": 0.25, \"block_mass_ratio\": 1.0, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # Mass scaling: if gripped, effective mass is 1 + block_mass_ratio\n    mass_scale = 1.0 + (p[\"block_mass_ratio\"] if is_gripped else 0.0)\n    \n    # Simple linear dynamics with mass scaling, no friction term (which was fitted negative)\n    dx = (p[\"gain_x\"] * action[0]) / mass_scale\n    dy = (p[\"gain_y\"] * action[1]) / mass_scale\n    dz = (p[\"gain_z\"] * action[2]) / mass_scale\n    \n    ex_new = ex + dx\n    ey_new = ey + dy\n    ez_new = ez + dz\n    \n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    if is_gripped:\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.4863213983215487,
+          "block.y": 0.23427982386753757,
+          "block.z": 0.20165389254014354,
+          "effector.x": 0.4284033447620285,
+          "effector.y": 0.18644015177622922,
+          "effector.z": 0.12605687487714276,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.6965239738034333,
+            "block.y": 0.33554253311776433,
+            "block.z": 0.2888147037118925,
+            "effector.x": 0.43869503648299096,
+            "effector.y": 0.1934436578720225,
+            "effector.z": 0.14735510439225183,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.41837881066948657,
+            "effector.y": 0.17952490916794095,
+            "effector.z": 0.10174086061617572,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "linear_kinematics",
+      "mechanism": "Effector displacement is directly proportional to action without friction or saturation, correcting the unphysical negative friction fit.",
+      "val_rollout_nrmse": 0.6377839898130494,
+      "score": 0.6377839898130494,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.28079765902127796,
+      "params": {
+        "gain_x": 0.07869280035446338,
+        "gain_y": 0.10998747346227998,
+        "gain_z": 0.09754498175192179,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: linear_kinematics\n# MECHANISM: Effector displacement is directly proportional to action without friction or saturation, correcting the unphysical negative friction fit.\nPARAMS = {\"gain_x\": 0.2, \"gain_y\": 0.2, \"gain_z\": 0.1, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # Linear kinematics: delta = gain * action\n    dx = p[\"gain_x\"] * action[0]\n    dy = p[\"gain_y\"] * action[1]\n    dz = p[\"gain_z\"] * action[2]\n    \n    ex_new = ex + dx\n    ey_new = ey + dy\n    ez_new = ez + dz\n    \n    # Z bounds (hardcoded from original as they seem valid)\n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    if is_gripped:\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.4863213983215487,
+          "block.y": 0.23427982386753757,
+          "block.z": 0.20165389254014354,
+          "effector.x": 0.4284033447620285,
+          "effector.y": 0.18644015177622922,
+          "effector.z": 0.12605687487714276,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.6965239738034333,
+            "block.y": 0.33554253311776433,
+            "block.z": 0.2888147037118925,
+            "effector.x": 0.43869503648299096,
+            "effector.y": 0.1934436578720225,
+            "effector.z": 0.14735510439225183,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.41837881066948657,
+            "effector.y": 0.17952490916794095,
+            "effector.z": 0.10174086061617572,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "deadzone_friction",
+      "mechanism": "Static friction creates a deadzone where small actions produce no motion, and larger actions overcome a constant threshold.",
+      "val_rollout_nrmse": 0.48402722575346324,
+      "score": 0.48402722575346324,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.24886165015747894,
+      "params": {
+        "gain_x": 0.14223196255421833,
+        "gain_y": 0.12726361482840282,
+        "gain_z": 0.08064163061751176,
+        "dz_x": 0.15919313144255354,
+        "dz_y": 0.07810307057544226,
+        "dz_z": -0.14864950120271161,
+        "grip_thresh": 0.3,
+        "contact_dist": 0.05
+      },
+      "code": "# HYPOTHESIS: deadzone_friction\n# MECHANISM: Static friction creates a deadzone where small actions produce no motion, and larger actions overcome a constant threshold.\nPARAMS = {\"gain_x\": 0.2, \"gain_y\": 0.2, \"gain_z\": 0.1, \"dz_x\": 0.05, \"dz_y\": 0.05, \"dz_z\": 0.05, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    def apply_deadzone(a, gain, dz):\n        if abs(a) <= dz:\n            return 0.0\n        sign = 1.0 if a > 0 else -1.0\n        return gain * (a - sign * dz)\n    \n    dx = apply_deadzone(action[0], p[\"gain_x\"], p[\"dz_x\"])\n    dy = apply_deadzone(action[1], p[\"gain_y\"], p[\"dz_y\"])\n    dz = apply_deadzone(action[2], p[\"gain_z\"], p[\"dz_z\"])\n    \n    ex_new = ex + dx\n    ey_new = ey + dy\n    ez_new = ez + dz\n    \n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    if is_gripped:\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.4863213983215487,
+          "block.y": 0.23427982386753757,
+          "block.z": 0.20165389254014354,
+          "effector.x": 0.4284033447620285,
+          "effector.y": 0.18644015177622922,
+          "effector.z": 0.12605687487714276,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.6965239738034333,
+            "block.y": 0.33554253311776433,
+            "block.z": 0.2888147037118925,
+            "effector.x": 0.43869503648299096,
+            "effector.y": 0.1934436578720225,
+            "effector.z": 0.14735510439225183,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.41837881066948657,
+            "effector.y": 0.17952490916794095,
+            "effector.z": 0.10174086061617572,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "saturated_displacement_tanh",
+      "mechanism": "Effector displacement saturates at high action magnitudes due to motor limits, modeled by tanh on the output delta.",
+      "val_rollout_nrmse": 0.6320435672391878,
+      "score": 0.6320435672391878,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.28156868185097056,
+      "params": {
+        "max_d_x": 3.071367258349699,
+        "max_d_y": 4.292870505052132,
+        "max_d_z": 3.776061945596761,
+        "scale": 0.02561263036477121,
+        "grip_thresh": 0.0,
+        "contact_dist": 0.06404122581894982
+      },
+      "code": "# HYPOTHESIS: saturated_displacement_tanh\n# MECHANISM: Effector displacement saturates at high action magnitudes due to motor limits, modeled by tanh on the output delta.\nPARAMS = {\"max_d_x\": 0.15, \"max_d_y\": 0.15, \"max_d_z\": 0.1, \"scale\": 5.0, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    def apply_saturation(a, max_d, scale):\n        # delta = max_d * tanh(action * scale)\n        # This allows linear behavior for small a (max_d * scale * a) and saturation for large a.\n        return max_d * math.tanh(a * scale)\n    \n    dx = apply_saturation(action[0], p[\"max_d_x\"], p[\"scale\"])\n    dy = apply_saturation(action[1], p[\"max_d_y\"], p[\"scale\"])\n    dz = apply_saturation(action[2], p[\"max_d_z\"], p[\"scale\"])\n    \n    ex_new = ex + dx\n    ey_new = ey + dy\n    ez_new = ez + dz\n    \n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    if is_gripped:\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.4863213983215487,
+          "block.y": 0.23427982386753757,
+          "block.z": 0.20165389254014354,
+          "effector.x": 0.4284033447620285,
+          "effector.y": 0.18644015177622922,
+          "effector.z": 0.12605687487714276,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.6965239738034333,
+            "block.y": 0.33554253311776433,
+            "block.z": 0.2888147037118925,
+            "effector.x": 0.43869503648299096,
+            "effector.y": 0.1934436578720225,
+            "effector.z": 0.14735510439225183,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.41837881066948657,
+            "effector.y": 0.17952490916794095,
+            "effector.z": 0.10174086061617572,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.4863213983215487,
+            "block.y": 0.23427982386753757,
+            "block.z": 0.20165389254014354,
+            "effector.x": 0.4284033447620285,
+            "effector.y": 0.18644015177622922,
+            "effector.z": 0.12605687487714276,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "best": {
+    "name": "smooth_friction_tanh",
+    "round": 2,
+    "val_rollout_nrmse": 0.4748577889035273,
+    "params": {
+      "gain_x": 0.13931555982721774,
+      "gain_y": 0.1301081229192516,
+      "gain_z": 0.07418697243816141,
+      "fric_x": 0.1527468940928572,
+      "fric_y": 0.09181600992874112,
+      "fric_z": -0.22873975607331315,
+      "smooth": 0.09040926413103692,
+      "grip_thresh": 0.3,
+      "contact_dist": 0.05
+    },
+    "code": "# HYPOTHESIS: smooth_friction_tanh\n# MECHANISM: Friction resistance is smooth and saturates (Stribeck-like), reducing effective gain at low actions without hard discontinuity.\nPARAMS = {\"gain_x\": 0.15, \"gain_y\": 0.12, \"gain_z\": 0.10, \"fric_x\": 0.2, \"fric_y\": 0.1, \"fric_z\": 0.1, \"smooth\": 0.1, \"grip_thresh\": 0.3, \"contact_dist\": 0.05}\n\ndef step(state, action, p, meta):\n    import math\n    s = dict(state)\n    \n    ex, ey, ez = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    bx, by, bz = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    gx, gy, gz = s[\"goal.x\"], s[\"goal.y\"], s[\"goal.z\"]\n    \n    dist = math.sqrt((ex-bx)**2 + (ey-by)**2 + (ez-bz)**2)\n    is_gripped = (dist < p[\"contact_dist\"]) and (action[4] > p[\"grip_thresh\"])\n    \n    # Smooth friction: friction_force = fric * tanh(action / smooth)\n    # effective_action = action - friction_force\n    def apply_smooth_friction(a, gain, fric, smooth):\n        if smooth < 1e-6: smooth = 1e-6\n        f_force = fric * math.tanh(a / smooth)\n        return gain * (a - f_force)\n    \n    ex_new = ex + apply_smooth_friction(action[0], p[\"gain_x\"], p[\"fric_x\"], p[\"smooth\"])\n    ey_new = ey + apply_smooth_friction(action[1], p[\"gain_y\"], p[\"fric_y\"], p[\"smooth\"])\n    ez_new = ez + apply_smooth_friction(action[2], p[\"gain_z\"], p[\"fric_z\"], p[\"smooth\"])\n    \n    ez_new = max(0.015, min(0.335, ez_new))\n    \n    if is_gripped:\n        dx, dy, dz = ex_new - ex, ey_new - ey, ez_new - ez\n        bx_new, by_new, bz_new = bx + dx, by + dy, bz + dz\n    else:\n        bx_new, by_new, bz_new = bx, by, bz\n        \n    if bz_new < 0.020:\n        bz_new = 0.020\n    \n    return {\n        \"block.x\": bx_new, \"block.y\": by_new, \"block.z\": bz_new,\n        \"effector.x\": ex_new, \"effector.y\": ey_new, \"effector.z\": ez_new,\n        \"goal.x\": gx, \"goal.y\": gy, \"goal.z\": gz\n    }"
+  },
+  "elapsed_s": 1842.2793128490448
+}

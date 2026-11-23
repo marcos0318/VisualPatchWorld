@@ -1,0 +1,734 @@
+{
+  "args": {
+    "run_dir": "artifacts/visualpatchworld/llm_family/v1_reacher_qwen35_s1",
+    "output_dir": "artifacts/visualpatchworld/llm_family/refine_base_reacher_v1q_s1",
+    "model": null,
+    "rounds": 4,
+    "num_revisions": 3,
+    "objective": "multi_step",
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/qwen35_general_skills.json",
+    "feedback_episodes": 10,
+    "restarts": 2,
+    "max_nfev": 200,
+    "seed": 0,
+    "structured_fit": true,
+    "balance_modes": false,
+    "mode_feedback": false,
+    "select": "rollout",
+    "select_h": 25,
+    "cover_modes": false,
+    "val_episodes": 0,
+    "fit_timeout": 1800.0,
+    "constants_feedback": false,
+    "beam": 1,
+    "pusher_dynamics": false,
+    "state_limits": false,
+    "pusher_helper": false
+  },
+  "model": "Qwen/Qwen3.5-397B-A17B",
+  "start": "arm_driven_fk",
+  "history": [
+    {
+      "round": 0,
+      "name": "arm_driven_fk",
+      "val_rollout_nrmse": 0.7164955053302099,
+      "score": 0.7164955053302099,
+      "val_per_mode": null,
+      "code": "# HYPOTHESIS: arm_driven_fk\n# MECHANISM: Arm represents joint angles; finger position is determined by forward kinematics (trigonometric).\nPARAMS = {\"gain_ax\": 1.0, \"gain_ay\": 1.0, \"link1\": 0.15, \"link2\": 0.15, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    # Arm updates (angles)\n    new_arm_x = state[\"arm.x\"] + p[\"gain_ax\"] * action[0]\n    new_arm_y = state[\"arm.y\"] + p[\"gain_ay\"] * action[1]\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger computed via FK\n    # Assuming arm.x is shoulder, arm.y is elbow relative\n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    # Target static\n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s"
+    },
+    {
+      "round": 1,
+      "name": "coupled_linear_arm",
+      "mechanism": "Arm joint updates are a linear combination of both action components, capturing control coupling or IK cross-talk.",
+      "val_rollout_nrmse": 0.7159093773050806,
+      "score": 0.7159093773050806,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5423403221646083,
+      "params": {
+        "k_xx": 0.7883731013872032,
+        "k_xy": -0.01952361086048205,
+        "k_yx": -0.03143346055412642,
+        "k_yy": 0.8888873001307646,
+        "link1": 0.12015882186316192,
+        "link2": 0.11665317569146494,
+        "off_x": -7.686316638933461e-05,
+        "off_y": 0.0003523489190036338
+      },
+      "code": "# HYPOTHESIS: coupled_linear_arm\n# MECHANISM: Arm joint updates are a linear combination of both action components, capturing control coupling or IK cross-talk.\nPARAMS = {\"k_xx\": 0.5, \"k_xy\": 0.5, \"k_yx\": 0.5, \"k_yy\": 0.5, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Coupled linear update for arm joints\n    dx = p[\"k_xx\"] * ax + p[\"k_xy\"] * ay\n    dy = p[\"k_yx\"] * ax + p[\"k_yy\"] * ay\n    \n    new_arm_x = state[\"arm.x\"] + dx\n    new_arm_y = state[\"arm.y\"] + dy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger computed via FK (unchanged mechanism)\n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6647601264040394,
+          "arm.y": 0.3055412708011974,
+          "finger.x": 0.7579619734678171,
+          "finger.y": 0.7116310713663604,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "jacobian_inverse_ik",
+      "mechanism": "Action represents desired end-effector displacement; joint updates are computed via Inverse Kinematics (Jacobian inverse).",
+      "val_rollout_nrmse": 1.8906876857142674,
+      "score": 1.8906876857142674,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.9399230108885477,
+      "params": {
+        "gain": -3.2564526507740886e-06,
+        "link1": 0.10947810391791665,
+        "link2": 0.10336753163208186,
+        "off_x": -0.0064084081364628315,
+        "off_y": -0.0007409098019841975
+      },
+      "code": "# HYPOTHESIS: jacobian_inverse_ik\n# MECHANISM: Action represents desired end-effector displacement; joint updates are computed via Inverse Kinematics (Jacobian inverse).\nPARAMS = {\"gain\": 0.5, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    a1 = state[\"arm.x\"]\n    a2 = state[\"arm.y\"]\n    l1, l2 = p[\"link1\"], p[\"link2\"]\n    \n    # Compute Jacobian of FK\n    s1 = math.sin(a1)\n    c1 = math.cos(a1)\n    s12 = math.sin(a1 + a2)\n    c12 = math.cos(a1 + a2)\n    \n    # J = [[-l1*s1 - l2*s12, -l2*s12], [l1*c1 + l2*c12, l2*c12]]\n    j00 = -l1 * s1 - l2 * s12\n    j01 = -l2 * s12\n    j10 = l1 * c1 + l2 * c12\n    j11 = l2 * c12\n    \n    # Inverse Jacobian (approx) to map Cartesian action to Joint deltas\n    det = j00 * j11 - j01 * j10\n    if abs(det) < 1e-6:\n        det = 1e-6 if det >= 0 else -1e-6\n        \n    inv_det = 1.0 / det\n    # delta_arm = gain * J_inv * action\n    dx = p[\"gain\"] * inv_det * (j11 * ax - j01 * ay)\n    dy = p[\"gain\"] * inv_det * (-j10 * ax + j00 * ay)\n    \n    new_arm_x = a1 + dx\n    new_arm_y = a2 + dy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger FK\n    c1_n = math.cos(new_arm_x)\n    s1_n = math.sin(new_arm_x)\n    c2_n = math.cos(new_arm_x + new_arm_y)\n    s2_n = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = l1 * c1_n + l2 * c2_n + p[\"off_x\"]\n    s[\"finger.y\"] = l1 * s1_n + l2 * s2_n + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6647601264040394,
+          "arm.y": 0.3055412708011974,
+          "finger.x": 0.7579619734678171,
+          "finger.y": 0.7116310713663604,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "gravity_compensated_arm",
+      "mechanism": "Arm joints are subject to gravity/restoring torques proportional to sin(angle) in addition to action commands.",
+      "val_rollout_nrmse": 0.7181111919947527,
+      "score": 0.7181111919947527,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5461271839713447,
+      "params": {
+        "gain_ax": 0.7795991745664252,
+        "gain_ay": 0.8777592730356174,
+        "grav_x": -0.001327916423927372,
+        "grav_y": -0.00878147642246811,
+        "link1": 0.11845674879711078,
+        "link2": 0.11678316940709232,
+        "off_x": -0.0004144764816535035,
+        "off_y": 0.0004205140231280338
+      },
+      "code": "# HYPOTHESIS: gravity_compensated_arm\n# MECHANISM: Arm joints are subject to gravity/restoring torques proportional to sin(angle) in addition to action commands.\nPARAMS = {\"gain_ax\": 0.5, \"gain_ay\": 0.5, \"grav_x\": 0.1, \"grav_y\": 0.1, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Action + Gravity/Restoring term\n    # Gravity torque ~ sin(theta). If arm hangs down, gravity pulls to -pi/2 or 0 depending on frame.\n    # We fit the coefficient; sign determines direction.\n    dx = p[\"gain_ax\"] * ax + p[\"grav_x\"] * math.sin(state[\"arm.x\"])\n    dy = p[\"gain_ay\"] * ay + p[\"grav_y\"] * math.sin(state[\"arm.y\"])\n    \n    new_arm_x = state[\"arm.x\"] + dx\n    new_arm_y = state[\"arm.y\"] + dy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger FK\n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6647601264040394,
+          "arm.y": 0.3055412708011974,
+          "finger.x": 0.7579619734678171,
+          "finger.y": 0.7116310713663604,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6647601264040394,
+            "arm.y": 0.3055412708011974,
+            "finger.x": 0.7579619734678171,
+            "finger.y": 0.7116310713663604,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "velocity_integration_arm",
+      "mechanism": "Actions specify joint velocities directly; arm state integrates velocity over time step with possible damping.",
+      "val_rollout_nrmse": 0.711625186675074,
+      "score": 0.711625186675074,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5458681427225497,
+      "params": {
+        "vel_scale_x": 0.7798257854234709,
+        "vel_scale_y": 0.8860111655084454,
+        "damping_x": -0.0013604951147962532,
+        "damping_y": 0.011700584980297678,
+        "link1": 0.11612354379333577,
+        "link2": 0.1172771045839057,
+        "off_x": 0.00039947772440643666,
+        "off_y": 0.0003619982953198833
+      },
+      "code": "# HYPOTHESIS: velocity_integration_arm\n# MECHANISM: Actions specify joint velocities directly; arm state integrates velocity over time step with possible damping.\nPARAMS = {\"vel_scale_x\": 0.1, \"vel_scale_y\": 0.1, \"damping_x\": 0.1, \"damping_y\": 0.1, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Actions are velocity commands, scaled and damped\n    vx = p[\"vel_scale_x\"] * ax - p[\"damping_x\"] * state[\"arm.x\"]\n    vy = p[\"vel_scale_y\"] * ay - p[\"damping_y\"] * state[\"arm.y\"]\n    \n    # Integrate velocity to get new joint angles\n    new_arm_x = state[\"arm.x\"] + vx\n    new_arm_y = state[\"arm.y\"] + vy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger computed via FK\n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6662930405550499,
+          "arm.y": 0.29967591744122435,
+          "finger.x": 0.7516454306099638,
+          "finger.y": 0.7059823683967726,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "pd_tracking_arm",
+      "mechanism": "Actions specify target joint positions; arm follows via PD control with second-order dynamics (stiffness and damping).",
+      "val_rollout_nrmse": 0.7116260854913354,
+      "score": 0.7116260854913354,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5458670140024433,
+      "params": {
+        "kp_x": 0.38535515423238,
+        "kp_y": 0.43782715998746086,
+        "kd_x": -0.0013604891887509284,
+        "kd_y": 0.011700597702616082,
+        "link1": 0.11612354301162921,
+        "link2": 0.11727712494310188,
+        "off_x": 0.00039947815620233236,
+        "off_y": 0.00036200052062908495,
+        "action_scale": 2.0236481945459746
+      },
+      "code": "# HYPOTHESIS: pd_tracking_arm\n# MECHANISM: Actions specify target joint positions; arm follows via PD control with second-order dynamics (stiffness and damping).\nPARAMS = {\"kp_x\": 0.5, \"kp_y\": 0.5, \"kd_x\": 0.3, \"kd_y\": 0.3, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0, \"action_scale\": 0.5}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Actions specify target positions (scaled)\n    target_x = state[\"arm.x\"] + p[\"action_scale\"] * ax\n    target_y = state[\"arm.y\"] + p[\"action_scale\"] * ay\n    \n    # PD control: compute velocity from position error\n    err_x = target_x - state[\"arm.x\"]\n    err_y = target_y - state[\"arm.y\"]\n    \n    # Velocity from PD law (treating current velocity as zero for single-step)\n    vx = p[\"kp_x\"] * err_x\n    vy = p[\"kp_y\"] * err_y\n    \n    # Apply damping based on current position rate\n    new_arm_x = state[\"arm.x\"] + vx - p[\"kd_x\"] * state[\"arm.x\"]\n    new_arm_y = state[\"arm.y\"] + vy - p[\"kd_y\"] * state[\"arm.y\"]\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger computed via FK\n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6662930405550499,
+          "arm.y": 0.29967591744122435,
+          "finger.x": 0.7516454306099638,
+          "finger.y": 0.7059823683967726,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "substep_pd_arm",
+      "mechanism": "Control step contains multiple substeps of PD tracking; stiff dynamics require fine integration to capture true motion.",
+      "val_rollout_nrmse": 0.718854337936896,
+      "score": 0.718854337936896,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5632338358249956,
+      "params": {
+        "kp": 3.0651677287480057,
+        "kd": 3.0873224996717554,
+        "action_scale": 1.311439836338476,
+        "link1": 0.11993561260520791,
+        "link2": 0.11659521216089126,
+        "off_x": -0.00023489257542515867,
+        "off_y": 0.000398395756977459,
+        "n_substeps": 7.95511817942175
+      },
+      "code": "# HYPOTHESIS: substep_pd_arm\n# MECHANISM: Control step contains multiple substeps of PD tracking; stiff dynamics require fine integration to capture true motion.\nPARAMS = {\"kp\": 0.8, \"kd\": 0.4, \"action_scale\": 0.3, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0, \"n_substeps\": 5.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Target positions from action\n    target_x = state[\"arm.x\"] + p[\"action_scale\"] * ax\n    target_y = state[\"arm.y\"] + p[\"action_scale\"] * ay\n    \n    # Initialize state for substeps\n    arm_x = state[\"arm.x\"]\n    arm_y = state[\"arm.y\"]\n    vel_x = 0.0\n    vel_y = 0.0\n    \n    # Substep integration\n    n_substeps = int(round(p[\"n_substeps\"]))\n    if n_substeps < 1:\n        n_substeps = 1\n    dt = 1.0 / n_substeps\n    \n    for _ in range(n_substeps):\n        # PD control law\n        acc_x = p[\"kp\"] * (target_x - arm_x) - p[\"kd\"] * vel_x\n        acc_y = p[\"kp\"] * (target_y - arm_y) - p[\"kd\"] * vel_y\n        \n        # Integrate velocity and position\n        vel_x += acc_x * dt\n        vel_y += acc_y * dt\n        arm_x += vel_x * dt\n        arm_y += vel_y * dt\n    \n    s[\"arm.x\"] = arm_x\n    s[\"arm.y\"] = arm_y\n    \n    # Finger computed via FK\n    c1 = math.cos(arm_x)\n    s1 = math.sin(arm_x)\n    c2 = math.cos(arm_x + arm_y)\n    s2 = math.sin(arm_x + arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6662930405550499,
+          "arm.y": 0.29967591744122435,
+          "finger.x": 0.7516454306099638,
+          "finger.y": 0.7059823683967726,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6662930405550499,
+            "arm.y": 0.29967591744122435,
+            "finger.x": 0.7516454306099638,
+            "finger.y": 0.7059823683967726,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "velocity_integration_with_gravity",
+      "mechanism": "Actions specify joint velocities, but joints also experience a constant gravitational drift independent of configuration.",
+      "val_rollout_nrmse": 0.7175218745861046,
+      "score": 0.7175218745861046,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5459149146979106,
+      "params": {
+        "vel_scale_x": 0.7789391507114812,
+        "vel_scale_y": 0.8794124491218657,
+        "gravity_x": -0.0010036978979226147,
+        "gravity_y": -0.0023097207846184097,
+        "link1": 0.12026843646539621,
+        "link2": 0.11655493672115655,
+        "off_x": -7.459301992112369e-05,
+        "off_y": 0.00022039794454618112
+      },
+      "code": "# HYPOTHESIS: velocity_integration_with_gravity\n# MECHANISM: Actions specify joint velocities, but joints also experience a constant gravitational drift independent of configuration.\nPARAMS = {\"vel_scale_x\": 0.1, \"vel_scale_y\": 0.1, \"gravity_x\": -0.1, \"gravity_y\": 0.0, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Velocity is action-scaled plus constant gravity drift\n    vx = p[\"vel_scale_x\"] * ax + p[\"gravity_x\"]\n    vy = p[\"vel_scale_y\"] * ay + p[\"gravity_y\"]\n    \n    # Integrate velocity\n    new_arm_x = state[\"arm.x\"] + vx\n    new_arm_y = state[\"arm.y\"] + vy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger computed via FK\n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.664074410096831,
+          "arm.y": 0.29666950324630187,
+          "finger.x": 0.7566987597478768,
+          "finger.y": 0.7127287880333034,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "velocity_integration_config_gravity",
+      "mechanism": "Actions specify joint velocities, and joints experience gravitational torque proportional to the sine of their angle.",
+      "val_rollout_nrmse": 0.7181112240807648,
+      "score": 0.7181112240807648,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5461272188926131,
+      "params": {
+        "vel_scale_x": 0.7795992560869798,
+        "vel_scale_y": 0.8777588759004104,
+        "grav_amp_x": -0.001327928065134563,
+        "grav_amp_y": -0.008781496578800108,
+        "link1": 0.11845674190042639,
+        "link2": 0.1167831673537222,
+        "off_x": -0.00041447932377587535,
+        "off_y": 0.00042051487849337763
+      },
+      "code": "# HYPOTHESIS: velocity_integration_config_gravity\n# MECHANISM: Actions specify joint velocities, and joints experience gravitational torque proportional to the sine of their angle.\nPARAMS = {\"vel_scale_x\": 0.1, \"vel_scale_y\": 0.1, \"grav_amp_x\": -0.1, \"grav_amp_y\": 0.0, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Velocity is action-scaled plus configuration-dependent gravity\n    vx = p[\"vel_scale_x\"] * ax + p[\"grav_amp_x\"] * math.sin(state[\"arm.x\"])\n    vy = p[\"vel_scale_y\"] * ay + p[\"grav_amp_y\"] * math.sin(state[\"arm.y\"])\n    \n    # Integrate velocity\n    new_arm_x = state[\"arm.x\"] + vx\n    new_arm_y = state[\"arm.y\"] + vy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger computed via FK\n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.664074410096831,
+          "arm.y": 0.29666950324630187,
+          "finger.x": 0.7566987597478768,
+          "finger.y": 0.7127287880333034,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "substep_friction_dynamics",
+      "mechanism": "The control step is subdivided into smaller integration steps with friction to handle stiff dynamics and stiction.",
+      "val_rollout_nrmse": 0.7175169247666164,
+      "score": 0.7175169247666164,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5459202366359486,
+      "params": {
+        "vel_scale_x": 0.7789511946096551,
+        "vel_scale_y": 0.8794326302440775,
+        "gravity_x": -0.001003609562713608,
+        "gravity_y": -0.002309741158026694,
+        "fric_x": -0.06558026530427952,
+        "fric_y": -0.04243938511293147,
+        "link1": 0.12026844370243198,
+        "link2": 0.11655490800456231,
+        "off_x": -7.465997254312503e-05,
+        "off_y": 0.00022034631118723305,
+        "substeps": 3.7978819291014267
+      },
+      "code": "# HYPOTHESIS: substep_friction_dynamics\n# MECHANISM: The control step is subdivided into smaller integration steps with friction to handle stiff dynamics and stiction.\nPARAMS = {\"vel_scale_x\": 0.1, \"vel_scale_y\": 0.1, \"gravity_x\": -0.1, \"gravity_y\": 0.0, \"fric_x\": 0.01, \"fric_y\": 0.01, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0, \"substeps\": 5.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    curr_x = state[\"arm.x\"]\n    curr_y = state[\"arm.y\"]\n    \n    n = int(max(1, p[\"substeps\"]))\n    dt = 1.0 / n\n    \n    for _ in range(n):\n        # Compute velocity with gravity\n        vx = p[\"vel_scale_x\"] * ax + p[\"gravity_x\"]\n        vy = p[\"vel_scale_y\"] * ay + p[\"gravity_y\"]\n        \n        # Apply Coulomb friction (simplified: clamp small velocities)\n        if abs(vx) < p[\"fric_x\"]:\n            vx = 0.0\n        if abs(vy) < p[\"fric_y\"]:\n            vy = 0.0\n            \n        curr_x += vx * dt\n        curr_y += vy * dt\n        \n    s[\"arm.x\"] = curr_x\n    s[\"arm.y\"] = curr_y\n    \n    # Finger computed via FK\n    c1 = math.cos(curr_x)\n    s1 = math.sin(curr_x)\n    c2 = math.cos(curr_x + curr_y)\n    s2 = math.sin(curr_x + curr_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.664074410096831,
+          "arm.y": 0.29666950324630187,
+          "finger.x": 0.7566987597478768,
+          "finger.y": 0.7127287880333034,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "velocity_integration_bias",
+      "mechanism": "Actions specify joint velocities with a constant additive bias (e.g. gravity or calibration offset).",
+      "val_rollout_nrmse": 0.7175218754868217,
+      "score": 0.7175218754868217,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5459149177798365,
+      "params": {
+        "vel_scale_x": 0.7789391604158035,
+        "vel_scale_y": 0.8794124422695002,
+        "bias_x": -0.0010036979465011132,
+        "bias_y": -0.0023097231082751515,
+        "link1": 0.12026843799410777,
+        "link2": 0.11655494056595236,
+        "off_x": -7.459254143950932e-05,
+        "off_y": 0.00022039797190375485
+      },
+      "code": "# HYPOTHESIS: velocity_integration_bias\n# MECHANISM: Actions specify joint velocities with a constant additive bias (e.g. gravity or calibration offset).\nPARAMS = {\"vel_scale_x\": 0.8, \"vel_scale_y\": 0.8, \"bias_x\": -0.3, \"bias_y\": -0.1, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Velocity with constant bias to account for gravity or motor offset\n    vx = p[\"vel_scale_x\"] * ax + p[\"bias_x\"]\n    vy = p[\"vel_scale_y\"] * ay + p[\"bias_y\"]\n    \n    new_arm_x = state[\"arm.x\"] + vx\n    new_arm_y = state[\"arm.y\"] + vy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.664074410096831,
+          "arm.y": 0.29666950324630187,
+          "finger.x": 0.7566987597478768,
+          "finger.y": 0.7127287880333034,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "velocity_integration_spring",
+      "mechanism": "Joints are driven by action velocity plus a spring force pulling towards a rest configuration.",
+      "val_rollout_nrmse": 0.7136239446201869,
+      "score": 0.7136239446201869,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5458337056638934,
+      "params": {
+        "vel_scale_x": 0.7794077460488914,
+        "vel_scale_y": 0.8862759052738576,
+        "stiff_x": -0.001227578736924593,
+        "stiff_y": 0.011696824072617374,
+        "rest_x": 0.326094892368553,
+        "rest_y": -0.18082638121930486,
+        "link1": 0.11618691011336722,
+        "link2": 0.1172599212251318,
+        "off_x": 0.0004001110670896365,
+        "off_y": 0.0003089415241625483
+      },
+      "code": "# HYPOTHESIS: velocity_integration_spring\n# MECHANISM: Joints are driven by action velocity plus a spring force pulling towards a rest configuration.\nPARAMS = {\"vel_scale_x\": 0.8, \"vel_scale_y\": 0.8, \"stiff_x\": 0.1, \"stiff_y\": 0.1, \"rest_x\": -2.0, \"rest_y\": 0.0, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Spring restoring torque approximated as velocity contribution\n    spring_x = p[\"stiff_x\"] * (p[\"rest_x\"] - state[\"arm.x\"])\n    spring_y = p[\"stiff_y\"] * (p[\"rest_y\"] - state[\"arm.y\"])\n    \n    vx = p[\"vel_scale_x\"] * ax + spring_x\n    vy = p[\"vel_scale_y\"] * ay + spring_y\n    \n    new_arm_x = state[\"arm.x\"] + vx\n    new_arm_y = state[\"arm.y\"] + vy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.664074410096831,
+          "arm.y": 0.29666950324630187,
+          "finger.x": 0.7566987597478768,
+          "finger.y": 0.7127287880333034,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "velocity_integration_friction",
+      "mechanism": "Actuator commands must overcome static friction threshold; constant bias also applies.",
+      "val_rollout_nrmse": 0.7174907697966876,
+      "score": 0.7174907697966876,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5460556134528682,
+      "params": {
+        "vel_scale_x": 0.7921595015156497,
+        "vel_scale_y": 0.8834713894540034,
+        "bias_x": -0.0012829523698220187,
+        "bias_y": -0.0020905467627474247,
+        "fric_x": 0.00427862794983142,
+        "fric_y": 0.001118360841259813,
+        "link1": 0.12027830420991795,
+        "link2": 0.11654227782109147,
+        "off_x": -7.537685110617308e-05,
+        "off_y": 0.00019022925557358967
+      },
+      "code": "# HYPOTHESIS: velocity_integration_friction\n# MECHANISM: Actuator commands must overcome static friction threshold; constant bias also applies.\nPARAMS = {\"vel_scale_x\": 0.8, \"vel_scale_y\": 0.8, \"bias_x\": -0.3, \"bias_y\": -0.1, \"fric_x\": 0.1, \"fric_y\": 0.1, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Raw velocity command with bias\n    raw_vx = p[\"vel_scale_x\"] * ax + p[\"bias_x\"]\n    raw_vy = p[\"vel_scale_y\"] * ay + p[\"bias_y\"]\n    \n    # Apply Coulomb friction (deadzone)\n    if abs(raw_vx) < p[\"fric_x\"]:\n        vx = 0.0\n    else:\n        vx = raw_vx - p[\"fric_x\"] * (1.0 if raw_vx > 0 else -1.0)\n        \n    if abs(raw_vy) < p[\"fric_y\"]:\n        vy = 0.0\n    else:\n        vy = raw_vy - p[\"fric_y\"] * (1.0 if raw_vy > 0 else -1.0)\n    \n    new_arm_x = state[\"arm.x\"] + vx\n    new_arm_y = state[\"arm.y\"] + vy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.664074410096831,
+          "arm.y": 0.29666950324630187,
+          "finger.x": 0.7566987597478768,
+          "finger.y": 0.7127287880333034,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.664074410096831,
+            "arm.y": 0.29666950324630187,
+            "finger.x": 0.7566987597478768,
+            "finger.y": 0.7127287880333034,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "best": {
+    "name": "velocity_integration_arm",
+    "round": 2,
+    "val_rollout_nrmse": 0.711625186675074,
+    "params": {
+      "vel_scale_x": 0.7798257854234709,
+      "vel_scale_y": 0.8860111655084454,
+      "damping_x": -0.0013604951147962532,
+      "damping_y": 0.011700584980297678,
+      "link1": 0.11612354379333577,
+      "link2": 0.1172771045839057,
+      "off_x": 0.00039947772440643666,
+      "off_y": 0.0003619982953198833
+    },
+    "code": "# HYPOTHESIS: velocity_integration_arm\n# MECHANISM: Actions specify joint velocities directly; arm state integrates velocity over time step with possible damping.\nPARAMS = {\"vel_scale_x\": 0.1, \"vel_scale_y\": 0.1, \"damping_x\": 0.1, \"damping_y\": 0.1, \"link1\": 0.12, \"link2\": 0.12, \"off_x\": 0.0, \"off_y\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state.copy()\n    ax, ay = action[0], action[1]\n    \n    # Actions are velocity commands, scaled and damped\n    vx = p[\"vel_scale_x\"] * ax - p[\"damping_x\"] * state[\"arm.x\"]\n    vy = p[\"vel_scale_y\"] * ay - p[\"damping_y\"] * state[\"arm.y\"]\n    \n    # Integrate velocity to get new joint angles\n    new_arm_x = state[\"arm.x\"] + vx\n    new_arm_y = state[\"arm.y\"] + vy\n    \n    s[\"arm.x\"] = new_arm_x\n    s[\"arm.y\"] = new_arm_y\n    \n    # Finger computed via FK\n    c1 = math.cos(new_arm_x)\n    s1 = math.sin(new_arm_x)\n    c2 = math.cos(new_arm_x + new_arm_y)\n    s2 = math.sin(new_arm_x + new_arm_y)\n    \n    s[\"finger.x\"] = p[\"link1\"] * c1 + p[\"link2\"] * c2 + p[\"off_x\"]\n    s[\"finger.y\"] = p[\"link1\"] * s1 + p[\"link2\"] * s2 + p[\"off_y\"]\n    \n    s[\"target.x\"] = state[\"target.x\"]\n    s[\"target.y\"] = state[\"target.y\"]\n    return s"
+  },
+  "elapsed_s": 1437.292528629303
+}

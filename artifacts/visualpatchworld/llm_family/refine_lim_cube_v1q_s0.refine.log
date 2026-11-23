@@ -1,0 +1,27 @@
+[refine] state limits: {"block.z": {"min": {"value": 0.019, "blocked_pushes": 733, "median_progress_of_predicted": 0.0}, "action_model_r2": 0.999, "observed_range": [0.019, 0.335]}}
+[refine] start action_grip_controlled val5=0.6556 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 3 valid revisions of action_grip_controlled
+[refine] round 1: 3 valid revisions
+[refine]   pd_substep_effector                          val1=0.2785 val5=0.6555 val5=0.6555 (533s)
+[refine]   rigid_grip_attach                            val1=0.2808 val5=0.6374 val5=0.6374 (25s)
+[refine]   goal_biased_tracking                         val1=0.2859 val5=0.6380 val5=0.6380 (70s)
+[refine] best after round 1: rigid_grip_attach val5=0.6374
+[refine] round 2: 3 valid revisions of rigid_grip_attach
+[refine] round 2: 3 valid revisions
+[refine]   anisotropic_gain_with_offset                 val1=0.3070 val5=0.6391 val5=0.6391 (62s)
+[refine]   substep_pd_tracking                          val1=0.2809 val5=0.6368 val5=0.6368 (72s)
+[refine]   compliant_grip_spring                        val1=0.3074 val5=0.6424 val5=0.6424 (38s)
+[refine] best after round 2: substep_pd_tracking val5=0.6368
+[refine] round 3: 3 valid revisions of substep_pd_tracking
+[refine] round 3: 3 valid revisions
+[refine]   velocity_saturation                          val1=0.2828 val5=0.6236 val5=0.6236 (63s)
+[refine]   first_order_lag                              val1=0.2817 val5=0.6374 val5=0.6374 (33s)
+[refine]   axis_specific_pd                             val1=0.2817 val5=0.6374 val5=0.6374 (62s)
+[refine] best after round 3: velocity_saturation val5=0.6236
+[refine] round 4: 3 valid revisions of velocity_saturation
+[refine] round 4: 3 valid revisions
+[refine]   substep_acceleration                         val1=0.2816 val5=0.6363 val5=0.6363 (49s)
+[refine]   pd_tracking_controller                       val1=0.2817 val5=0.6374 val5=0.6374 (45s)
+[refine]   variable_grip_coupling                       val1=0.2807 val5=0.6358 val5=0.6358 (53s)
+[refine] best after round 4: velocity_saturation val5=0.6236
+[refine] done: velocity_saturation val5=0.6236 round=3 (1921s)

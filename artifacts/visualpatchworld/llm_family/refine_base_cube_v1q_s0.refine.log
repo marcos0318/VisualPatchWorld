@@ -1,0 +1,25 @@
+[refine] start action_grip_controlled val5=0.6556 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 2 valid revisions of action_grip_controlled
+[refine] round 1: 2 valid revisions
+[refine]   load_dependent_gain                          val1=0.2761 val5=0.6576 val5=0.6576 (19s)
+[refine]   anisotropic_gain_rigid_grip                  val1=0.2808 val5=0.6374 val5=0.6374 (18s)
+[refine] best after round 1: anisotropic_gain_rigid_grip val5=0.6374
+[refine] round 2: 3 valid revisions of anisotropic_gain_rigid_grip
+[refine] round 2: 3 valid revisions
+[refine]   coulomb_friction_anisotropic                 val1=0.2488 val5=0.4838 val5=0.4838 (44s)
+[refine]   smooth_friction_tanh                         val1=0.2520 val5=0.4749 val5=0.4749 (54s)
+[refine]   substep_friction_integration                 val1=0.2480 val5=0.4886 val5=0.4886 (119s)
+[refine] best after round 2: smooth_friction_tanh val5=0.4749
+[refine] round 3: 3 valid revisions of smooth_friction_tanh
+[refine] round 3: 3 valid revisions
+[refine]   saturated_velocity_tanh                      val1=0.4712 val5=1.0146 val5=1.0146 (108s)
+[refine]   pd_substep_tracking                          val1=0.2808 val5=0.6374 val5=0.6374 (50s)
+[refine]   grip_mass_scaling                            val1=0.2820 val5=0.6321 val5=0.6321 (22s)
+[refine] best after round 3: smooth_friction_tanh val5=0.4749
+[refine] round 4: 3 valid revisions of smooth_friction_tanh
+[refine] round 4: 3 valid revisions
+[refine]   linear_kinematics                            val1=0.2808 val5=0.6378 val5=0.6378 (27s)
+[refine]   deadzone_friction                            val1=0.2489 val5=0.4840 val5=0.4840 (63s)
+[refine]   saturated_displacement_tanh                  val1=0.2816 val5=0.6320 val5=0.6320 (269s)
+[refine] best after round 4: smooth_friction_tanh val5=0.4749
+[refine] done: smooth_friction_tanh val5=0.4749 round=2 (1842s)

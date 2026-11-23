@@ -1,0 +1,986 @@
+{
+  "args": {
+    "run_dir": "artifacts/visualpatchworld/llm_family/v1_cube_qwen35_s2",
+    "output_dir": "artifacts/visualpatchworld/llm_family/refine_lim_cube_v1q_s2",
+    "model": null,
+    "rounds": 4,
+    "num_revisions": 3,
+    "objective": "multi_step",
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/qwen35_general_skills.json",
+    "feedback_episodes": 10,
+    "restarts": 2,
+    "max_nfev": 200,
+    "seed": 0,
+    "structured_fit": true,
+    "balance_modes": false,
+    "mode_feedback": false,
+    "select": "rollout",
+    "select_h": 25,
+    "cover_modes": false,
+    "val_episodes": 0,
+    "fit_timeout": 1800.0,
+    "constants_feedback": false,
+    "beam": 1,
+    "pusher_dynamics": false,
+    "state_limits": true,
+    "pusher_helper": false
+  },
+  "model": "Qwen/Qwen3.5-397B-A17B",
+  "start": "kinematic_binary_grasp",
+  "history": [
+    {
+      "round": 0,
+      "name": "kinematic_binary_grasp",
+      "val_rollout_nrmse": 0.6598429458908508,
+      "score": 0.6598429458908508,
+      "val_per_mode": null,
+      "code": "# HYPOTHESIS: kinematic_binary_grasp\n# MECHANISM: Effector moves by action delta; Block snaps to Effector if grasp action exceeds threshold.\nimport math\nPARAMS = {\"eff_gain\": 0.1, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    ns[\"effector.x\"] = s[\"effector.x\"] + a[0] * p[\"eff_gain\"]\n    ns[\"effector.y\"] = s[\"effector.y\"] + a[1] * p[\"eff_gain\"]\n    ns[\"effector.z\"] = s[\"effector.z\"] + a[2] * p[\"eff_gain\"]\n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n    return ns"
+    },
+    {
+      "round": 1,
+      "name": "coupled_kinematics_with_limits",
+      "mechanism": "Effector X motion is coupled with Z action (arm geometry); Block snaps to Effector when grasped; State limits are enforced.",
+      "val_rollout_nrmse": 0.3491667134316706,
+      "score": 0.3491667134316706,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.17461586939110102,
+      "params": {
+        "eff_gain": 0.10578584843593386,
+        "eff_xz_coupling": -0.01962393826380439,
+        "grasp_thresh": 0.2051102727466352,
+        "grasp_x_off": -0.0009452971357256462,
+        "grasp_y_off": -2.7497978660959114e-05,
+        "grasp_z_off": -0.023832727269431066
+      },
+      "code": "# HYPOTHESIS: coupled_kinematics_with_limits\n# MECHANISM: Effector X motion is coupled with Z action (arm geometry); Block snaps to Effector when grasped; State limits are enforced.\nimport math\nPARAMS = {\"eff_gain\": 0.1, \"eff_xz_coupling\": -0.04, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": -0.02}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    # Copy goals\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Effector dynamics with X-Z coupling (derived from data analysis)\n    dx = a[0] * p[\"eff_gain\"] + a[2] * p[\"eff_xz_coupling\"]\n    dy = a[1] * p[\"eff_gain\"]\n    dz = a[2] * p[\"eff_gain\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    # Get limits from meta\n    z_min = 0.0\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    # Clamp effector Z to prevent pushing block through floor\n    if ns[\"effector.z\"] < z_min:\n        ns[\"effector.z\"] = z_min\n    if ns[\"effector.z\"] > z_max:\n        ns[\"effector.z\"] = z_max\n        \n    # Block dynamics (Grasp)\n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    # Clamp block Z to limits\n    if ns[\"block.z\"] < z_min:\n        ns[\"block.z\"] = z_min\n    if ns[\"block.z\"] > z_max:\n        ns[\"block.z\"] = z_max\n        \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "substep_integration_with_limits",
+      "mechanism": "Effector moves via multiple substeps to handle stiff limits and grasp engagement accurately; Block snaps if grasp action is high.",
+      "val_rollout_nrmse": 0.6558244531282422,
+      "score": 0.6558244531282422,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.29596869738256854,
+      "params": {
+        "eff_gain": 0.09533517264100413,
+        "grasp_thresh": 0.28191819249411193,
+        "grasp_x_off": -0.001745787200353307,
+        "grasp_y_off": -0.0004340548156516249,
+        "grasp_z_off": -0.022506323342789514,
+        "substeps": 5.994995386357269
+      },
+      "code": "# HYPOTHESIS: substep_integration_with_limits\n# MECHANISM: Effector moves via multiple substeps to handle stiff limits and grasp engagement accurately; Block snaps if grasp action is high.\nimport math\nPARAMS = {\"eff_gain\": 0.1, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": -0.02, \"substeps\": 5.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Initialize current state for integration\n    curr_eff_x = s[\"effector.x\"]\n    curr_eff_y = s[\"effector.y\"]\n    curr_eff_z = s[\"effector.z\"]\n    curr_block_x = s[\"block.x\"]\n    curr_block_y = s[\"block.y\"]\n    curr_block_z = s[\"block.z\"]\n    \n    # Limits\n    z_min = 0.0\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    n_sub = int(max(1, p[\"substeps\"]))\n    dt_gain = p[\"eff_gain\"] / n_sub\n    \n    # Grasp state (memoryless based on action)\n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    for _ in range(n_sub):\n        # Move effector\n        curr_eff_x += a[0] * dt_gain\n        curr_eff_y += a[1] * dt_gain\n        curr_eff_z += a[2] * dt_gain\n        \n        # Clamp effector Z\n        if curr_eff_z < z_min: curr_eff_z = z_min\n        if curr_eff_z > z_max: curr_eff_z = z_max\n        \n        # Move block if grasped\n        if is_grasped:\n            curr_block_x = curr_eff_x + p[\"grasp_x_off\"]\n            curr_block_y = curr_eff_y + p[\"grasp_y_off\"]\n            curr_block_z = curr_eff_z + p[\"grasp_z_off\"]\n            # Clamp block Z\n            if curr_block_z < z_min: curr_block_z = z_min\n            if curr_block_z > z_max: curr_block_z = z_max\n            \n    ns[\"effector.x\"] = curr_eff_x\n    ns[\"effector.y\"] = curr_eff_y\n    ns[\"effector.z\"] = curr_eff_z\n    ns[\"block.x\"] = curr_block_x\n    ns[\"block.y\"] = curr_block_y\n    ns[\"block.z\"] = curr_block_z\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "saturated_kinematics_with_limits",
+      "mechanism": "Effector action is saturated (tanh) to model actuator limits; Block snaps to Effector; State limits enforced.",
+      "val_rollout_nrmse": 0.6583493660003821,
+      "score": 0.6583493660003821,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.29392915250765866,
+      "params": {
+        "eff_gain": -10.142074786926893,
+        "eff_scale": -0.009382332129599887,
+        "grasp_thresh": 0.20511024022341534,
+        "grasp_x_off": -0.001172773656508847,
+        "grasp_y_off": -0.0006822680418737435,
+        "grasp_z_off": -0.02169768020517828
+      },
+      "code": "# HYPOTHESIS: saturated_kinematics_with_limits\n# MECHANISM: Effector action is saturated (tanh) to model actuator limits; Block snaps to Effector; State limits enforced.\nimport math\nPARAMS = {\"eff_gain\": 0.1, \"eff_scale\": 5.0, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": -0.02}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Saturated action to model non-linear actuator response\n    ax = math.tanh(a[0] * p[\"eff_scale\"])\n    ay = math.tanh(a[1] * p[\"eff_scale\"])\n    az = math.tanh(a[2] * p[\"eff_scale\"])\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + ax * p[\"eff_gain\"]\n    ns[\"effector.y\"] = s[\"effector.y\"] + ay * p[\"eff_gain\"]\n    ns[\"effector.z\"] = s[\"effector.z\"] + az * p[\"eff_gain\"]\n    \n    # Limits\n    z_min = 0.0\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    if ns[\"effector.z\"] < z_min: ns[\"effector.z\"] = z_min\n    if ns[\"effector.z\"] > z_max: ns[\"effector.z\"] = z_max\n    \n    if a[4] > p[\"grasp_thresh\"]:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    if ns[\"block.z\"] < z_min: ns[\"block.z\"] = z_min\n    if ns[\"block.z\"] > z_max: ns[\"block.z\"] = z_max\n        \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.6254952545883669,
+          "block.y": 0.24834634611865583,
+          "block.z": 0.24831806681436655,
+          "effector.x": 0.4834086675627219,
+          "effector.y": 0.2309825691592981,
+          "effector.z": 0.12150477423626015,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.8958529109036227,
+            "block.y": 0.35568902473782926,
+            "block.z": 0.35564852227697114,
+            "effector.x": 0.5143376974804967,
+            "effector.y": 0.2134704180626764,
+            "effector.z": 0.11939074687925082,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.0,
+            "block.y": 0.0,
+            "block.z": 0.0,
+            "effector.x": 0.4520287001208098,
+            "effector.y": 0.2464885404899797,
+            "effector.z": 0.12348209565104587,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.6254952545883669,
+            "block.y": 0.24834634611865583,
+            "block.z": 0.24831806681436655,
+            "effector.x": 0.4834086675627219,
+            "effector.y": 0.2309825691592981,
+            "effector.z": 0.12150477423626015,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "substep_contact_pushing",
+      "mechanism": "Multiple substeps per transition with continuous contact detection; block moves when effector penetrates contact zone, with friction-based coupling.",
+      "val_rollout_nrmse": 0.6536565912955257,
+      "score": 0.6536565912955257,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2942850788199008,
+      "params": {
+        "eff_gain": 0.11164452061128906,
+        "contact_thresh": 0.03899432875139935,
+        "push_gain": -0.04029625446349925,
+        "friction_xy": -0.8583729368817398,
+        "grasp_action_thresh": 0.35,
+        "substeps": 5.877466346409555
+      },
+      "code": "# HYPOTHESIS: substep_contact_pushing\n# MECHANISM: Multiple substeps per transition with continuous contact detection; block moves when effector penetrates contact zone, with friction-based coupling.\nimport math\nPARAMS = {\"eff_gain\": 0.1, \"contact_thresh\": 0.03, \"push_gain\": 0.8, \"friction_xy\": 0.5, \"grasp_action_thresh\": 0.35, \"substeps\": 5}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    \n    # Copy goals\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Get limits from meta\n    z_min = 0.019\n    z_max = 0.335\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n    \n    # Initialize positions\n    eff_x, eff_y, eff_z = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    blk_x, blk_y, blk_z = s[\"block.x\"], s[\"block.y\"], s[\"block.z\"]\n    \n    # Substep integration\n    dt = 1.0 / p[\"substeps\"]\n    for _ in range(int(p[\"substeps\"])):\n        # Effector motion per substep\n        d_eff_x = a[0] * p[\"eff_gain\"] * dt\n        d_eff_y = a[1] * p[\"eff_gain\"] * dt\n        d_eff_z = a[2] * p[\"eff_gain\"] * dt\n        \n        eff_x += d_eff_x\n        eff_y += d_eff_y\n        eff_z += d_eff_z\n        \n        # Clamp effector Z\n        eff_z = max(z_min, min(z_max, eff_z))\n        \n        # Contact detection (distance-based)\n        dist_x = abs(eff_x - blk_x)\n        dist_y = abs(eff_y - blk_y)\n        dist_z = abs(eff_z - blk_z)\n        contact_dist = math.sqrt(dist_x**2 + dist_y**2 + dist_z**2)\n        \n        # Check if grasped (action-based) or pushing (distance-based)\n        is_grasped = a[4] > p[\"grasp_action_thresh\"]\n        is_contact = contact_dist < p[\"contact_thresh\"]\n        \n        # Block motion\n        if is_grasped:\n            # Full kinematic attachment\n            blk_x = eff_x\n            blk_y = eff_y\n            blk_z = eff_z - 0.02\n        elif is_contact:\n            # Pushing with friction coupling\n            push_factor = p[\"push_gain\"] * (1.0 - contact_dist / p[\"contact_thresh\"])\n            blk_x += (eff_x - blk_x) * push_factor * dt * 5\n            blk_y += (eff_y - blk_y) * push_factor * dt * 5\n            # Z follows with friction\n            if eff_z > blk_z:\n                blk_z += (eff_z - blk_z) * p[\"friction_xy\"] * dt * 5\n        # else: block stays still (friction lock)\n        \n        # Clamp block Z\n        blk_z = max(z_min, min(z_max, blk_z))\n    \n    ns[\"effector.x\"] = eff_x\n    ns[\"effector.y\"] = eff_y\n    ns[\"effector.z\"] = eff_z\n    ns[\"block.x\"] = blk_x\n    ns[\"block.y\"] = blk_y\n    ns[\"block.z\"] = blk_z\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3225200611887339,
+          "block.y": 0.24153564843117936,
+          "block.z": 0.2548713222253416,
+          "effector.x": 0.17791965682296643,
+          "effector.y": 0.1935053918212373,
+          "effector.z": 0.1401547037957361,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46151001091466975,
+            "block.y": 0.3456975105056719,
+            "block.z": 0.3650270531890048,
+            "effector.x": 0.1906236667153087,
+            "effector.y": 0.19941502886252238,
+            "effector.z": 0.1484641736948121,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.019042361461270137,
+            "block.y": 0.012487628045854127,
+            "block.z": 0.002241725149150846,
+            "effector.x": 0.16492972875777165,
+            "effector.y": 0.18771145068168055,
+            "effector.z": 0.1317651695086331,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "velocity_dynamics_with_stiction",
+      "mechanism": "Implicit velocity model with stiction threshold; block only moves when effector force exceeds static friction, otherwise locks in place.",
+      "val_rollout_nrmse": 0.3492205981526578,
+      "score": 0.3492205981526578,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.16685834910907268,
+      "params": {
+        "eff_gain": 0.10576910023934018,
+        "eff_coupling_xz": -0.019730632037482407,
+        "static_friction": 0.01500000000000011,
+        "dynamic_friction": 0.00016090571096869996,
+        "grasp_thresh": 0.3,
+        "mass_ratio": -0.09211530428203807
+      },
+      "code": "# HYPOTHESIS: velocity_dynamics_with_stiction\n# MECHANISM: Implicit velocity model with stiction threshold; block only moves when effector force exceeds static friction, otherwise locks in place.\nimport math\nPARAMS = {\"eff_gain\": 0.1, \"eff_coupling_xz\": -0.02, \"static_friction\": 0.015, \"dynamic_friction\": 0.008, \"grasp_thresh\": 0.3, \"mass_ratio\": 0.5}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    \n    # Copy goals\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Get limits from meta\n    z_min = 0.019\n    z_max = 0.335\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n    \n    # Effector dynamics with X-Z coupling\n    eff_dx = a[0] * p[\"eff_gain\"] + a[2] * p[\"eff_coupling_xz\"]\n    eff_dy = a[1] * p[\"eff_gain\"]\n    eff_dz = a[2] * p[\"eff_gain\"]\n    \n    new_eff_x = s[\"effector.x\"] + eff_dx\n    new_eff_y = s[\"effector.y\"] + eff_dy\n    new_eff_z = s[\"effector.z\"] + eff_dz\n    \n    # Clamp effector Z\n    new_eff_z = max(z_min, min(z_max, new_eff_z))\n    \n    # Check grasp state\n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    if is_grasped:\n        # Kinematic attachment with offset\n        new_blk_x = new_eff_x\n        new_blk_y = new_eff_y\n        new_blk_z = new_eff_z - 0.02\n    else:\n        # Compute effector velocity (implicit from action)\n        eff_vel_x = eff_dx\n        eff_vel_y = eff_dy\n        eff_vel_z = eff_dz\n        \n        # Distance to block\n        dist_x = s[\"effector.x\"] - s[\"block.x\"]\n        dist_y = s[\"effector.y\"] - s[\"block.y\"]\n        dist_z = s[\"effector.z\"] - s[\"block.z\"]\n        dist = math.sqrt(dist_x**2 + dist_y**2 + dist_z**2)\n        \n        # Contact force estimate (proportional to penetration/velocity)\n        if dist < 0.05:\n            # In contact - compute pushing force\n            force_x = eff_vel_x * p[\"mass_ratio\"]\n            force_y = eff_vel_y * p[\"mass_ratio\"]\n            force_z = max(0, eff_vel_z) * p[\"mass_ratio\"]\n            \n            # Static friction check\n            force_mag = math.sqrt(force_x**2 + force_y**2)\n            if force_mag > p[\"static_friction\"]:\n                # Overcome static friction - apply dynamic friction\n                friction_scale = p[\"dynamic_friction\"] / max(force_mag, 0.001)\n                new_blk_x = s[\"block.x\"] + force_x * (1.0 - friction_scale)\n                new_blk_y = s[\"block.y\"] + force_y * (1.0 - friction_scale)\n                new_blk_z = s[\"block.z\"] + force_z * 0.5\n            else:\n                # Static friction lock\n                new_blk_x = s[\"block.x\"]\n                new_blk_y = s[\"block.y\"]\n                new_blk_z = s[\"block.z\"]\n        else:\n            # No contact\n            new_blk_x = s[\"block.x\"]\n            new_blk_y = s[\"block.y\"]\n            new_blk_z = s[\"block.z\"]\n    \n    # Clamp block Z\n    new_blk_z = max(z_min, min(z_max, new_blk_z))\n    \n    ns[\"effector.x\"] = new_eff_x\n    ns[\"effector.y\"] = new_eff_y\n    ns[\"effector.z\"] = new_eff_z\n    ns[\"block.x\"] = new_blk_x\n    ns[\"block.y\"] = new_blk_y\n    ns[\"block.z\"] = new_blk_z\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3225200611887339,
+          "block.y": 0.24153564843117936,
+          "block.z": 0.2548713222253416,
+          "effector.x": 0.17791965682296643,
+          "effector.y": 0.1935053918212373,
+          "effector.z": 0.1401547037957361,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46151001091466975,
+            "block.y": 0.3456975105056719,
+            "block.z": 0.3650270531890048,
+            "effector.x": 0.1906236667153087,
+            "effector.y": 0.19941502886252238,
+            "effector.z": 0.1484641736948121,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.019042361461270137,
+            "block.y": 0.012487628045854127,
+            "block.z": 0.002241725149150846,
+            "effector.x": 0.16492972875777165,
+            "effector.y": 0.18771145068168055,
+            "effector.z": 0.1317651695086331,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "hysteresis_grasp_with_compliance",
+      "mechanism": "Grasp engagement uses hysteresis (different on/off thresholds); grasped block has spring compliance rather than rigid attachment.",
+      "val_rollout_nrmse": 0.649779433768357,
+      "score": 0.649779433768357,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2945784196048851,
+      "params": {
+        "eff_gain": 0.09655578334007793,
+        "grasp_on_thresh": 0.34999999408465743,
+        "grasp_off_thresh": 0.2499999997365757,
+        "spring_k": 80.78487013084788,
+        "spring_damping": -34.71760934400178,
+        "grasp_offset_z": -0.02238796519199476,
+        "contact_radius": 0.025662935999245753
+      },
+      "code": "# HYPOTHESIS: hysteresis_grasp_with_compliance\n# MECHANISM: Grasp engagement uses hysteresis (different on/off thresholds); grasped block has spring compliance rather than rigid attachment.\nimport math\nPARAMS = {\"eff_gain\": 0.1, \"grasp_on_thresh\": 0.35, \"grasp_off_thresh\": 0.25, \"spring_k\": 50.0, \"spring_damping\": 5.0, \"grasp_offset_z\": -0.02, \"contact_radius\": 0.04}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    \n    # Copy goals\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Get limits from meta\n    z_min = 0.019\n    z_max = 0.335\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n    \n    # Effector dynamics\n    eff_dx = a[0] * p[\"eff_gain\"]\n    eff_dy = a[1] * p[\"eff_gain\"]\n    eff_dz = a[2] * p[\"eff_gain\"]\n    \n    new_eff_x = s[\"effector.x\"] + eff_dx\n    new_eff_y = s[\"effector.y\"] + eff_dy\n    new_eff_z = s[\"effector.z\"] + eff_dz\n    \n    # Clamp effector Z\n    new_eff_z = max(z_min, min(z_max, new_eff_z))\n    \n    # Hysteresis for grasp state\n    # Use action value with hysteresis - need to track previous state implicitly\n    # Since we don't have history, use current action with wider engagement band\n    grasp_action = a[4]\n    \n    # Compute distance for contact detection\n    dist_x = new_eff_x - s[\"block.x\"]\n    dist_y = new_eff_y - s[\"block.y\"]\n    dist_z = new_eff_z - s[\"block.z\"]\n    horizontal_dist = math.sqrt(dist_x**2 + dist_y**2)\n    \n    # Determine grasp state based on action and proximity\n    in_contact = horizontal_dist < p[\"contact_radius\"]\n    \n    if grasp_action > p[\"grasp_on_thresh\"]:\n        # Engage grasp\n        is_grasped = True\n    elif grasp_action < p[\"grasp_off_thresh\"]:\n        # Release grasp\n        is_grasped = False\n    else:\n        # Hysteresis zone - maintain contact-based state\n        is_grasped = in_contact and (s[\"effector.x\"] - s[\"block.x\"])**2 + (s[\"effector.y\"] - s[\"block.y\"])**2 < p[\"contact_radius\"]**2\n    \n    if is_grasped:\n        # Spring-damper attachment (compliant grasp)\n        # Target position for block\n        target_x = new_eff_x\n        target_y = new_eff_y\n        target_z = new_eff_z + p[\"grasp_offset_z\"]\n        \n        # Spring force towards target\n        disp_x = s[\"block.x\"] - target_x\n        disp_y = s[\"block.y\"] - target_y\n        disp_z = s[\"block.z\"] - target_z\n        \n        # Velocity estimate (from previous position to current)\n        vel_x = disp_x  # Approximate\n        vel_y = disp_y\n        vel_z = disp_z\n        \n        # Spring-damper response\n        force_x = -p[\"spring_k\"] * disp_x - p[\"spring_damping\"] * vel_x\n        force_y = -p[\"spring_k\"] * disp_y - p[\"spring_damping\"] * vel_y\n        force_z = -p[\"spring_k\"] * disp_z - p[\"spring_damping\"] * vel_z\n        \n        # Update block position (overdamped response)\n        new_blk_x = s[\"block.x\"] + force_x * 0.02\n        new_blk_y = s[\"block.y\"] + force_y * 0.02\n        new_blk_z = s[\"block.z\"] + force_z * 0.02\n    else:\n        # No grasp - check for pushing contact\n        if in_contact and dist_z < 0.05:\n            # Pushing interaction\n            push_factor = 0.3 * (1.0 - horizontal_dist / p[\"contact_radius\"])\n            new_blk_x = s[\"block.x\"] + eff_dx * push_factor\n            new_blk_y = s[\"block.y\"] + eff_dy * push_factor\n            new_blk_z = s[\"block.z\"]\n        else:\n            # No interaction\n            new_blk_x = s[\"block.x\"]\n            new_blk_y = s[\"block.y\"]\n            new_blk_z = s[\"block.z\"]\n    \n    # Clamp block Z\n    new_blk_z = max(z_min, min(z_max, new_blk_z))\n    \n    ns[\"effector.x\"] = new_eff_x\n    ns[\"effector.y\"] = new_eff_y\n    ns[\"effector.z\"] = new_eff_z\n    ns[\"block.x\"] = new_blk_x\n    ns[\"block.y\"] = new_blk_y\n    ns[\"block.z\"] = new_blk_z\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3225200611887339,
+          "block.y": 0.24153564843117936,
+          "block.z": 0.2548713222253416,
+          "effector.x": 0.17791965682296643,
+          "effector.y": 0.1935053918212373,
+          "effector.z": 0.1401547037957361,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46151001091466975,
+            "block.y": 0.3456975105056719,
+            "block.z": 0.3650270531890048,
+            "effector.x": 0.1906236667153087,
+            "effector.y": 0.19941502886252238,
+            "effector.z": 0.1484641736948121,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.019042361461270137,
+            "block.y": 0.012487628045854127,
+            "block.z": 0.002241725149150846,
+            "effector.x": 0.16492972875777165,
+            "effector.y": 0.18771145068168055,
+            "effector.z": 0.1317651695086331,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "dual_mode_grasp_offset",
+      "mechanism": "Block Z offset switches between a \"push\" value (on table) and \"lift\" value (in air) based on effector height.",
+      "val_rollout_nrmse": 0.3493187021028664,
+      "score": 0.3493187021028664,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.17480907396611764,
+      "params": {
+        "eff_gain": 0.10583036229957261,
+        "eff_xz_coupling": -0.019627759526904764,
+        "grasp_thresh": 0.20000000030144005,
+        "grasp_x_off": -0.0009610462414707168,
+        "grasp_y_off": -3.789677084912627e-05,
+        "push_z_off": -0.01709701378460095,
+        "lift_z_off": -0.024166736256557426,
+        "lift_z_thresh": 0.05
+      },
+      "code": "# HYPOTHESIS: dual_mode_grasp_offset\n# MECHANISM: Block Z offset switches between a \"push\" value (on table) and \"lift\" value (in air) based on effector height.\nPARAMS = {\"eff_gain\": 0.1, \"eff_xz_coupling\": -0.02, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"push_z_off\": -0.02, \"lift_z_off\": 0.0, \"lift_z_thresh\": 0.05}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    # Copy goals\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Effector dynamics\n    dx = a[0] * p[\"eff_gain\"] + a[2] * p[\"eff_xz_coupling\"]\n    dy = a[1] * p[\"eff_gain\"]\n    dz = a[2] * p[\"eff_gain\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    # Limits from meta\n    z_min = 0.019\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    # Clamp effector\n    ns[\"effector.z\"] = max(z_min, min(ns[\"effector.z\"], z_max))\n    \n    # Grasp Logic\n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    if is_grasped:\n        # Determine offset based on height (Push vs Lift)\n        if ns[\"effector.z\"] > p[\"lift_z_thresh\"]:\n            z_off = p[\"lift_z_off\"]\n        else:\n            z_off = p[\"push_z_off\"]\n            \n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + z_off\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    # Clamp block\n    ns[\"block.z\"] = max(z_min, min(ns[\"block.z\"], z_max))\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3225200611887339,
+          "block.y": 0.24153564843117936,
+          "block.z": 0.2548713222253416,
+          "effector.x": 0.17791965682296643,
+          "effector.y": 0.1935053918212373,
+          "effector.z": 0.1401547037957361,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46151001091466975,
+            "block.y": 0.3456975105056719,
+            "block.z": 0.3650270531890048,
+            "effector.x": 0.1906236667153087,
+            "effector.y": 0.19941502886252238,
+            "effector.z": 0.1484641736948121,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.019042361461270137,
+            "block.y": 0.012487628045854127,
+            "block.z": 0.002241725149150846,
+            "effector.x": 0.16492972875777165,
+            "effector.y": 0.18771145068168055,
+            "effector.z": 0.1317651695086331,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "linear_height_offset",
+      "mechanism": "Block Z offset varies linearly with effector height to account for gripper geometry changes during lift.",
+      "val_rollout_nrmse": 0.3486981856795066,
+      "score": 0.3486981856795066,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.1753987072476864,
+      "params": {
+        "eff_gain": 0.10629904187955538,
+        "eff_xz_coupling": -0.01970996040286801,
+        "grasp_thresh": 0.19653272749933653,
+        "grasp_x_off": -0.0009749542165899886,
+        "grasp_y_off": -1.1933114131378892e-05,
+        "grasp_z_base": -0.013348655362016171,
+        "grasp_z_slope": -0.06055069683245106
+      },
+      "code": "# HYPOTHESIS: linear_height_offset\n# MECHANISM: Block Z offset varies linearly with effector height to account for gripper geometry changes during lift.\nPARAMS = {\"eff_gain\": 0.1, \"eff_xz_coupling\": -0.02, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_base\": -0.02, \"grasp_z_slope\": 0.05}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    dx = a[0] * p[\"eff_gain\"] + a[2] * p[\"eff_xz_coupling\"]\n    dy = a[1] * p[\"eff_gain\"]\n    dz = a[2] * p[\"eff_gain\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    z_min = 0.019\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    ns[\"effector.z\"] = max(z_min, min(ns[\"effector.z\"], z_max))\n    \n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    if is_grasped:\n        # Linear offset dependent on height\n        z_off = p[\"grasp_z_base\"] + p[\"grasp_z_slope\"] * ns[\"effector.z\"]\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + z_off\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    ns[\"block.z\"] = max(z_min, min(ns[\"block.z\"], z_max))\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3225200611887339,
+          "block.y": 0.24153564843117936,
+          "block.z": 0.2548713222253416,
+          "effector.x": 0.17791965682296643,
+          "effector.y": 0.1935053918212373,
+          "effector.z": 0.1401547037957361,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46151001091466975,
+            "block.y": 0.3456975105056719,
+            "block.z": 0.3650270531890048,
+            "effector.x": 0.1906236667153087,
+            "effector.y": 0.19941502886252238,
+            "effector.z": 0.1484641736948121,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.019042361461270137,
+            "block.y": 0.012487628045854127,
+            "block.z": 0.002241725149150846,
+            "effector.x": 0.16492972875777165,
+            "effector.y": 0.18771145068168055,
+            "effector.z": 0.1317651695086331,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "inertial_effector_substeps",
+      "mechanism": "Effector follows 2nd-order dynamics (mass-damper) integrated via substeps; block attaches kinematically.",
+      "val_rollout_nrmse": 0.3492837910563661,
+      "score": 0.3492837910563661,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.17471383536332444,
+      "params": {
+        "eff_force_gain": 0.8815472756181127,
+        "eff_drag": 9.960590576293182,
+        "eff_xz_coupling": -0.16349895252748334,
+        "grasp_thresh": 0.19999999997893403,
+        "grasp_x_off": -0.0009600147524870642,
+        "grasp_y_off": -4.0269864768267e-05,
+        "grasp_z_off": -0.02383796973482457
+      },
+      "code": "# HYPOTHESIS: inertial_effector_substeps\n# MECHANISM: Effector follows 2nd-order dynamics (mass-damper) integrated via substeps; block attaches kinematically.\nPARAMS = {\"eff_force_gain\": 0.5, \"eff_drag\": 0.9, \"eff_xz_coupling\": -0.02, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_off\": 0.0}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    N_SUB = 5\n    dt = 1.0 / N_SUB\n    \n    eff_x, eff_y, eff_z = s[\"effector.x\"], s[\"effector.y\"], s[\"effector.z\"]\n    vel_x, vel_y, vel_z = 0.0, 0.0, 0.0\n    \n    z_min = 0.019\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n\n    # Substep integration for effector with limits\n    for _ in range(N_SUB):\n        fx = a[0] * p[\"eff_force_gain\"] + a[2] * p[\"eff_xz_coupling\"]\n        fy = a[1] * p[\"eff_force_gain\"]\n        fz = a[2] * p[\"eff_force_gain\"]\n        \n        vel_x += (fx - p[\"eff_drag\"] * vel_x) * dt\n        vel_y += (fy - p[\"eff_drag\"] * vel_y) * dt\n        vel_z += (fz - p[\"eff_drag\"] * vel_z) * dt\n        \n        eff_x += vel_x * dt\n        eff_y += vel_y * dt\n        eff_z += vel_z * dt\n        \n        # Clamp at each substep\n        eff_z = max(z_min, min(eff_z, z_max))\n        \n    ns[\"effector.x\"] = eff_x\n    ns[\"effector.y\"] = eff_y\n    ns[\"effector.z\"] = eff_z\n    \n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    if is_grasped:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"grasp_z_off\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    ns[\"block.z\"] = max(z_min, min(ns[\"block.z\"], z_max))\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3225200611887339,
+          "block.y": 0.24153564843117936,
+          "block.z": 0.2548713222253416,
+          "effector.x": 0.17791965682296643,
+          "effector.y": 0.1935053918212373,
+          "effector.z": 0.1401547037957361,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46151001091466975,
+            "block.y": 0.3456975105056719,
+            "block.z": 0.3650270531890048,
+            "effector.x": 0.1906236667153087,
+            "effector.y": 0.19941502886252238,
+            "effector.z": 0.1484641736948121,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.019042361461270137,
+            "block.y": 0.012487628045854127,
+            "block.z": 0.002241725149150846,
+            "effector.x": 0.16492972875777165,
+            "effector.y": 0.18771145068168055,
+            "effector.z": 0.1317651695086331,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3225200611887339,
+            "block.y": 0.24153564843117936,
+            "block.z": 0.2548713222253416,
+            "effector.x": 0.17791965682296643,
+            "effector.y": 0.1935053918212373,
+            "effector.z": 0.1401547037957361,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "payload_dependent_gain",
+      "mechanism": "Effector velocity gain reduces when grasping a payload, and block offset is constant.",
+      "val_rollout_nrmse": 0.6579780774758652,
+      "score": 0.6579780774758652,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.2929578405063776,
+      "params": {
+        "eff_gain": 0.0967665400482689,
+        "payload_scale": 0.9786892675540567,
+        "grasp_thresh": 0.20511038529152661,
+        "off_x": -0.0010955940773480343,
+        "off_y": -0.0007360053657832125,
+        "off_z": -0.021303046765288776
+      },
+      "code": "# HYPOTHESIS: payload_dependent_gain\n# MECHANISM: Effector velocity gain reduces when grasping a payload, and block offset is constant.\nPARAMS = {\"eff_gain\": 0.1, \"payload_scale\": 0.8, \"grasp_thresh\": 0.2, \"off_x\": 0.0, \"off_y\": 0.0, \"off_z\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Determine grasp state\n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    # Calculate effector gain (reduced if carrying payload)\n    gain = p[\"eff_gain\"]\n    if is_grasped:\n        gain *= p[\"payload_scale\"]\n        \n    dx = a[0] * gain\n    dy = a[1] * gain\n    dz = a[2] * gain\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    # Apply limits from meta\n    z_min = 0.019\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    ns[\"effector.z\"] = max(z_min, min(ns[\"effector.z\"], z_max))\n    \n    if is_grasped:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"off_x\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"off_y\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"off_z\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    ns[\"block.z\"] = max(z_min, min(ns[\"block.z\"], z_max))\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3224912341906387,
+          "block.y": 0.24208234574932017,
+          "block.z": 0.25958941133292956,
+          "effector.x": 0.17716885817698422,
+          "effector.y": 0.19284746401996014,
+          "effector.z": 0.14316815302194588,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46114841547626534,
+            "block.y": 0.34646282649739246,
+            "block.z": 0.3717810197841523,
+            "effector.x": 0.18993474977173647,
+            "effector.y": 0.19938677227926058,
+            "effector.z": 0.15200362444672072,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.025370958829747343,
+            "block.y": 0.01295946235103345,
+            "block.z": 0.002745541379492044,
+            "effector.x": 0.164106686517931,
+            "effector.y": 0.18641438477394986,
+            "effector.z": 0.1342250232227061,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3224912341906387,
+            "block.y": 0.24208234574932017,
+            "block.z": 0.25958941133292956,
+            "effector.x": 0.17716885817698422,
+            "effector.y": 0.19284746401996014,
+            "effector.z": 0.14316815302194588,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3224912341906387,
+            "block.y": 0.24208234574932017,
+            "block.z": 0.25958941133292956,
+            "effector.x": 0.17716885817698422,
+            "effector.y": 0.19284746401996014,
+            "effector.z": 0.14316815302194588,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "anisotropic_gain",
+      "mechanism": "Effector has distinct velocity gains per axis, and block offset is constant.",
+      "val_rollout_nrmse": 0.6433042963808204,
+      "score": 0.6433042963808204,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.3029440314690655,
+      "params": {
+        "eff_gain_x": 0.07879023883763706,
+        "eff_gain_y": 0.11066727476122888,
+        "eff_gain_z": 0.09858885778048507,
+        "grasp_thresh": 0.19797000249629865,
+        "off_x": -0.001750655444727424,
+        "off_y": 0.0012066850752845372,
+        "off_z": -0.021078610946384538
+      },
+      "code": "# HYPOTHESIS: anisotropic_gain\n# MECHANISM: Effector has distinct velocity gains per axis, and block offset is constant.\nPARAMS = {\"eff_gain_x\": 0.1, \"eff_gain_y\": 0.1, \"eff_gain_z\": 0.1, \"grasp_thresh\": 0.2, \"off_x\": 0.0, \"off_y\": 0.0, \"off_z\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Determine grasp state\n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    dx = a[0] * p[\"eff_gain_x\"]\n    dy = a[1] * p[\"eff_gain_y\"]\n    dz = a[2] * p[\"eff_gain_z\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    # Apply limits from meta\n    z_min = 0.019\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    ns[\"effector.z\"] = max(z_min, min(ns[\"effector.z\"], z_max))\n    \n    if is_grasped:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"off_x\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"off_y\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"off_z\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    ns[\"block.z\"] = max(z_min, min(ns[\"block.z\"], z_max))\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3224912341906387,
+          "block.y": 0.24208234574932017,
+          "block.z": 0.25958941133292956,
+          "effector.x": 0.17716885817698422,
+          "effector.y": 0.19284746401996014,
+          "effector.z": 0.14316815302194588,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46114841547626534,
+            "block.y": 0.34646282649739246,
+            "block.z": 0.3717810197841523,
+            "effector.x": 0.18993474977173647,
+            "effector.y": 0.19938677227926058,
+            "effector.z": 0.15200362444672072,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.025370958829747343,
+            "block.y": 0.01295946235103345,
+            "block.z": 0.002745541379492044,
+            "effector.x": 0.164106686517931,
+            "effector.y": 0.18641438477394986,
+            "effector.z": 0.1342250232227061,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3224912341906387,
+            "block.y": 0.24208234574932017,
+            "block.z": 0.25958941133292956,
+            "effector.x": 0.17716885817698422,
+            "effector.y": 0.19284746401996014,
+            "effector.z": 0.14316815302194588,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3224912341906387,
+            "block.y": 0.24208234574932017,
+            "block.z": 0.25958941133292956,
+            "effector.x": 0.17716885817698422,
+            "effector.y": 0.19284746401996014,
+            "effector.z": 0.14316815302194588,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "velocity_saturation",
+      "mechanism": "Effector velocity is clamped to a maximum limit, and block offset is constant.",
+      "val_rollout_nrmse": 0.6583489232383256,
+      "score": 0.6583489232383256,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.293912550163506,
+      "params": {
+        "eff_gain": 0.09517613968813848,
+        "eff_max_vel": 0.09520842133170072,
+        "grasp_thresh": 0.2051098035293139,
+        "off_x": -0.0011727782706370113,
+        "off_y": -0.0006822395055382061,
+        "off_z": -0.021699176451951886
+      },
+      "code": "# HYPOTHESIS: velocity_saturation\n# MECHANISM: Effector velocity is clamped to a maximum limit, and block offset is constant.\nPARAMS = {\"eff_gain\": 0.1, \"eff_max_vel\": 0.1, \"grasp_thresh\": 0.2, \"off_x\": 0.0, \"off_y\": 0.0, \"off_z\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    # Determine grasp state\n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    # Compute raw velocity commands\n    vx = a[0] * p[\"eff_gain\"]\n    vy = a[1] * p[\"eff_gain\"]\n    vz = a[2] * p[\"eff_gain\"]\n    \n    # Apply saturation\n    max_v = p[\"eff_max_vel\"]\n    vx = max(-max_v, min(max_v, vx))\n    vy = max(-max_v, min(max_v, vy))\n    vz = max(-max_v, min(max_v, vz))\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + vx\n    ns[\"effector.y\"] = s[\"effector.y\"] + vy\n    ns[\"effector.z\"] = s[\"effector.z\"] + vz\n    \n    # Apply limits from meta\n    z_min = 0.019\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    ns[\"effector.z\"] = max(z_min, min(ns[\"effector.z\"], z_max))\n    \n    if is_grasped:\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"off_x\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"off_y\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + p[\"off_z\"]\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    ns[\"block.z\"] = max(z_min, min(ns[\"block.z\"], z_max))\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "block.x": 0.3224912341906387,
+          "block.y": 0.24208234574932017,
+          "block.z": 0.25958941133292956,
+          "effector.x": 0.17716885817698422,
+          "effector.y": 0.19284746401996014,
+          "effector.z": 0.14316815302194588,
+          "goal.x": 0.0,
+          "goal.y": 0.0,
+          "goal.z": 0.0
+        },
+        "by_motion": {
+          "block moved (195 transitions)": {
+            "block.x": 0.46114841547626534,
+            "block.y": 0.34646282649739246,
+            "block.z": 0.3717810197841523,
+            "effector.x": 0.18993474977173647,
+            "effector.y": 0.19938677227926058,
+            "effector.z": 0.15200362444672072,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "block did not move (205 transitions)": {
+            "block.x": 0.025370958829747343,
+            "block.y": 0.01295946235103345,
+            "block.z": 0.002745541379492044,
+            "effector.x": 0.164106686517931,
+            "effector.y": 0.18641438477394986,
+            "effector.z": 0.1342250232227061,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "effector moved (400 transitions)": {
+            "block.x": 0.3224912341906387,
+            "block.y": 0.24208234574932017,
+            "block.z": 0.25958941133292956,
+            "effector.x": 0.17716885817698422,
+            "effector.y": 0.19284746401996014,
+            "effector.z": 0.14316815302194588,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          },
+          "goal did not move (400 transitions)": {
+            "block.x": 0.3224912341906387,
+            "block.y": 0.24208234574932017,
+            "block.z": 0.25958941133292956,
+            "effector.x": 0.17716885817698422,
+            "effector.y": 0.19284746401996014,
+            "effector.z": 0.14316815302194588,
+            "goal.x": 0.0,
+            "goal.y": 0.0,
+            "goal.z": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "best": {
+    "name": "linear_height_offset",
+    "round": 3,
+    "val_rollout_nrmse": 0.3486981856795066,
+    "params": {
+      "eff_gain": 0.10629904187955538,
+      "eff_xz_coupling": -0.01970996040286801,
+      "grasp_thresh": 0.19653272749933653,
+      "grasp_x_off": -0.0009749542165899886,
+      "grasp_y_off": -1.1933114131378892e-05,
+      "grasp_z_base": -0.013348655362016171,
+      "grasp_z_slope": -0.06055069683245106
+    },
+    "code": "# HYPOTHESIS: linear_height_offset\n# MECHANISM: Block Z offset varies linearly with effector height to account for gripper geometry changes during lift.\nPARAMS = {\"eff_gain\": 0.1, \"eff_xz_coupling\": -0.02, \"grasp_thresh\": 0.2, \"grasp_x_off\": 0.0, \"grasp_y_off\": 0.0, \"grasp_z_base\": -0.02, \"grasp_z_slope\": 0.05}\n\ndef step(state, action, p, meta):\n    s = state\n    a = action\n    ns = {}\n    ns[\"goal.x\"] = s[\"goal.x\"]\n    ns[\"goal.y\"] = s[\"goal.y\"]\n    ns[\"goal.z\"] = s[\"goal.z\"]\n    \n    dx = a[0] * p[\"eff_gain\"] + a[2] * p[\"eff_xz_coupling\"]\n    dy = a[1] * p[\"eff_gain\"]\n    dz = a[2] * p[\"eff_gain\"]\n    \n    ns[\"effector.x\"] = s[\"effector.x\"] + dx\n    ns[\"effector.y\"] = s[\"effector.y\"] + dy\n    ns[\"effector.z\"] = s[\"effector.z\"] + dz\n    \n    z_min = 0.019\n    z_max = 1.0\n    if \"state_limits\" in meta and \"block.z\" in meta[\"state_limits\"]:\n        lim = meta[\"state_limits\"][\"block.z\"]\n        if \"min\" in lim and \"value\" in lim[\"min\"]:\n            z_min = lim[\"min\"][\"value\"]\n        if \"observed_range\" in lim and len(lim[\"observed_range\"]) == 2:\n            z_max = lim[\"observed_range\"][1]\n            \n    ns[\"effector.z\"] = max(z_min, min(ns[\"effector.z\"], z_max))\n    \n    is_grasped = a[4] > p[\"grasp_thresh\"]\n    \n    if is_grasped:\n        # Linear offset dependent on height\n        z_off = p[\"grasp_z_base\"] + p[\"grasp_z_slope\"] * ns[\"effector.z\"]\n        ns[\"block.x\"] = ns[\"effector.x\"] + p[\"grasp_x_off\"]\n        ns[\"block.y\"] = ns[\"effector.y\"] + p[\"grasp_y_off\"]\n        ns[\"block.z\"] = ns[\"effector.z\"] + z_off\n    else:\n        ns[\"block.x\"] = s[\"block.x\"]\n        ns[\"block.y\"] = s[\"block.y\"]\n        ns[\"block.z\"] = s[\"block.z\"]\n        \n    ns[\"block.z\"] = max(z_min, min(ns[\"block.z\"], z_max))\n    \n    return ns"
+  },
+  "elapsed_s": 1833.425703048706
+}

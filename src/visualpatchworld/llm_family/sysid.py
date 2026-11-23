@@ -400,6 +400,99 @@ def control_period(episodes: Sequence[Episode]) -> Optional[float]:
     return num / den if den > 0 else None
 
 
+def identify_state_limits(episodes: Sequence[Episode], *, edge_frac: float = 0.03, min_blocked: int = 5,
+                          min_r2: float = 0.3, max_progress: float = 0.35) -> Dict[str, Dict[str, object]]:
+    """Hard limits on action-driven state variables. For each key, fit delta = A @ action + b on
+    interior transitions; near the observed min/max, count transitions whose predicted step
+    would clearly cross that extreme while the actual step stops short ("blocked pushes").
+    A variable gets a limit when there are >= ``min_blocked`` such pushes and their median
+    realised progress is < ``max_progress`` of the predicted one. Unbounded variables have
+    almost no blocked pushes because the observed extreme is just where the data ends."""
+    ts = [t for ep in episodes for t in ep.transitions]
+    if not ts or not ts[0].action:
+        return {}
+    keys = sorted(k for k in ts[0].state if all(k in t.next_state for t in ts[:50]))
+    A = np.asarray([list(t.action) + [1.0] for t in ts], dtype=np.float64)
+    out: Dict[str, Dict[str, object]] = {}
+    for k in keys:
+        x = np.asarray([t.state[k] for t in ts])
+        xn = np.asarray([t.next_state[k] for t in ts])
+        d = xn - x
+        if np.std(d) < 1e-9:
+            continue
+        lo, hi = float(min(x.min(), xn.min())), float(max(x.max(), xn.max()))
+        span = hi - lo
+        if span <= 0:
+            continue
+        edge = edge_frac * span
+        interior = (x > lo + 3 * edge) & (x < hi - 3 * edge)
+        if interior.sum() < 3 * A.shape[1]:
+            continue
+        coef, *_ = np.linalg.lstsq(A[interior], d[interior], rcond=None)
+        res = d[interior] - A[interior] @ coef
+        r2 = 1.0 - np.var(res) / np.var(d[interior])
+        if r2 < min_r2:
+            continue
+        pred = A @ coef
+        margin = 2.0 * float(np.std(res))
+        found = {}
+        for side, bound, sign in (("max", hi, 1.0), ("min", lo, -1.0)):
+            near = sign * (bound - x) < edge
+            push = near & (sign * (x + pred - bound) > margin)
+            if push.sum() < min_blocked:
+                continue
+            progress = (sign * d[push]) / np.maximum(sign * pred[push], 1e-12)
+            if float(np.median(progress)) < max_progress:
+                found[side] = {"value": round(bound, 4), "blocked_pushes": int(push.sum()),
+                               "median_progress_of_predicted": round(float(np.median(progress)), 3)}
+        if found:
+            out[k] = {**found, "action_model_r2": round(float(r2), 3),
+                      "observed_range": [round(lo, 4), round(hi, 4)]}
+    return out
+
+
+def limit_violation(cand, params, episodes: Sequence[Episode], limits: Mapping[str, Mapping[str, object]], *,
+                    horizon: int = 10, n_starts: int = 40, seed: int = 0) -> float:
+    """Fraction of (start, constant extreme action) rollouts in which the candidate drives a
+    limited variable more than 2% of its observed range beyond an identified limit."""
+    from .fit import _safe_step
+
+    if not limits:
+        return 0.0
+    rng = np.random.default_rng(seed)
+    ts = [t for ep in episodes for t in ep.transitions]
+    dim = len(ts[0].action)
+    starts = [ts[i] for i in rng.choice(len(ts), size=min(n_starts, len(ts)), replace=False)]
+    actions = [[s * (1.0 if j == i else 0.0) for j in range(dim)] for i in range(dim) for s in (-1.0, 1.0)]
+    bad = total = 0
+    for t in starts:
+        for a in actions:
+            state, viol = dict(t.state), False
+            for _ in range(horizon):
+                pred = _safe_step(cand, state, a, dict(params), t.meta)
+                if pred is None:
+                    break
+                state = {k: float(pred.get(k, state[k])) for k in state}
+                for k, lim in limits.items():
+                    lo, hi = lim["observed_range"]
+                    tol = 0.02 * (hi - lo)
+                    if ("max" in lim and state.get(k, lo) > lim["max"]["value"] + tol) or \
+                            ("min" in lim and state.get(k, hi) < lim["min"]["value"] - tol):
+                        viol = True
+            bad += viol
+            total += 1
+    return bad / max(total, 1)
+
+
+STATE_LIMITS_DOC = """
+meta["state_limits"] lists hard limits identified from the traces: for these state variables,
+transitions that push past the listed min/max value (as predicted by the variable's ordinary
+action response) stop at it instead. Planning will try actions that drive the model beyond the
+data, so the program must enforce these limits (e.g. clamp the variable to [min, max] after each
+update, and compute anything derived from it, such as forward kinematics, from the clamped value).
+"""
+
+
 def analyze_interactions(episodes: Sequence[Episode], log=print, *, pusher_dynamics: bool = False) -> Dict[str, object]:
     """Derived static metadata from traces alone: the contact shape of every detected
     pusher/body pair and the control period; with ``pusher_dynamics`` also the identified

@@ -1,0 +1,26 @@
+[refine] start arm_driven_fk val5=0.7165 (Qwen/Qwen3.5-397B-A17B)
+[refine] round 1: 3 valid revisions of arm_driven_fk
+[refine] round 1: 3 valid revisions
+[refine]   coupled_linear_arm                           val1=0.5423 val5=0.7159 val5=0.7159 (10s)
+[refine]   jacobian_inverse_ik                          val1=0.9399 val5=1.8907 val5=1.8907 (18s)
+[refine]   gravity_compensated_arm                      val1=0.5461 val5=0.7181 val5=0.7181 (13s)
+[refine] best after round 1: coupled_linear_arm val5=0.7159
+[refine] round 2: 3 valid revisions of coupled_linear_arm
+[refine] round 2: 3 valid revisions
+[refine]   velocity_integration_arm                     val1=0.5459 val5=0.7116 val5=0.7116 (15s)
+[refine]   pd_tracking_arm                              val1=0.5459 val5=0.7116 val5=0.7116 (28s)
+[refine]   substep_pd_arm                               val1=0.5632 val5=0.7189 val5=0.7189 (32s)
+[refine] best after round 2: velocity_integration_arm val5=0.7116
+[refine] round 3: 3 valid revisions of velocity_integration_arm
+[refine] round 3: 3 valid revisions
+[refine]   velocity_integration_with_gravity            val1=0.5459 val5=0.7175 val5=0.7175 (23s)
+[refine]   velocity_integration_config_gravity          val1=0.5461 val5=0.7181 val5=0.7181 (23s)
+[refine]   substep_friction_dynamics                    val1=0.5459 val5=0.7175 val5=0.7175 (63s)
+[refine] best after round 3: velocity_integration_arm val5=0.7116
+[refine] round 4: 3 valid revisions of velocity_integration_arm
+[refine] round 4: 3 valid revisions
+[refine]   velocity_integration_bias                    val1=0.5459 val5=0.7175 val5=0.7175 (21s)
+[refine]   velocity_integration_spring                  val1=0.5458 val5=0.7136 val5=0.7136 (23s)
+[refine]   velocity_integration_friction                val1=0.5461 val5=0.7175 val5=0.7175 (26s)
+[refine] best after round 4: velocity_integration_arm val5=0.7116
+[refine] done: velocity_integration_arm val5=0.7116 round=2 (1437s)

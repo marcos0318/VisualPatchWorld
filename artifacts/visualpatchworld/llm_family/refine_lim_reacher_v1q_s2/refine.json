@@ -1,0 +1,731 @@
+{
+  "args": {
+    "run_dir": "artifacts/visualpatchworld/llm_family/v1_reacher_qwen35_s2",
+    "output_dir": "artifacts/visualpatchworld/llm_family/refine_lim_reacher_v1q_s2",
+    "model": null,
+    "rounds": 4,
+    "num_revisions": 3,
+    "objective": "multi_step",
+    "bank_file": "artifacts/visualpatchworld/llm_family/bank/qwen35_general_skills.json",
+    "feedback_episodes": 10,
+    "restarts": 2,
+    "max_nfev": 200,
+    "seed": 0,
+    "structured_fit": true,
+    "balance_modes": false,
+    "mode_feedback": false,
+    "select": "rollout",
+    "select_h": 25,
+    "cover_modes": false,
+    "val_episodes": 0,
+    "fit_timeout": 1800.0,
+    "constants_feedback": false,
+    "beam": 1,
+    "pusher_dynamics": false,
+    "state_limits": true,
+    "pusher_helper": false
+  },
+  "model": "Qwen/Qwen3.5-397B-A17B",
+  "start": "saturated_joint_limits",
+  "history": [
+    {
+      "round": 0,
+      "name": "saturated_joint_limits",
+      "val_rollout_nrmse": 0.702427499264006,
+      "score": 0.702427499264006,
+      "val_per_mode": null,
+      "code": "# HYPOTHESIS: saturated_joint_limits\n# MECHANISM: Linear joint dynamics with hard saturation at learned joint limits; finger from forward kinematics.\nPARAMS = {\"joint_gain_0\": 0.12, \"joint_gain_1\": 0.12, \"joint_min_0\": -4.0, \"joint_max_0\": 4.0, \"joint_min_1\": -2.5, \"joint_max_1\": 2.5, \"fk_l1\": 0.13, \"fk_l2\": 0.10}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Linear dynamics with saturation\n    raw_x = state[\"arm.x\"] + p[\"joint_gain_0\"] * action[0]\n    raw_y = state[\"arm.y\"] + p[\"joint_gain_1\"] * action[1]\n    ns[\"arm.x\"] = max(p[\"joint_min_0\"], min(p[\"joint_max_0\"], raw_x))\n    ns[\"arm.y\"] = max(p[\"joint_min_1\"], min(p[\"joint_max_1\"], raw_y))\n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns"
+    },
+    {
+      "round": 1,
+      "name": "gravity_drift",
+      "mechanism": "Joint angles update via action plus a configuration-dependent gravity torque term that can overpower actuation.",
+      "val_rollout_nrmse": 0.8189535181524176,
+      "score": 0.8189535181524176,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.6271573442334614,
+      "params": {
+        "gain_x": 0.7757056839288712,
+        "gain_y": 0.9384193285590923,
+        "grav_x": -0.005628039799671558,
+        "grav_y": -0.00371920817504346,
+        "phase_x": -2.0598128214657794,
+        "phase_y": -0.6351009098393404,
+        "fk_l1": 0.11886631315256974,
+        "fk_l2": 0.11726957704134927,
+        "min_x": -4.0,
+        "max_x": 5.108954739902506
+      },
+      "code": "# HYPOTHESIS: gravity_drift\n# MECHANISM: Joint angles update via action plus a configuration-dependent gravity torque term that can overpower actuation.\nPARAMS = {\"gain_x\": 0.5, \"gain_y\": 0.5, \"grav_x\": 0.2, \"grav_y\": 0.2, \"phase_x\": 0.0, \"phase_y\": 0.0, \"fk_l1\": 0.12, \"fk_l2\": 0.12, \"min_x\": -4.0, \"max_x\": 4.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    \n    # Gravity drift terms (sinusoidal dependence on angle)\n    drift_x = p[\"grav_x\"] * math.sin(state[\"arm.x\"] + p[\"phase_x\"])\n    drift_y = p[\"grav_y\"] * math.sin(state[\"arm.y\"] + p[\"phase_y\"])\n    \n    # Update joints with action and drift\n    raw_x = state[\"arm.x\"] + p[\"gain_x\"] * action[0] + drift_x\n    raw_y = state[\"arm.y\"] + p[\"gain_y\"] * action[1] + drift_y\n    \n    # Clamp arm.x using params\n    ns[\"arm.x\"] = max(p[\"min_x\"], min(p[\"max_x\"], raw_x))\n    \n    # Clamp arm.y using meta limits if available\n    y_limits = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    min_y = y_limits.get(\"min\", {}).get(\"value\", -3.0)\n    max_y = y_limits.get(\"max\", {}).get(\"value\", 3.0)\n    ns[\"arm.y\"] = max(min_y, min(max_y, raw_y))\n    \n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.665199998264117,
+          "arm.y": 0.25029279191642567,
+          "finger.x": 0.7532381852024842,
+          "finger.y": 0.7069192998730851,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "task_space_control",
+      "mechanism": "Action specifies end-effector velocity; joint angles update via inverse kinematics (Jacobian) causing configuration-dependent gain/sign.",
+      "val_rollout_nrmse": 1.882832315268102,
+      "score": 1.882832315268102,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.921615787828826,
+      "params": {
+        "fk_l1": 0.11122548785410866,
+        "fk_l2": 0.104612918060682,
+        "action_scale": 3.980229713425608,
+        "eps": 3.4922405716070695
+      },
+      "code": "# HYPOTHESIS: task_space_control\n# MECHANISM: Action specifies end-effector velocity; joint angles update via inverse kinematics (Jacobian) causing configuration-dependent gain/sign.\nPARAMS = {\"fk_l1\": 0.12, \"fk_l2\": 0.12, \"action_scale\": 0.1, \"eps\": 0.01}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    \n    l1 = p[\"fk_l1\"]\n    l2 = p[\"fk_l2\"]\n    q1 = state[\"arm.x\"]\n    q2 = state[\"arm.y\"]\n    \n    # Analytic Jacobian determinant for 2-link planar arm: l1*l2*sin(q2)\n    det = l1 * l2 * math.sin(q2)\n    \n    # Regularized inverse determinant to handle singularities\n    safe_det = det if abs(det) > p[\"eps\"] else (p[\"eps\"] if det > 0 else -p[\"eps\"])\n    inv_det = 1.0 / safe_det\n    \n    # Inverse Jacobian applied to action (scaled)\n    # dq = J^-1 * v_ee * scale\n    # J^-1 = 1/det * [[l2*c12, l2*s12], [-l1*c1-l2*c12, -l1*s1-l2*s12]] (simplified structure)\n    # Using explicit components for stability\n    s1, c1 = math.sin(q1), math.cos(q1)\n    s12, c12 = math.sin(q1 + q2), math.cos(q1 + q2)\n    \n    J11 = -l1 * s1 - l2 * s12\n    J12 = -l2 * s12\n    J21 = l1 * c1 + l2 * c12\n    J22 = l2 * c12\n    \n    dq1 = inv_det * (J22 * action[0] - J12 * action[1]) * p[\"action_scale\"]\n    dq2 = inv_det * (-J21 * action[0] + J11 * action[1]) * p[\"action_scale\"]\n    \n    raw_x = q1 + dq1\n    raw_y = q2 + dq2\n    \n    # Clamp arm.x (params)\n    ns[\"arm.x\"] = raw_x # No hard limits in meta, rely on physics or large params if added\n    \n    # Clamp arm.y using meta limits\n    y_limits = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    min_y = y_limits.get(\"min\", {}).get(\"value\", -3.0)\n    max_y = y_limits.get(\"max\", {}).get(\"value\", 3.0)\n    ns[\"arm.y\"] = max(min_y, min(max_y, raw_y))\n    \n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = l1 * math.cos(j0) + l2 * math.cos(j0 + j1)\n    ns[\"finger.y\"] = l1 * math.sin(j0) + l2 * math.sin(j0 + j1)\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.665199998264117,
+          "arm.y": 0.25029279191642567,
+          "finger.x": 0.7532381852024842,
+          "finger.y": 0.7069192998730851,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 1,
+      "name": "friction_coupled_gain",
+      "mechanism": "Action is torque; motion occurs only if torque exceeds static friction, and gain is modulated by the other joint's angle.",
+      "val_rollout_nrmse": 0.7363827317974136,
+      "score": 0.7363827317974136,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5495694028517358,
+      "params": {
+        "gain_x": 0.840754902840474,
+        "gain_y": 0.9404247928130641,
+        "fric_x": 0.009079140515012817,
+        "fric_y": 0.0016555777357640609,
+        "couple_x": -0.1303657512916299,
+        "couple_y": -0.028446376349599747,
+        "fk_l1": 0.11933294271093187,
+        "fk_l2": 0.11756653128171371,
+        "min_x": -4.0,
+        "max_x": 5.443036489324778
+      },
+      "code": "# HYPOTHESIS: friction_coupled_gain\n# MECHANISM: Action is torque; motion occurs only if torque exceeds static friction, and gain is modulated by the other joint's angle.\nPARAMS = {\"gain_x\": 0.5, \"gain_y\": 0.5, \"fric_x\": 0.05, \"fric_y\": 0.05, \"couple_x\": 0.5, \"couple_y\": 0.5, \"fk_l1\": 0.12, \"fk_l2\": 0.12, \"min_x\": -4.0, \"max_x\": 4.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    \n    # Configuration dependent gain (coupling between joints)\n    gain_x_eff = p[\"gain_x\"] * (1.0 + p[\"couple_x\"] * math.cos(state[\"arm.y\"]))\n    gain_y_eff = p[\"gain_y\"] * (1.0 + p[\"couple_y\"] * math.cos(state[\"arm.x\"]))\n    \n    # Raw delta from action\n    delta_x = gain_x_eff * action[0]\n    delta_y = gain_y_eff * action[1]\n    \n    # Static friction (deadzone)\n    if abs(delta_x) < p[\"fric_x\"]:\n        delta_x = 0.0\n    else:\n        delta_x -= p[\"fric_x\"] * (1.0 if delta_x > 0 else -1.0)\n        \n    if abs(delta_y) < p[\"fric_y\"]:\n        delta_y = 0.0\n    else:\n        delta_y -= p[\"fric_y\"] * (1.0 if delta_y > 0 else -1.0)\n        \n    raw_x = state[\"arm.x\"] + delta_x\n    raw_y = state[\"arm.y\"] + delta_y\n    \n    # Clamp arm.x\n    ns[\"arm.x\"] = max(p[\"min_x\"], min(p[\"max_x\"], raw_x))\n    \n    # Clamp arm.y using meta limits\n    y_limits = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    min_y = y_limits.get(\"min\", {}).get(\"value\", -3.0)\n    max_y = y_limits.get(\"max\", {}).get(\"value\", 3.0)\n    ns[\"arm.y\"] = max(min_y, min(max_y, raw_y))\n    \n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.665199998264117,
+          "arm.y": 0.25029279191642567,
+          "finger.x": 0.7532381852024842,
+          "finger.y": 0.7069192998730851,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "inverted_joint_0_dynamics",
+      "mechanism": "Joint 0 action has inverted sign (negative gain), joint 1 has positive gain; finger from FK.",
+      "val_rollout_nrmse": 0.702404391515134,
+      "score": 0.702404391515134,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5433207183225336,
+      "params": {
+        "joint_gain_0": 0.7803394451741065,
+        "joint_gain_1": 0.9411931734399529,
+        "joint_min_0": -6.690658760525672,
+        "joint_max_0": 6.337063407391079,
+        "joint_min_1": -2.630737597370909,
+        "joint_max_1": 3.5726385077770404,
+        "fk_l1": 0.12002737288028205,
+        "fk_l2": 0.11708087471052926
+      },
+      "code": "# HYPOTHESIS: inverted_joint_0_dynamics\n# MECHANISM: Joint 0 action has inverted sign (negative gain), joint 1 has positive gain; finger from FK.\nPARAMS = {\"joint_gain_0\": -0.15, \"joint_gain_1\": 0.15, \"joint_min_0\": -3.0, \"joint_max_0\": 3.0, \"joint_min_1\": -3.0, \"joint_max_1\": 3.0, \"fk_l1\": 0.12, \"fk_l2\": 0.12}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Linear dynamics with saturation (joint 0 has negative gain)\n    raw_x = state[\"arm.x\"] + p[\"joint_gain_0\"] * action[0]\n    raw_y = state[\"arm.y\"] + p[\"joint_gain_1\"] * action[1]\n    # Apply limits from meta if available, else use params\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", p[\"joint_min_0\"])\n    xmax = xlim.get(\"max\", {}).get(\"value\", p[\"joint_max_0\"])\n    ymin = ylim.get(\"min\", {}).get(\"value\", p[\"joint_min_1\"])\n    ymax = ylim.get(\"max\", {}).get(\"value\", p[\"joint_max_1\"])\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.665199998264117,
+          "arm.y": 0.25029279191642567,
+          "finger.x": 0.7532381852024842,
+          "finger.y": 0.7069192998730851,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "cartesian_arm_with_offset",
+      "mechanism": "arm.x/arm.y are Cartesian end-effector positions; finger is offset from arm by fixed transform.",
+      "val_rollout_nrmse": 19.54537066208843,
+      "score": 19.54537066208843,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 19.98464648901389,
+      "params": {
+        "arm_gain_x": -0.00010396489385780527,
+        "arm_gain_y": -0.6166741900437142,
+        "arm_min_x": -1.0835974380332156,
+        "arm_max_x": -2.5024045333049307,
+        "arm_min_y": -4.635106346196517,
+        "arm_max_y": 3.0,
+        "finger_offset_x": 1.0436973272152497,
+        "finger_offset_y": -0.42611688424728317
+      },
+      "code": "# HYPOTHESIS: cartesian_arm_with_offset\n# MECHANISM: arm.x/arm.y are Cartesian end-effector positions; finger is offset from arm by fixed transform.\nPARAMS = {\"arm_gain_x\": -0.12, \"arm_gain_y\": 0.12, \"arm_min_x\": -3.0, \"arm_max_x\": 3.0, \"arm_min_y\": -3.0, \"arm_max_y\": 3.0, \"finger_offset_x\": 0.05, \"finger_offset_y\": -0.05}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Cartesian dynamics with saturation\n    raw_x = state[\"arm.x\"] + p[\"arm_gain_x\"] * action[0]\n    raw_y = state[\"arm.y\"] + p[\"arm_gain_y\"] * action[1]\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", p[\"arm_min_x\"])\n    xmax = xlim.get(\"max\", {}).get(\"value\", p[\"arm_max_x\"])\n    ymin = ylim.get(\"min\", {}).get(\"value\", p[\"arm_min_y\"])\n    ymax = ylim.get(\"max\", {}).get(\"value\", p[\"arm_max_y\"])\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    # Finger is fixed offset from arm (not FK from joints)\n    ns[\"finger.x\"] = ns[\"arm.x\"] + p[\"finger_offset_x\"]\n    ns[\"finger.y\"] = ns[\"arm.y\"] + p[\"finger_offset_y\"]\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.665199998264117,
+          "arm.y": 0.25029279191642567,
+          "finger.x": 0.7532381852024842,
+          "finger.y": 0.7069192998730851,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 2,
+      "name": "velocity_dynamics_with_drag",
+      "mechanism": "Actions control joint velocities; positions integrate velocity with drag damping.",
+      "val_rollout_nrmse": 1.098661925132471,
+      "score": 1.098661925132471,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.9017774813038191,
+      "params": {
+        "vel_gain_0": -0.8653387523543247,
+        "vel_gain_1": 1.3483386288242634,
+        "drag_0": 1.8973776966716898,
+        "drag_1": 0.3041676048176116,
+        "joint_min_0": -4.978284387063875,
+        "joint_max_0": 4.594529484968194,
+        "joint_min_1": -3.0000000000000098,
+        "joint_max_1": 3.0,
+        "fk_l1": 0.1193356682866754,
+        "fk_l2": 0.11737638032793948
+      },
+      "code": "# HYPOTHESIS: velocity_dynamics_with_drag\n# MECHANISM: Actions control joint velocities; positions integrate velocity with drag damping.\nPARAMS = {\"vel_gain_0\": -0.8, \"vel_gain_1\": 0.8, \"drag_0\": 0.1, \"drag_1\": 0.1, \"joint_min_0\": -3.0, \"joint_max_0\": 3.0, \"joint_min_1\": -3.0, \"joint_max_1\": 3.0, \"fk_l1\": 0.12, \"fk_l2\": 0.12}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Velocity from action\n    vel_0 = p[\"vel_gain_0\"] * action[0]\n    vel_1 = p[\"vel_gain_1\"] * action[1]\n    # Integrate with drag (exponential decay toward zero velocity effect)\n    delta_x = vel_0 * (1.0 - p[\"drag_0\"])\n    delta_y = vel_1 * (1.0 - p[\"drag_1\"])\n    raw_x = state[\"arm.x\"] + delta_x\n    raw_y = state[\"arm.y\"] + delta_y\n    # Apply limits\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", p[\"joint_min_0\"])\n    xmax = xlim.get(\"max\", {}).get(\"value\", p[\"joint_max_0\"])\n    ymin = ylim.get(\"min\", {}).get(\"value\", p[\"joint_min_1\"])\n    ymax = ylim.get(\"max\", {}).get(\"value\", p[\"joint_max_1\"])\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.665199998264117,
+          "arm.y": 0.25029279191642567,
+          "finger.x": 0.7532381852024842,
+          "finger.y": 0.7069192998730851,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.665199998264117,
+            "arm.y": 0.25029279191642567,
+            "finger.x": 0.7532381852024842,
+            "finger.y": 0.7069192998730851,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "cartesian_arm_with_fixed_offset",
+      "mechanism": "arm.x/arm.y are Cartesian end-effector coordinates (not joint angles); finger is at a fixed offset from arm position.",
+      "val_rollout_nrmse": 6.879286635851388,
+      "score": 6.879286635851388,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 6.891717082865436,
+      "params": {
+        "gain_x": 0.013902733656551147,
+        "gain_y": 0.0030314363970522437,
+        "finger_offset_x": -0.02343717183750254,
+        "finger_offset_y": 0.0005626466004183321,
+        "damping_x": 0.9667579684903314,
+        "damping_y": 0.9906788455801091
+      },
+      "code": "# HYPOTHESIS: cartesian_arm_with_fixed_offset\n# MECHANISM: arm.x/arm.y are Cartesian end-effector coordinates (not joint angles); finger is at a fixed offset from arm position.\nPARAMS = {\"gain_x\": -0.5, \"gain_y\": 0.5, \"finger_offset_x\": 0.05, \"finger_offset_y\": -0.05, \"damping_x\": 0.1, \"damping_y\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    \n    # Get limits from meta\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", -3.0)\n    xmax = xlim.get(\"max\", {}).get(\"value\", 3.0)\n    ymin = ylim.get(\"min\", {}).get(\"value\", -3.0)\n    ymax = ylim.get(\"max\", {}).get(\"value\", 3.0)\n    \n    # Cartesian dynamics with damping (velocity-like response to action)\n    dx = p[\"gain_x\"] * action[0] - p[\"damping_x\"] * state[\"arm.x\"]\n    dy = p[\"gain_y\"] * action[1] - p[\"damping_y\"] * state[\"arm.y\"]\n    \n    raw_x = state[\"arm.x\"] + dx\n    raw_y = state[\"arm.y\"] + dy\n    \n    # Clamp to limits\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    \n    # Finger is at fixed offset from arm (not rotational FK)\n    ns[\"finger.x\"] = ns[\"arm.x\"] + p[\"finger_offset_x\"]\n    ns[\"finger.y\"] = ns[\"arm.y\"] + p[\"finger_offset_y\"]\n    \n    # Target is static\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6651224578213067,
+          "arm.y": 0.256104342564654,
+          "finger.x": 0.7551777924179205,
+          "finger.y": 0.7077992934905799,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "velocity_based_joint_dynamics",
+      "mechanism": "Actions control joint velocities, not positions; arm.x/arm.y are joint angles with second-order dynamics.",
+      "val_rollout_nrmse": 2.357727707395335,
+      "score": 2.357727707395335,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 2.190739311795458,
+      "params": {
+        "vel_gain_0": 1.0843582106508378,
+        "vel_gain_1": 1.5550724937751403,
+        "joint_damping_0": -0.01803046138652544,
+        "joint_damping_1": 0.007345843494794963,
+        "fk_l1": 0.11256376636428032,
+        "fk_l2": 0.10901303846437178,
+        "dt": 0.61197099058813
+      },
+      "code": "# HYPOTHESIS: velocity_based_joint_dynamics\n# MECHANISM: Actions control joint velocities, not positions; arm.x/arm.y are joint angles with second-order dynamics.\nPARAMS = {\"vel_gain_0\": -0.8, \"vel_gain_1\": 0.6, \"joint_damping_0\": 0.3, \"joint_damping_1\": 0.3, \"fk_l1\": 0.12, \"fk_l2\": 0.12, \"dt\": 0.1}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    \n    # Get limits from meta\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", -3.0)\n    xmax = xlim.get(\"max\", {}).get(\"value\", 3.0)\n    ymin = ylim.get(\"min\", {}).get(\"value\", -3.0)\n    ymax = ylim.get(\"max\", {}).get(\"value\", 3.0)\n    \n    # Actions command velocities, with damping on current position\n    vel_0 = p[\"vel_gain_0\"] * action[0] - p[\"joint_damping_0\"] * state[\"arm.x\"]\n    vel_1 = p[\"vel_gain_1\"] * action[1] - p[\"joint_damping_1\"] * state[\"arm.y\"]\n    \n    # Integrate velocities to get new joint angles\n    raw_j0 = state[\"arm.x\"] + vel_0 * p[\"dt\"]\n    raw_j1 = state[\"arm.y\"] + vel_1 * p[\"dt\"]\n    \n    # Clamp joints to limits\n    j0 = max(xmin, min(xmax, raw_j0))\n    j1 = max(ymin, min(ymax, raw_j1))\n    \n    ns[\"arm.x\"] = j0\n    ns[\"arm.y\"] = j1\n    \n    # Forward kinematics for finger position\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    \n    # Target is static\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6651224578213067,
+          "arm.y": 0.256104342564654,
+          "finger.x": 0.7551777924179205,
+          "finger.y": 0.7077992934905799,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 3,
+      "name": "configuration_dependent_gain",
+      "mechanism": "Joint gains vary with current configuration (nonlinear dynamics); uses piecewise linear approximation based on arm position.",
+      "val_rollout_nrmse": 2.4088224394581013,
+      "score": 2.4088224394581013,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 2.2045830771012516,
+      "params": {
+        "gain_0_center": 0.5325768390019657,
+        "gain_0_slope": -0.07517873411672481,
+        "gain_1_center": 0.9612057783327226,
+        "gain_1_slope": -0.025446205857406225,
+        "fk_l1": 0.1189747774022397,
+        "fk_l2": 0.1092361234319008,
+        "bias_0": -0.005017682641986912,
+        "bias_1": -0.010397793311573806
+      },
+      "code": "# HYPOTHESIS: configuration_dependent_gain\n# MECHANISM: Joint gains vary with current configuration (nonlinear dynamics); uses piecewise linear approximation based on arm position.\nPARAMS = {\"gain_0_center\": -0.6, \"gain_0_slope\": 0.2, \"gain_1_center\": 0.5, \"gain_1_slope\": -0.1, \"fk_l1\": 0.12, \"fk_l2\": 0.12, \"bias_0\": 0.0, \"bias_1\": 0.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    \n    # Get limits from meta\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", -3.0)\n    xmax = xlim.get(\"max\", {}).get(\"value\", 3.0)\n    ymin = ylim.get(\"min\", {}).get(\"value\", -3.0)\n    ymax = ylim.get(\"max\", {}).get(\"value\", 3.0)\n    \n    # Configuration-dependent gains (gain varies with current joint position)\n    gain_0 = p[\"gain_0_center\"] + p[\"gain_0_slope\"] * state[\"arm.x\"]\n    gain_1 = p[\"gain_1_center\"] + p[\"gain_1_slope\"] * state[\"arm.y\"]\n    \n    # Apply action with configuration-dependent gain and bias\n    raw_x = state[\"arm.x\"] + gain_0 * action[0] + p[\"bias_0\"]\n    raw_y = state[\"arm.y\"] + gain_1 * action[1] + p[\"bias_1\"]\n    \n    # Clamp to limits\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    \n    # Forward kinematics for finger\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    \n    # Target is static\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    \n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6651224578213067,
+          "arm.y": 0.256104342564654,
+          "finger.x": 0.7551777924179205,
+          "finger.y": 0.7077992934905799,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "gravity_bias_dynamics",
+      "mechanism": "Joint 0 velocity is driven by action plus a configuration-dependent gravity bias term (cosine of angle).",
+      "val_rollout_nrmse": 0.7072288016256756,
+      "score": 0.7072288016256756,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5449653346570748,
+      "params": {
+        "gain_0": 0.7789245427129294,
+        "gain_1": 0.9402617142075558,
+        "gravity_bias_0": 0.0044630368039123665,
+        "fk_l1": 0.11999980715924043,
+        "fk_l2": 0.11712728805872911,
+        "joint_min_0": -5.6660580539430825,
+        "joint_max_0": 5.6849006273889335,
+        "joint_min_1": -4.871432847220988,
+        "joint_max_1": 2.0784896738713496
+      },
+      "code": "# HYPOTHESIS: gravity_bias_dynamics\n# MECHANISM: Joint 0 velocity is driven by action plus a configuration-dependent gravity bias term (cosine of angle).\nPARAMS = {\"gain_0\": 0.5, \"gain_1\": 0.8, \"gravity_bias_0\": -0.4, \"fk_l1\": 0.12, \"fk_l2\": 0.12, \"joint_min_0\": -3.0, \"joint_max_0\": 3.0, \"joint_min_1\": -3.0, \"joint_max_1\": 3.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Retrieve limits from meta or params\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", p[\"joint_min_0\"])\n    xmax = xlim.get(\"max\", {}).get(\"value\", p[\"joint_max_0\"])\n    ymin = ylim.get(\"min\", {}).get(\"value\", p[\"joint_min_1\"])\n    ymax = ylim.get(\"max\", {}).get(\"value\", p[\"joint_max_1\"])\n    \n    # Joint 0 dynamics with gravity bias (explains sign flips)\n    # Bias term depends on cos(arm.x) to model torque variation with angle\n    vel_0 = p[\"gain_0\"] * action[0] + p[\"gravity_bias_0\"] * math.cos(state[\"arm.x\"])\n    raw_x = state[\"arm.x\"] + vel_0\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    \n    # Joint 1 dynamics (standard linear)\n    raw_y = state[\"arm.y\"] + p[\"gain_1\"] * action[1]\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    \n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6651224578213067,
+          "arm.y": 0.256104342564654,
+          "finger.x": 0.7551777924179205,
+          "finger.y": 0.7077992934905799,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "coulomb_friction_dynamics",
+      "mechanism": "Joint 0 exhibits static friction where small actions produce no motion, and larger actions are reduced by a constant threshold.",
+      "val_rollout_nrmse": 0.7037873579030586,
+      "score": 0.7037873579030586,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5454504666945303,
+      "params": {
+        "gain_0": 0.7941025573115175,
+        "gain_1": 0.9413474585832197,
+        "friction_thresh_0": 0.005631655139938479,
+        "fk_l1": 0.12003809113742303,
+        "fk_l2": 0.11707339859050361,
+        "joint_min_0": -5.285676285686526,
+        "joint_max_0": 5.6849006273889335,
+        "joint_min_1": -4.871432847220988,
+        "joint_max_1": 2.0784896738713496
+      },
+      "code": "# HYPOTHESIS: coulomb_friction_dynamics\n# MECHANISM: Joint 0 exhibits static friction where small actions produce no motion, and larger actions are reduced by a constant threshold.\nPARAMS = {\"gain_0\": -0.5, \"gain_1\": 0.8, \"friction_thresh_0\": 0.2, \"fk_l1\": 0.12, \"fk_l2\": 0.12, \"joint_min_0\": -3.0, \"joint_max_0\": 3.0, \"joint_min_1\": -3.0, \"joint_max_1\": 3.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Retrieve limits from meta or params\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", p[\"joint_min_0\"])\n    xmax = xlim.get(\"max\", {}).get(\"value\", p[\"joint_max_0\"])\n    ymin = ylim.get(\"min\", {}).get(\"value\", p[\"joint_min_1\"])\n    ymax = ylim.get(\"max\", {}).get(\"value\", p[\"joint_max_1\"])\n    \n    # Joint 0 dynamics with Coulomb friction deadzone\n    cmd_0 = action[0]\n    if abs(cmd_0) <= p[\"friction_thresh_0\"]:\n        vel_0 = 0.0\n    else:\n        # Overcome friction, direction preserved\n        vel_0 = p[\"gain_0\"] * (cmd_0 - math.copysign(p[\"friction_thresh_0\"], cmd_0))\n    \n    raw_x = state[\"arm.x\"] + vel_0\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    \n    # Joint 1 dynamics (standard linear)\n    raw_y = state[\"arm.y\"] + p[\"gain_1\"] * action[1]\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    \n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6651224578213067,
+          "arm.y": 0.256104342564654,
+          "finger.x": 0.7551777924179205,
+          "finger.y": 0.7077992934905799,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    },
+    {
+      "round": 4,
+      "name": "coupled_joint_dynamics",
+      "mechanism": "Joint 0 velocity is linearly coupled to both action channels, reflecting mechanical tendon coupling between motors and joints.",
+      "val_rollout_nrmse": 0.7036920288717405,
+      "score": 0.7036920288717405,
+      "val_per_mode": null,
+      "val_one_step_nrmse": 0.5403700985277302,
+      "params": {
+        "gain_0_0": 0.7784736123879004,
+        "gain_0_1": -0.03289019559057013,
+        "gain_1_1": 0.9584757635214635,
+        "fk_l1": 0.11917780952732453,
+        "fk_l2": 0.11766427956195494,
+        "joint_min_0": -6.1479418238841905,
+        "joint_max_0": 9.8137834662049,
+        "joint_min_1": -4.871432847220988,
+        "joint_max_1": 2.0784896738713496
+      },
+      "code": "# HYPOTHESIS: coupled_joint_dynamics\n# MECHANISM: Joint 0 velocity is linearly coupled to both action channels, reflecting mechanical tendon coupling between motors and joints.\nPARAMS = {\"gain_0_0\": 0.5, \"gain_0_1\": -1.0, \"gain_1_1\": 0.8, \"fk_l1\": 0.12, \"fk_l2\": 0.12, \"joint_min_0\": -3.0, \"joint_max_0\": 3.0, \"joint_min_1\": -3.0, \"joint_max_1\": 3.0}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Retrieve limits from meta or params\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", p[\"joint_min_0\"])\n    xmax = xlim.get(\"max\", {}).get(\"value\", p[\"joint_max_0\"])\n    ymin = ylim.get(\"min\", {}).get(\"value\", p[\"joint_min_1\"])\n    ymax = ylim.get(\"max\", {}).get(\"value\", p[\"joint_max_1\"])\n    \n    # Joint 0 dynamics with cross-coupling from action[1]\n    # Explains why action[0] > 0 sometimes yields negative delta if action[1] influences it\n    vel_0 = p[\"gain_0_0\"] * action[0] + p[\"gain_0_1\"] * action[1]\n    raw_x = state[\"arm.x\"] + vel_0\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    \n    # Joint 1 dynamics (standard linear, assuming dominant control from action[1])\n    raw_y = state[\"arm.y\"] + p[\"gain_1_1\"] * action[1]\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    \n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns",
+      "feedback_stats": {
+        "per_field": {
+          "arm.x": 0.6651224578213067,
+          "arm.y": 0.256104342564654,
+          "finger.x": 0.7551777924179205,
+          "finger.y": 0.7077992934905799,
+          "target.x": 0.0,
+          "target.y": 0.0
+        },
+        "by_motion": {
+          "arm moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "finger moved (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          },
+          "target did not move (400 transitions)": {
+            "arm.x": 0.6651224578213067,
+            "arm.y": 0.256104342564654,
+            "finger.x": 0.7551777924179205,
+            "finger.y": 0.7077992934905799,
+            "target.x": 0.0,
+            "target.y": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "best": {
+    "name": "inverted_joint_0_dynamics",
+    "round": 2,
+    "val_rollout_nrmse": 0.702404391515134,
+    "params": {
+      "joint_gain_0": 0.7803394451741065,
+      "joint_gain_1": 0.9411931734399529,
+      "joint_min_0": -6.690658760525672,
+      "joint_max_0": 6.337063407391079,
+      "joint_min_1": -2.630737597370909,
+      "joint_max_1": 3.5726385077770404,
+      "fk_l1": 0.12002737288028205,
+      "fk_l2": 0.11708087471052926
+    },
+    "code": "# HYPOTHESIS: inverted_joint_0_dynamics\n# MECHANISM: Joint 0 action has inverted sign (negative gain), joint 1 has positive gain; finger from FK.\nPARAMS = {\"joint_gain_0\": -0.15, \"joint_gain_1\": 0.15, \"joint_min_0\": -3.0, \"joint_max_0\": 3.0, \"joint_min_1\": -3.0, \"joint_max_1\": 3.0, \"fk_l1\": 0.12, \"fk_l2\": 0.12}\n\ndef step(state, action, p, meta):\n    import math\n    ns = dict(state)\n    # Linear dynamics with saturation (joint 0 has negative gain)\n    raw_x = state[\"arm.x\"] + p[\"joint_gain_0\"] * action[0]\n    raw_y = state[\"arm.y\"] + p[\"joint_gain_1\"] * action[1]\n    # Apply limits from meta if available, else use params\n    xlim = meta.get(\"state_limits\", {}).get(\"arm.x\", {})\n    ylim = meta.get(\"state_limits\", {}).get(\"arm.y\", {})\n    xmin = xlim.get(\"min\", {}).get(\"value\", p[\"joint_min_0\"])\n    xmax = xlim.get(\"max\", {}).get(\"value\", p[\"joint_max_0\"])\n    ymin = ylim.get(\"min\", {}).get(\"value\", p[\"joint_min_1\"])\n    ymax = ylim.get(\"max\", {}).get(\"value\", p[\"joint_max_1\"])\n    ns[\"arm.x\"] = max(xmin, min(xmax, raw_x))\n    ns[\"arm.y\"] = max(ymin, min(ymax, raw_y))\n    # Forward kinematics\n    j0 = ns[\"arm.x\"]\n    j1 = ns[\"arm.y\"]\n    ns[\"finger.x\"] = p[\"fk_l1\"] * math.cos(j0) + p[\"fk_l2\"] * math.cos(j0 + j1)\n    ns[\"finger.y\"] = p[\"fk_l1\"] * math.sin(j0) + p[\"fk_l2\"] * math.sin(j0 + j1)\n    ns[\"target.x\"] = state[\"target.x\"]\n    ns[\"target.y\"] = state[\"target.y\"]\n    return ns"
+  },
+  "elapsed_s": 1380.591964006424
+}
