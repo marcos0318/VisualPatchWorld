@@ -292,30 +292,38 @@ def run_tests(fn: Callable, p: Dict[str, float] | None = None, *, seed: int = 0)
 
 def solver_helpers(entries) -> Tuple[str, str]:
     """Source that defines each verified solver under its own name, and the prompt text for it."""
-    srcs, docs = [], []
+    from .mechanism_tests import FAMILIES, family_of
+
+    srcs: List[str] = []
+    docs: Dict[str, List[str]] = {}
     for e in entries:
         if e.source != "general_solver" or "def solve(" not in e.snippet:
             continue
         name = re.sub(r"\W", "_", e.name)
+        fam = family_of(e)
         srcs.append("\n\n" + e.snippet.replace("def solve(", f"def {name}(", 1))
         keys = sorted(set(re.findall(r"p\.get\(\s*['\"](\w+)['\"]", e.snippet)) | set(re.findall(r"p\[['\"](\w+)['\"]\]", e.snippet)))
         params = ", ".join(keys) or "none"
-        docs.append(f"  - {name}(disc, body, dt, p): {e.mechanism.split(' Complete solver')[0]} Optional p keys: {params}.")
+        sig = FAMILIES[fam].interface.splitlines()[0].replace("def solve", name).rstrip(":")
+        docs.setdefault(fam, []).append(f"  - {sig}: {e.mechanism.split(' Complete solver')[0]} Optional p keys: {params}.")
     if not srcs:
         return "", ""
     doc = (
-        "\nVerified contact solvers. The functions below are ALREADY DEFINED in your program's namespace "
-        "(they are appended to your code). They are complete solvers that passed generic physics checks "
-        "(shape-aware detection, non-penetration, rotation about the centre of mass, effective mass). For "
-        "contact between a pusher and a free rigid body, CALL one of them instead of writing your own contact "
-        "code; do not copy or re-implement them, and do not define functions with these names. Your step() "
-        "maps this environment's state to their arguments, models the pusher's own motion, and maps the result "
-        "back; the body's centre-of-mass offset, mass and inertia should be fitted constants in PARAMS. If the "
-        "body keeps no momentum between steps, pass zero velocities. Pass the pusher's position at the start of "
-        "the step and its velocity during the step; the solver moves it. With an identified contact shape whose "
-        "boxes are already grown by the pusher radius, pass those boxes with r=0. Interface (all of them):\n"
-        + INTERFACE_DOC + "\n" + "\n".join(docs) + "\n"
+        "\nVerified mechanism solvers. The functions below are ALREADY DEFINED in your program's namespace "
+        "(they are appended to your code). Each is a complete solver for one kind of mechanism that passed "
+        "generic physics checks on synthetic scenarios. If this environment contains a mechanism one of them "
+        "covers, CALL it for that part instead of writing your own code for it; do not copy or re-implement "
+        "them, and do not define functions with these names. If none applies, ignore them. Your step() maps "
+        "this environment's state to their arguments, models everything else, and maps the result back; "
+        "unknown geometry and constants should be fitted constants in PARAMS.\n"
     )
+    for fam, lines in docs.items():
+        doc += f"\n* {FAMILIES[fam].intro}. Interface:\n" + FAMILIES[fam].interface + "\n" + "\n".join(lines) + "\n"
+        if fam == "contact":
+            doc += ("  The body's centre-of-mass offset, mass and inertia are fitted constants. If the body keeps no "
+                    "momentum between steps, pass zero velocities. Pass the pusher's position at the start of the step "
+                    "and its velocity during the step; the solver moves it. With an identified contact shape whose "
+                    "boxes are already grown by the pusher radius, pass those boxes with r=0.\n")
     return "".join(srcs) + "\n", doc
 
 

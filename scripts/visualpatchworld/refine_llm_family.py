@@ -121,9 +121,10 @@ def main() -> None:
     if args.pusher_helper:
         from visualpatchworld.llm_family import sysid as _sysid
 
-        if "pusher_free_dynamics" not in static_meta:
-            raise SystemExit("--pusher_helper needs --pusher_dynamics on an --analyze family")
-        helper_src, helper_doc = _sysid.PUSHER_HELPER_SOURCE, _sysid.PUSHER_HELPER_DOC
+        if "pusher_free_dynamics" in static_meta:
+            helper_src, helper_doc = _sysid.PUSHER_HELPER_SOURCE, _sysid.PUSHER_HELPER_DOC
+        else:
+            print("[refine] --pusher_helper: no identified pusher in this environment, skipped", flush=True)
     if limits:
         from visualpatchworld.llm_family import sysid as _sysid
 

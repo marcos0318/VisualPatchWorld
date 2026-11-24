@@ -20,7 +20,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from visualpatchworld.llm_family.bank import BankEntry, _parse_json_list, load_bank, save_bank  # noqa: E402
 from visualpatchworld.llm_family.propose import chat  # noqa: E402
-from visualpatchworld.llm_family.solver_tests import INTERFACE_DOC, report, run_tests  # noqa: E402
+from visualpatchworld.llm_family.mechanism_tests import FAMILIES, family_of  # noqa: E402
+from visualpatchworld.llm_family.solver_tests import INTERFACE_DOC, report  # noqa: E402
 
 PROMPT = """Write {n} distinct, complete Python solvers for planar contact between a kinematic disc
 (a pusher, e.g. a robot finger) and a free rigid body whose shape is a union of boxes. They will
@@ -47,6 +48,22 @@ Subdivide the step into substeps.
 Return ONLY a JSON list of objects with keys "name" (snake_case), "mechanism" (one or two
 sentences: the method and its assumptions), "params" (list of {{"name", "meaning",
 "default"}}), and "code" (the full `def solve(disc, body, dt, p):` source, at most 70 lines)."""
+
+GENERIC_PROMPT = """Write {n} distinct, complete Python solvers for {intro}. They will be added to a
+general library of mechanisms used to model unknown simulated environments, so they must be
+physically correct and general. Use only `math` (import it inside the function).
+
+Interface (exactly this signature):
+{interface}
+
+Your solvers are checked automatically on synthetic scenarios for these properties:
+{properties}
+Write one solver for each of these methods, in this order:
+{methods}
+
+Return ONLY a JSON list of objects with keys "name" (snake_case), "mechanism" (one or two
+sentences: the method and its assumptions), "params" (list of {{"name", "meaning",
+"default"}}), and "code" (the full `def solve(...)` source with the signature above, at most 70 lines)."""
 
 REPAIR = """Your solver `{name}` failed some of the automatic physics checks.
 
@@ -80,19 +97,19 @@ def compile_solver(code: str):
     return fn
 
 
-def evaluate(obj: dict) -> tuple[bool, str]:
+def evaluate(obj: dict, family: str = "contact") -> tuple[bool, str, int, int]:
     try:
         fn = compile_solver(obj["code"])
     except Exception as e:  # noqa: BLE001
-        return False, f"[FAIL] compile: {type(e).__name__}: {e}"
+        return False, f"[FAIL] compile: {type(e).__name__}: {e}", 0, 1
     defaults = {}
     for prm in obj.get("params", []):
         try:
             defaults[str(prm["name"])] = float(prm["default"])
         except Exception:  # noqa: BLE001
             pass
-    res = run_tests(fn, defaults)
-    return all(r["passed"] for r in res), report(res)
+    res = FAMILIES[family].run_tests(fn, defaults)
+    return all(r["passed"] for r in res), report(res), sum(r["passed"] for r in res), len(res)
 
 
 def parse_obj(text: str) -> dict:
@@ -116,18 +133,26 @@ def main() -> None:
     p.add_argument("--base", required=True, help="bank to append verified solvers to")
     p.add_argument("--out", required=True)
     p.add_argument("--start_from", default="", help="bank JSON whose general_solver entries are repaired instead of new ones")
+    p.add_argument("--family", default="contact", choices=sorted(FAMILIES))
     p.add_argument("--methods", default="", help="';'-separated method descriptions, one solver each")
     args = p.parse_args()
-    methods = [m.strip() for m in args.methods.split(";") if m.strip()] or DEFAULT_METHODS
+    fam = FAMILIES[args.family]
+    methods = [m.strip() for m in args.methods.split(";") if m.strip()] or (
+        DEFAULT_METHODS if args.family == "contact" else fam.methods)
     args.n = len(methods)
 
     log: list = []
     if args.start_from:
         solvers = [{"name": e.name, "mechanism": e.mechanism.split(" Complete solver")[0], "code": e.snippet,
-                    "params": []} for e in load_bank(Path(args.start_from)) if e.source == "general_solver"]
+                    "params": []} for e in load_bank(Path(args.start_from))
+                   if e.source == "general_solver" and family_of(e) == args.family]
     else:
-        prompt = PROMPT.format(n=args.n, interface=INTERFACE_DOC,
-                               methods="\n".join(f"  {i + 1}. {m}" for i, m in enumerate(methods)))
+        listed = "\n".join(f"  {i + 1}. {m}" for i, m in enumerate(methods))
+        if args.family == "contact":
+            prompt = PROMPT.format(n=args.n, interface=INTERFACE_DOC, methods=listed)
+        else:
+            prompt = GENERIC_PROMPT.format(n=args.n, intro=fam.intro, interface=fam.interface,
+                                           properties=fam.properties, methods=listed)
         reply = chat(prompt, model=args.model, temperature=0.4, max_tokens=32000)
         log.append({"kind": "solvers", "prompt": prompt, **reply})
         solvers = [o for o in _parse_json_list(reply["text"]) if isinstance(o, dict) and o.get("code")]
@@ -137,10 +162,9 @@ def main() -> None:
     for s in solvers:
         hist = []
         for r in range(args.rounds + 1):
-            ok, rep = evaluate(s)
-            npass = rep.count("[PASS]")
+            ok, rep, npass, ntot = evaluate(s, args.family)
             hist.append({"round": r, "passed_all": ok, "n_pass": npass, "report": rep, "code": s["code"]})
-            print(f"[solvers] {s.get('name')} round {r}: {npass}/9 pass", flush=True)
+            print(f"[solvers] {s.get('name')} round {r}: {npass}/{ntot} pass", flush=True)
             if ok or r == args.rounds:
                 break
             q = REPAIR.format(name=s.get("name"), code=s["code"], report=rep, mechanism=s.get("mechanism", ""))
@@ -161,13 +185,13 @@ def main() -> None:
         entries.append(BankEntry(
             name=str(s["name"]),
             mechanism=str(s.get("mechanism", "")) + " Complete solver with interface " +
-            "solve(disc, body, dt, p); verified on generic physics checks.",
+            fam.interface.splitlines()[0].replace("def ", "").rstrip(":") + "; verified on generic physics checks.",
             equations="",
             snippet=s["code"],
             params=[{"name": str(q.get("name")), "meaning": f"{q.get('meaning')} (default {q.get('default')})"}
                     for q in s.get("params", []) if isinstance(q, dict)],
-            tags=["contact", "pushing", "rigid_body", "rotation", "impulse", "solver", "complete"],
-            topic="complete contact solvers",
+            tags=fam.tags + [f"family:{args.family}"],
+            topic=f"complete {args.family} solvers",
             source="general_solver",
         ))
     save_bank(entries, Path(args.out))

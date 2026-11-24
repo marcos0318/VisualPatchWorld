@@ -180,6 +180,11 @@ def per_mode_errors(cand, params, episodes: Sequence[Episode], keys: Sequence[st
 
 
 def balanced_score(per_mode: Mapping[str, Mapping[str, Any]], h: int, *, min_count: int = 5) -> float:
-    """Mean over modes (with >= ``min_count`` samples) of the h-step nRMSE."""
-    vals = [d[f"nrmse@{h}"] for d in per_mode.values() if d.get("n", 0) >= min_count and f"nrmse@{h}" in d]
-    return float(np.mean(vals)) if vals else float("inf")
+    """Mean over modes (with >= ``min_count`` samples) of the h-step nRMSE; when episodes are
+    shorter than h, the longest horizon that any mode has."""
+    hs = sorted({int(k.split("@")[1]) for d in per_mode.values() for k in d if k.startswith("nrmse@")}, reverse=True)
+    for hh in [h] + [x for x in hs if x < h]:
+        vals = [d[f"nrmse@{hh}"] for d in per_mode.values() if d.get("n", 0) >= min_count and f"nrmse@{hh}" in d]
+        if vals:
+            return float(np.mean(vals))
+    return float("inf")
