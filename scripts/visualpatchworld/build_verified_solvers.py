@@ -140,7 +140,7 @@ def main() -> None:
             ok, rep = evaluate(s)
             npass = rep.count("[PASS]")
             hist.append({"round": r, "passed_all": ok, "n_pass": npass, "report": rep, "code": s["code"]})
-            print(f"[solvers] {s.get('name')} round {r}: {npass}/8 pass", flush=True)
+            print(f"[solvers] {s.get('name')} round {r}: {npass}/9 pass", flush=True)
             if ok or r == args.rounds:
                 break
             q = REPAIR.format(name=s.get("name"), code=s["code"], report=rep, mechanism=s.get("mechanism", ""))

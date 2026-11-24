@@ -18,8 +18,10 @@ import signal
 from typing import Any, Callable, Dict, List, Tuple
 
 INTERFACE_DOC = """def solve(disc, body, dt, p):
-    # disc: dict x, y, vx, vy, r. A kinematic pusher: it moves by (vx, vy)*dt during the
-    #       step whatever it touches, and is not affected by the body.
+    # disc: dict x, y, vx, vy, r. A kinematic pusher: (x, y) is its position at the START of
+    #       the step; it moves by (vx, vy)*dt during the step whatever it touches, and is not
+    #       affected by the body. r may be 0 (a point pusher against boxes already grown by
+    #       the pusher radius); the pusher centre can then lie inside a box.
     # body: dict x, y, ang (pose of the body-frame origin), vx, vy, w (velocity of the centre
     #       of mass and angular velocity), shape (list of body-frame boxes (u0, u1, v0, v1)),
     #       com (body-frame centre of mass (cu, cv)), mass, inertia (about the centre of mass).
@@ -229,6 +231,33 @@ def run_tests(fn: Callable, p: Dict[str, float] | None = None, *, seed: int = 0)
                "(expected 0): translate the centre of mass and rotate about it, then recover the origin as "
                "com_world - R(ang) com")
 
+    def t_point_pusher():
+        worst_pen, worst_dir = -1e9, 0.0
+        for k in range(8):
+            b = _body(BAR, (0.0, 0.0), ang=rng.uniform(-3, 3), x=rng.uniform(-30, 30), y=rng.uniform(-30, 30))
+            nu, nv = [(0, 1), (0, -1), (1, 0), (-1, 0)][k % 4]
+            # start 1 unit inside the face with outward normal -(nu, nv), moving inward
+            su, sv = (rng.uniform(-25, 25), -nv * 9.0) if nv else (-nu * 39.0, rng.uniform(-5, 5))
+            wx, wy = _R(b["ang"], su, sv)
+            vx, vy = _R(b["ang"], nu * 60.0, nv * 60.0)
+            disc = {"x": b["x"] + wx, "y": b["y"] + wy, "vx": vx, "vy": vy, "r": 0.0}
+            o = _call(fn, disc, b, DT, p)
+            nb = {**b, **o}
+            fx, fy = disc["x"] + vx * DT, disc["y"] + vy * DT
+            worst_pen = max(worst_pen, -_sdf(BAR, *_to_body(nb, fx, fy)))
+            dx, dy = o["x"] - b["x"], o["y"] - b["y"]
+            d = math.hypot(dx, dy)
+            if d < 1.0:
+                worst_dir = 180.0
+            else:
+                c = (dx * vx + dy * vy) / (d * math.hypot(vx, vy))
+                worst_dir = max(worst_dir, math.degrees(math.acos(max(-1.0, min(1.0, c)))))
+        record("point_pusher_inside_box", worst_pen < 1.5 and worst_dir < 15,
+               "a point pusher (r=0) whose centre starts 1 unit inside a box face and moves 6 units further in "
+               f"ended {worst_pen:.3g} inside the body (allowed 1.5) and moved it at {worst_dir:.3g} deg from the "
+               "push (expected about 0; 180 means it barely moved). When the pusher centre is inside a box, "
+               "the contact normal is that of the nearest face and the depth is r plus the distance to it")
+
     def t_effective_mass():
         errs = []
         for ratio in (300.0, 3000.0):
@@ -255,7 +284,7 @@ def run_tests(fn: Callable, p: Dict[str, float] | None = None, *, seed: int = 0)
     for name, f in [("no_contact_no_motion", t_no_contact), ("shape_aware_detection", t_shape_aware),
                     ("non_penetration", t_non_penetration), ("central_push_translates", t_central_push),
                     ("offcentre_rotation_sign", t_offcentre_sign), ("pivot_is_centre_of_mass", t_rotation_about_com),
-                    ("com_moves_along_normal", t_com_along_normal),
+                    ("com_moves_along_normal", t_com_along_normal), ("point_pusher_inside_box", t_point_pusher),
                     ("effective_mass_split", t_effective_mass)]:
         safe(name, f)
     return results
@@ -282,7 +311,9 @@ def solver_helpers(entries) -> Tuple[str, str]:
         "code; do not copy or re-implement them, and do not define functions with these names. Your step() "
         "maps this environment's state to their arguments, models the pusher's own motion, and maps the result "
         "back; the body's centre-of-mass offset, mass and inertia should be fitted constants in PARAMS. If the "
-        "body keeps no momentum between steps, pass zero velocities. Interface (all of them):\n"
+        "body keeps no momentum between steps, pass zero velocities. Pass the pusher's position at the start of "
+        "the step and its velocity during the step; the solver moves it. With an identified contact shape whose "
+        "boxes are already grown by the pusher radius, pass those boxes with r=0. Interface (all of them):\n"
         + INTERFACE_DOC + "\n" + "\n".join(docs) + "\n"
     )
     return "".join(srcs) + "\n", doc
