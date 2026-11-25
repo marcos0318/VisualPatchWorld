@@ -8,7 +8,7 @@ FAM=artifacts/visualpatchworld/llm_family
 TOOL=artifacts/visualpatchworld/data_tool
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 export PYTHONPATH="$PWD/src:$PWD"
-ENVS="tworoom reacher cube"
+ENVS=${ENVS:-"tworoom reacher cube"}
 
 for env in $ENVS; do
   ( [[ -f $TOOL/${env}_tool_traj_train.jsonl ]] || $PY -W ignore scripts/visualpatchworld/export_tool_traces.py --env $env --splits train,val
@@ -22,6 +22,6 @@ done
 wait
 $PY scripts/visualpatchworld/queue_llm_family_evals.py --runs $(for e in $ENVS; do echo tooltrace_${e}_qwen35_s0; done) \
     --seeds 42,43,44,45,46 --max_parallel 15 --selections offline_multi_step
-$PY scripts/visualpatchworld/run_vpw_modes.py --sets qwen35_tooltrace --modes tool_induced --envs tworoom,reacher,cube \
+$PY scripts/visualpatchworld/run_vpw_modes.py --sets qwen35_tooltrace --modes tool_induced --envs $(echo $ENVS | tr " " ",") \
     --max_parallel 15 --workers 4
 echo "[tooltrace] done"

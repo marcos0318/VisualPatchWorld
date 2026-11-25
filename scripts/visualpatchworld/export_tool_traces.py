@@ -31,7 +31,9 @@ from visualpatchworld.hdf5 import require_h5py  # noqa: E402
 from visualpatchworld.lewm_env_specs import get_env_spec  # noqa: E402
 from visualpatchworld.lewm_graph import row_dict_from_h5  # noqa: E402
 from visualpatchworld.tool_observation import graph_text_from_tool_payload  # noqa: E402
-from visualpatchworld.visual_tools import extractor_for_env  # noqa: E402
+from visualpatchworld.visual_tools import PushTHeuristicSceneGraphExtractor, extractor_for_env  # noqa: E402
+from visualpatchworld.pusht import graph_from_vlm_payload  # noqa: E402
+from visualpatchworld.schema import render_graph_text  # noqa: E402
 
 DATA = ROOT.parent / "le-wm-code/artifacts/visualpatchworld/data"
 
@@ -55,7 +57,7 @@ def main() -> None:
     from PIL import Image
 
     spec = get_env_spec(args.env)
-    extractor = extractor_for_env(spec.name)
+    extractor = PushTHeuristicSceneGraphExtractor() if spec.name == "pusht" else extractor_for_env(spec.name)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     h5py = require_h5py()
@@ -72,9 +74,10 @@ def main() -> None:
                 record = json.loads(line)
                 prev_q: Optional[np.ndarray] = None
                 cache: Dict[int, str] = {}
+                last_payload: Optional[Dict[str, Any]] = None
 
                 def tool_text(raw: int, step: int, meta: Dict[str, Any]) -> str:
-                    nonlocal prev_q, failures
+                    nonlocal prev_q, failures, last_payload
                     if raw in cache:
                         return cache[raw]
                     row = row_dict_from_h5(h5, raw, spec)
@@ -89,14 +92,22 @@ def main() -> None:
                             payload = extractor.extract(path, metadata={"goal_row": row, "template_row": hint_row})
                     except Exception:
                         failures += 1
-                        raise
+                        # As in live replanning, an occluded PushT pusher reuses the previous extraction.
+                        if spec.name != "pusht" or last_payload is None:
+                            raise
+                        payload = last_payload
                     finally:
                         path.unlink(missing_ok=True)
+                    last_payload = payload
                     for obj in payload.get("objects", []):
                         if obj.get("id") == "arm" and "qpos" in obj:
                             prev_q = np.asarray(obj["qpos"], dtype=np.float64)
-                    text = graph_text_from_tool_payload(spec.name, payload, template_row=row, goal_row=row,
-                                                        step=step, metadata=meta)
+                    if spec.name == "pusht":
+                        text = render_graph_text(graph_from_vlm_payload(payload, step=step, metadata=meta,
+                                                                        source="tool"))
+                    else:
+                        text = graph_text_from_tool_payload(spec.name, payload, template_row=row, goal_row=row,
+                                                            step=step, metadata=meta)
                     cache[raw] = text
                     return text
 
